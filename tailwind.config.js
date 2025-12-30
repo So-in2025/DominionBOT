@@ -23,18 +23,19 @@ export default {
           'dark-glass': 'rgba(10, 10, 10, 0.6)',
 
           // --- COMPATIBILITY MAPPING (Fixes "No Boxes/No Backgrounds") ---
-          // Mapping legacy classes to the new luxury colors
-          primary: '#D4AF37',   // Was Blue, now Gold
-          secondary: '#121212', // Was Dark Grey, now Matte Black Surface
-          dark: '#050505',      // Was Black, now Deep Black
-          light: '#333333',     // Borders/Separators
-          accent: '#F9DF74',    // Highlights
+          primary: '#D4AF37',   
+          secondary: '#121212', 
+          dark: '#050505',      
+          light: '#333333',     
+          accent: '#F9DF74',    
         },
       },
       animation: {
         'blob': 'blob 10s infinite',
         'shimmer': 'shimmer 2s linear infinite',
-        'fade-in': 'fadeIn 0.8s ease-out forwards',
+        'fade-in': 'fadeIn 0.5s ease-out forwards',
+        'slide-in-left': 'slideInLeft 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+        'slide-in-right': 'slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards',
         'float': 'float 6s ease-in-out infinite',
       },
       backgroundImage: {
@@ -55,6 +56,14 @@ export default {
         fadeIn: {
           '0%': { opacity: '0', transform: 'translateY(10px)' },
           '100%': { opacity: '1', transform: 'translateY(0)' }
+        },
+        slideInLeft: {
+          '0%': { transform: 'translateX(-100%)' },
+          '100%': { transform: 'translateX(0)' }
+        },
+        slideInRight: {
+          '0%': { transform: 'translateX(100%)' },
+          '100%': { transform: 'translateX(0)' }
         },
         float: {
           '0%, 100%': { transform: 'translateY(0)' },

@@ -8,25 +8,33 @@ html, body, #root {
   margin: 0;
   padding: 0;
   overflow-x: hidden;
-  background-color: #050505; /* Fallback brand-black */
+  background-color: #050505; 
 }
 
-/* Custom Scrollbar for dark theme */
+/* Custom Scrollbar Elite */
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 4px;
 }
 ::-webkit-scrollbar-track {
   background: #050505; 
 }
 ::-webkit-scrollbar-thumb {
-  background: #333; 
-  border-radius: 3px;
+  background: #222; 
+  border-radius: 10px;
 }
 ::-webkit-scrollbar-thumb:hover {
   background: #D4AF37; 
 }
 
-/* Premium Noise Texture */
+/* Neural Background Effect */
+.neural-grid {
+  background-size: 40px 40px;
+  background-image: 
+    linear-gradient(to right, rgba(212, 175, 55, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(212, 175, 55, 0.05) 1px, transparent 1px);
+  mask-image: radial-gradient(ellipse at center, black, transparent 80%);
+}
+
 .bg-noise {
   position: absolute;
   top: 0;
@@ -35,14 +43,18 @@ html, body, #root {
   height: 100%;
   pointer-events: none;
   z-index: 0;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
 }
-.bg-noise::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.05'/%3E%3C/svg%3E");
-  pointer-events: none;
+
+@keyframes flow {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.animate-glow-flow {
+  background: linear-gradient(-45deg, #997B19, #D4AF37, #F9DF74, #997B19);
+  background-size: 400% 400%;
+  animation: flow 10s ease infinite;
 }

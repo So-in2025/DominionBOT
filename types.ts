@@ -31,6 +31,18 @@ export enum PromptArchetype {
 
 export type SystemState = 'ACTIVE' | 'PAUSED' | 'LIMITED' | 'SUSPENDED';
 
+// Fix: Updating IntendedUse to include the correct operational strategies used in the UI and ensure compatibility with backend expectations
+export type IntendedUse = 
+  | 'HIGH_TICKET_AGENCY' 
+  | 'REAL_ESTATE' 
+  | 'ECOMMERCE_SUPPORT' 
+  | 'DIGITAL_LAUNCHES' 
+  | 'PROFESSIONAL_SERVICES'
+  | 'OTHER'
+  | 'VENTAS_CONSULTIVAS'
+  | 'SOPORTE'
+  | 'OTRO';
+
 export interface Message {
   id: string;
   text: string;

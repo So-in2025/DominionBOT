@@ -1,12 +1,11 @@
 
 import { Request, Response } from 'express';
-import { sseService } from '../services/sseService';
-import { connectToWhatsApp, disconnectWhatsApp, sendMessage } from '../whatsapp/client';
-import { conversationService } from '../services/conversationService';
-import { Message } from '../types';
-import { db } from '../database';
+import { sseService } from '../services/sseService.js';
+import { connectToWhatsApp, disconnectWhatsApp, sendMessage, getSessionStatus } from '../whatsapp/client.js';
+import { conversationService } from '../services/conversationService.js';
+import { Message } from '../types.js';
+import { db } from '../database.js';
 
-// Helper to get UserID from auth middleware
 const getUserId = (req: any) => req.user.id;
 
 export const handleSse = (req: any, res: any) => {
@@ -23,13 +22,20 @@ export const handleSse = (req: any, res: any) => {
   }
 };
 
+export const handleGetStatus = (req: any, res: any) => {
+    const userId = getUserId(req);
+    const statusData = getSessionStatus(userId);
+    res.json(statusData);
+};
+
 export const handleConnect = async (req: any, res: any) => {
   const userId = getUserId(req);
+  const { phoneNumber } = req.body; 
   try {
-    await connectToWhatsApp(userId);
-    res.status(200).json({ message: 'Iniciando sesión...' });
+    await connectToWhatsApp(userId, phoneNumber);
+    res.status(200).json({ message: 'Proceso de vinculación iniciado.' });
   } catch (error) {
-    res.status(500).json({ message: 'Error al iniciar.' });
+    res.status(500).json({ message: 'Error al iniciar infraestructura de enlace.' });
   }
 };
 
@@ -37,7 +43,7 @@ export const handleDisconnect = async (req: any, res: any) => {
   const userId = getUserId(req);
   try {
     await disconnectWhatsApp(userId);
-    res.status(200).json({ message: 'Desconectado.' });
+    res.status(200).json({ message: 'Nodo desconectado.' });
   } catch (error) {
     res.status(500).json({ message: 'Error al desconectar.' });
   }
@@ -72,7 +78,6 @@ export const handleSendMessage = async (req: any, res: any) => {
   }
 };
 
-// Update conversation metadata (tags, notes, status)
 export const handleUpdateConversation = async (req: any, res: any) => {
   const userId = getUserId(req);
   const { id, updates } = req.body;
@@ -87,7 +92,6 @@ export const handleUpdateConversation = async (req: any, res: any) => {
   res.json(conversation);
 };
 
-// USER SETTINGS
 export const handleGetSettings = (req: any, res: any) => {
     const userId = getUserId(req);
     const user = db.getUser(userId);

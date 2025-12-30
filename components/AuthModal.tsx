@@ -1,43 +1,53 @@
 
 import React, { useState, useEffect } from 'react';
+import { IntendedUse } from '../types';
 
-const BACKEND_URL = ((import.meta as any).env && (import.meta as any).env.VITE_BACKEND_URL) || process.env.BACKEND_URL || 'http://localhost:3001';
+// URL de la infraestructura central
+const BACKEND_URL = 'https://dominion-backend-ahsh.onrender.com';
 
 interface AuthModalProps {
     isOpen: boolean;
-    initialMode: 'login' | 'register';
+    initialMode: 'login' | 'register' | 'recovery';
     onClose: () => void;
     onSuccess: (token: string, role: string) => void;
-    onOpenLegal: (type: 'privacy' | 'terms' | 'manifesto') => void; // New prop for linking documents
+    onOpenLegal: (type: 'privacy' | 'terms' | 'manifesto') => void;
 }
 
 const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onSuccess, onOpenLegal }) => {
-    const [mode, setMode] = useState<'login' | 'register'>(initialMode);
+    const [mode, setMode] = useState<'login' | 'register' | 'recovery' | 'registered_success'>(initialMode as any);
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
+    const [intendedUse, setIntendedUse] = useState<IntendedUse>('HIGH_TICKET_AGENCY');
+    const [recoveryKey, setRecoveryKey] = useState('');
+    const [newPassword, setNewPassword] = useState('');
+    const [generatedKey, setGeneratedKey] = useState('');
     
-    // Enforcement States
-    const [agreedLegal, setAgreedLegal] = useState(false);
+    // Estados Legales
+    const [agreedPrivacy, setAgreedPrivacy] = useState(false);
+    const [agreedTerms, setAgreedTerms] = useState(false);
     const [agreedManifesto, setAgreedManifesto] = useState(false);
 
     const [error, setError] = useState('');
+    const [successMsg, setSuccessMsg] = useState('');
     const [loading, setLoading] = useState(false);
-    const [isMobile, setIsMobile] = useState(window.innerWidth < 480);
-
-    useEffect(() => {
-        const handleResize = () => setIsMobile(window.innerWidth < 480);
-        window.addEventListener('resize', handleResize);
-        return () => window.removeEventListener('resize', handleResize);
-    }, []);
+    const [animateIn, setAnimateIn] = useState(false);
 
     useEffect(() => {
         if (isOpen) {
-            setMode(initialMode);
+            setMode(initialMode as any);
             setError('');
+            setSuccessMsg('');
             setUsername('');
             setPassword('');
-            setAgreedLegal(false);
+            setRecoveryKey('');
+            setNewPassword('');
+            setGeneratedKey('');
+            setAgreedPrivacy(false);
+            setAgreedTerms(false);
             setAgreedManifesto(false);
+            setTimeout(() => setAnimateIn(true), 10);
+        } else {
+            setAnimateIn(false);
         }
     }, [isOpen, initialMode]);
 
@@ -48,175 +58,199 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
         setLoading(true);
         setError('');
 
-        // Client-side validation for Register mode
         if (mode === 'register') {
-            if (!agreedLegal) {
-                setError('Debes aceptar los Términos y Privacidad.');
-                setLoading(false);
-                return;
-            }
-            if (!agreedManifesto) {
-                setError('Debes aceptar el Manifiesto operativo.');
+            if (!agreedPrivacy || !agreedTerms || !agreedManifesto) {
+                setError('Debes aceptar todos los términos y políticas para continuar.');
                 setLoading(false);
                 return;
             }
         }
 
-        const endpoint = mode === 'register' ? '/api/register' : '/api/login';
+        let endpoint = '';
+        let payload: any = { username };
 
+        if (mode === 'login') {
+            endpoint = '/api/login';
+            payload.password = password;
+        } else if (mode === 'register') {
+            endpoint = '/api/register';
+            payload.password = password;
+            payload.intendedUse = intendedUse;
+        } else if (mode === 'recovery') {
+            endpoint = '/api/auth/reset';
+            payload.recoveryKey = recoveryKey;
+            payload.newPassword = newPassword;
+        }
+        
         try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 15000);
+
             const res = await fetch(`${BACKEND_URL}${endpoint}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, password })
+                body: JSON.stringify(payload),
+                signal: controller.signal
             });
 
+            clearTimeout(timeoutId);
             const data = await res.json();
 
-            if (res.ok && data.token) {
-                onSuccess(data.token, data.role);
-                onClose();
+            if (res.ok) {
+                if (mode === 'register') {
+                    setGeneratedKey(data.recoveryKey);
+                    setMode('registered_success');
+                } else if (mode === 'recovery') {
+                    setSuccessMsg('Contraseña reseteada. Ya puedes ingresar.');
+                    setMode('login');
+                } else {
+                    onSuccess(data.token, data.role);
+                    onClose();
+                }
             } else {
-                setError(data.message || 'Error en autenticación');
+                setError(data.message || 'Error en la operación. Verifique sus datos.');
             }
-        } catch (err) {
-            setError('Error de conexión con el servidor.');
+        } catch (err: any) {
+            setError('Fallo de conexión con el nodo central Dominion.');
         } finally {
             setLoading(false);
         }
     };
 
-    const isSubmitDisabled = loading || (mode === 'register' && (!agreedLegal || !agreedManifesto));
+    const isSubmitDisabled = loading || (mode === 'register' && (!agreedPrivacy || !agreedTerms || !agreedManifesto));
 
     return (
-        <div style={{
-            position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
-            zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center'
-        }}>
-            {/* Backdrop */}
-            <div 
-                style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)' }}
-                onClick={onClose}
-            ></div>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <div className={`absolute inset-0 bg-brand-black/90 backdrop-blur-md transition-opacity duration-300 ${animateIn ? 'opacity-100' : 'opacity-0'}`} onClick={onClose}></div>
+            <div className={`relative w-full max-w-md bg-brand-surface border border-white/10 rounded-2xl shadow-2xl overflow-hidden transition-all duration-300 transform ${animateIn ? 'scale-100 opacity-100 translate-y-0' : 'scale-95 opacity-0 translate-y-8'}`}>
+                <div className="h-1.5 w-full bg-gradient-to-r from-brand-gold-dark via-brand-gold to-brand-gold-dark"></div>
+                
+                {mode !== 'registered_success' && (
+                    <button onClick={onClose} className="absolute top-5 right-5 text-gray-500 hover:text-white transition-colors z-10 p-1">
+                        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                )}
 
-            {/* Modal Content */}
-            <div style={{
-                position: 'relative', 
-                width: '90%', 
-                maxWidth: '400px', 
-                backgroundColor: '#121212', borderRadius: '16px', 
-                border: '1px solid rgba(212, 175, 55, 0.3)',
-                boxShadow: '0 0 50px rgba(0,0,0,0.8)', overflow: 'hidden'
-            }}>
-                {/* Gold Accent Line */}
-                <div style={{ width: '100%', height: '4px', background: 'linear-gradient(90deg, #997B19, #D4AF37, #997B19)' }}></div>
+                <div className="p-10">
+                    {mode === 'registered_success' ? (
+                        <div className="text-center space-y-8 animate-fade-in">
+                            <div className="w-20 h-20 bg-green-500/10 text-green-500 rounded-full flex items-center justify-center mx-auto border border-green-500/20 shadow-[0_0_30px_rgba(34,197,94,0.2)]">
+                                <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                            </div>
+                            <div>
+                                <h2 className="text-2xl font-black text-white uppercase tracking-widest">Nodo Operativo</h2>
+                                <p className="text-xs text-gray-500 mt-2">Guarda tu <strong className="text-brand-gold">Master Recovery Key</strong>. Es el único método de recuperación si olvidas tu clave.</p>
+                            </div>
+                            
+                            <div className="bg-black/80 p-6 rounded-2xl border border-brand-gold/30 font-mono text-brand-gold text-lg font-black tracking-[0.25em] break-all select-all shadow-inner">
+                                {generatedKey}
+                            </div>
 
-                {/* Close X */}
-                <button 
-                    onClick={onClose}
-                    style={{ position: 'absolute', top: '15px', right: '15px', background: 'none', border: 'none', color: '#666', cursor: 'pointer', fontSize: '18px', zIndex: 10 }}
-                >
-                    ✕
-                </button>
-
-                <div style={{ padding: isMobile ? '24px 20px' : '32px' }}>
-                    <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-                        <h2 style={{ color: '#fff', fontSize: '24px', fontWeight: 'bold', margin: '0 0 8px 0' }}>
-                            {mode === 'login' ? 'Bienvenido' : 'Solicitud de Acceso'}
-                        </h2>
-                        <p style={{ color: '#D4AF37', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '2px' }}>Dominion Bot</p>
-                    </div>
-
-                    <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                        <div>
-                            <label style={{ display: 'block', color: '#888', fontSize: '11px', marginBottom: '6px', fontWeight: '600' }}>IDENTIFICADOR (USUARIO)</label>
-                            <input 
-                                type="text" 
-                                value={username}
-                                onChange={(e) => setUsername(e.target.value)}
-                                style={{ width: '100%', padding: '12px', backgroundColor: '#000', border: '1px solid #333', borderRadius: '8px', color: '#fff', outline: 'none', boxSizing: 'border-box' }}
-                                placeholder="Tu ID corporativo o Email"
-                                autoFocus
-                            />
+                            <button onClick={() => { localStorage.clear(); window.location.reload(); }} className="w-full py-5 bg-brand-gold text-black rounded-xl font-black text-xs uppercase tracking-[0.2em] shadow-[0_10px_40px_rgba(212,175,55,0.3)] hover:scale-105 transition-all">He asegurado mi llave</button>
                         </div>
-                        <div>
-                            <label style={{ display: 'block', color: '#888', fontSize: '11px', marginBottom: '6px', fontWeight: '600' }}>CLAVE DE ACCESO</label>
-                            <input 
-                                type="password" 
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                style={{ width: '100%', padding: '12px', backgroundColor: '#000', border: '1px solid #333', borderRadius: '8px', color: '#fff', outline: 'none', boxSizing: 'border-box' }}
-                                placeholder="••••••••"
-                            />
-                        </div>
+                    ) : (
+                        <>
+                            <div className="text-center mb-10">
+                                <h2 className="text-3xl font-black text-white tracking-tighter mb-2">
+                                    {mode === 'login' ? 'Bienvenido' : (mode === 'register' ? 'Nuevo Nodo' : 'Recuperación')}
+                                </h2>
+                                <p className="text-[10px] text-brand-gold uppercase tracking-[0.4em] font-black opacity-80">Infrastructure v2.7.6 Elite</p>
+                            </div>
 
-                        {/* ENFORCEMENT CHECKBOXES (Register Only) */}
-                        {mode === 'register' && (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '4px', padding: '12px', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: '8px' }}>
+                            {successMsg && (
+                                <div className="mb-6 p-4 bg-green-500/10 border border-green-500/20 rounded-xl text-green-400 text-xs text-center font-bold animate-fade-in">{successMsg}</div>
+                            )}
+
+                            <form onSubmit={handleSubmit} className="space-y-6">
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Identificador del Nodo</label>
+                                    <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} className="w-full px-5 py-4 bg-black/40 border border-white/5 rounded-xl text-white focus:border-brand-gold outline-none transition-all placeholder-gray-800" placeholder="Ej: admin_mendoza" required />
+                                </div>
+
+                                {mode === 'register' && (
+                                     <div className="space-y-1.5 animate-fade-in">
+                                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Estrategia Operativa</label>
+                                        <select 
+                                            value={intendedUse} 
+                                            onChange={(e) => setIntendedUse(e.target.value as IntendedUse)} 
+                                            className="w-full px-5 py-4 bg-black/40 border border-white/5 rounded-xl text-white focus:border-brand-gold outline-none transition-all text-xs font-bold appearance-none cursor-pointer"
+                                        >
+                                            <option value="HIGH_TICKET_AGENCY">Agencia High Ticket (Cierres)</option>
+                                            <option value="REAL_ESTATE">Inmobiliaria / Bienes Raíces</option>
+                                            <option value="ECOMMERCE_SUPPORT">E-commerce / Ventas Directas</option>
+                                            <option value="DIGITAL_LAUNCHES">Infoproductos & Lanzamientos</option>
+                                            <option value="PROFESSIONAL_SERVICES">Servicios Profesionales</option>
+                                            <option value="OTHER">Otro (Configuración manual)</option>
+                                        </select>
+                                    </div>
+                                )}
+
+                                {mode === 'recovery' ? (
+                                    <>
+                                        <div className="space-y-1.5 animate-fade-in">
+                                            <label className="text-[10px] font-black text-brand-gold uppercase tracking-widest ml-1">Master Recovery Key</label>
+                                            <input type="text" value={recoveryKey} onChange={(e) => setRecoveryKey(e.target.value)} className="w-full px-5 py-4 bg-black/40 border border-brand-gold/30 rounded-xl text-white focus:border-brand-gold outline-none font-mono placeholder-gray-800" placeholder="X8Y2-Z9Q1-..." required />
+                                        </div>
+                                        <div className="space-y-1.5 animate-fade-in">
+                                            <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Nueva Contraseña</label>
+                                            <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full px-5 py-4 bg-black/40 border border-white/5 rounded-xl text-white focus:border-brand-gold outline-none placeholder-gray-800" placeholder="••••••••" required />
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Contraseña</label>
+                                        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full px-5 py-4 bg-black/40 border border-white/5 rounded-xl text-white focus:border-brand-gold outline-none placeholder-gray-800" placeholder="••••••••" required />
+                                    </div>
+                                )}
+
+                                {mode === 'register' && (
+                                    <div className="bg-black/20 rounded-2xl p-5 space-y-4 border border-white/5 animate-fade-in">
+                                        <label className="flex items-start gap-4 cursor-pointer group">
+                                            <input type="checkbox" checked={agreedTerms} onChange={(e) => setAgreedTerms(e.target.checked)} className="mt-1 w-4 h-4 rounded border-white/10 bg-black checked:bg-brand-gold" />
+                                            <span className="text-[10px] text-gray-400 group-hover:text-gray-300">Acepto los <button type="button" onClick={() => onOpenLegal('terms')} className="text-brand-gold font-bold">Términos de Servicio</button>.</span>
+                                        </label>
+                                        <label className="flex items-start gap-4 cursor-pointer group">
+                                            <input type="checkbox" checked={agreedPrivacy} onChange={(e) => setAgreedPrivacy(e.target.checked)} className="mt-1 w-4 h-4 rounded border-white/10 bg-black checked:bg-brand-gold" />
+                                            <span className="text-[10px] text-gray-400 group-hover:text-gray-300">Entiendo la <button type="button" onClick={() => onOpenLegal('privacy')} className="text-brand-gold font-bold">Privacidad BYOK</button>.</span>
+                                        </label>
+                                        <label className="flex items-start gap-4 cursor-pointer group">
+                                            <input type="checkbox" checked={agreedManifesto} onChange={(e) => setAgreedManifesto(e.target.checked)} className="mt-1 w-4 h-4 rounded border-white/10 bg-black checked:bg-brand-gold" />
+                                            <span className="text-[10px] text-gray-400 group-hover:text-gray-300">He leído el <button type="button" onClick={() => onOpenLegal('manifesto')} className="text-brand-gold font-bold">Manifiesto Dominion</button>.</span>
+                                        </label>
+                                    </div>
+                                )}
+
+                                {error && <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-[10px] text-center font-black uppercase tracking-widest animate-shake">{error}</div>}
                                 
-                                {/* Legal Check */}
-                                <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', fontSize: '12px', color: '#ccc' }}>
-                                    <input 
-                                        type="checkbox" 
-                                        checked={agreedLegal}
-                                        onChange={(e) => setAgreedLegal(e.target.checked)}
-                                        style={{ marginTop: '2px', cursor: 'pointer' }}
-                                    />
-                                    <span>
-                                        Acepto los <span onClick={(e) => { e.preventDefault(); onOpenLegal('terms'); }} style={{ color: '#D4AF37', textDecoration: 'underline' }}>Términos</span> y la <span onClick={(e) => { e.preventDefault(); onOpenLegal('privacy'); }} style={{ color: '#D4AF37', textDecoration: 'underline' }}>Política de Privacidad</span>.
-                                    </span>
-                                </label>
+                                <button 
+                                    type="submit" 
+                                    disabled={isSubmitDisabled} 
+                                    className={`w-full py-5 rounded-xl font-black text-xs uppercase tracking-[0.2em] transition-all duration-500 ${isSubmitDisabled ? 'bg-white/5 text-gray-700 cursor-not-allowed opacity-50' : 'bg-brand-gold text-black shadow-[0_10px_30px_rgba(212,175,55,0.2)] hover:scale-[1.02] hover:shadow-[0_10px_40px_rgba(212,175,55,0.4)]'}`}
+                                >
+                                    {loading ? (
+                                        <div className="flex items-center justify-center gap-2">
+                                            <div className="w-3 h-3 border-2 border-black/30 border-t-black rounded-full animate-spin"></div>
+                                            Procesando...
+                                        </div>
+                                    ) : (
+                                        mode === 'login' ? 'Entrar al Núcleo' : (mode === 'register' ? 'Inicializar Nodo' : 'Confirmar Cambio')
+                                    )}
+                                </button>
+                            </form>
 
-                                {/* Manifesto Check */}
-                                <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', fontSize: '12px', color: '#ccc' }}>
-                                    <input 
-                                        type="checkbox" 
-                                        checked={agreedManifesto}
-                                        onChange={(e) => setAgreedManifesto(e.target.checked)}
-                                        style={{ marginTop: '2px', cursor: 'pointer' }}
-                                    />
-                                    <span>
-                                        He leído el <span onClick={(e) => { e.preventDefault(); onOpenLegal('manifesto'); }} style={{ color: '#D4AF37', textDecoration: 'underline' }}>Manifiesto</span>. Me comprometo a no hacer Spam y a usar la IA de forma ética.
-                                    </span>
-                                </label>
+                            <div className="mt-8 flex flex-col items-center gap-5">
+                                {mode === 'login' && (
+                                    <button onClick={() => setMode('recovery')} className="text-[10px] text-gray-600 hover:text-brand-gold uppercase font-black tracking-widest transition-colors">¿Olvidaste tu contraseña?</button>
+                                )}
+                                <div className="text-[10px] text-gray-700 font-black uppercase tracking-[0.2em]">
+                                    {mode === 'login' ? '¿Sin acceso?' : '¿Ya tienes un nodo?'}
+                                    <button onClick={() => setMode(mode === 'login' ? 'register' : 'login')} className="ml-3 text-brand-gold hover:underline decoration-brand-gold/30 underline-offset-4">
+                                        {mode === 'login' ? 'Solicitar Nodo' : 'Ingresar'}
+                                    </button>
+                                </div>
                             </div>
-                        )}
-
-                        {error && (
-                            <div style={{ padding: '8px', backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#fca5a5', borderRadius: '4px', fontSize: '12px', textAlign: 'center' }}>
-                                {error}
-                            </div>
-                        )}
-
-                        <button 
-                            type="submit" 
-                            disabled={isSubmitDisabled}
-                            style={{
-                                width: '100%', padding: '14px', marginTop: '8px',
-                                background: isSubmitDisabled ? '#333' : 'linear-gradient(90deg, #997B19, #D4AF37)',
-                                border: 'none', borderRadius: '8px',
-                                color: isSubmitDisabled ? '#666' : '#000', 
-                                fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px',
-                                cursor: isSubmitDisabled ? 'not-allowed' : 'pointer', 
-                                opacity: isSubmitDisabled ? 0.7 : 1,
-                                transition: 'all 0.3s'
-                            }}
-                        >
-                            {loading ? 'Procesando...' : (mode === 'login' ? 'Ingresar' : 'Confirmar Acceso')}
-                        </button>
-                    </form>
-
-                    <div style={{ marginTop: '20px', textAlign: 'center', paddingTop: '16px', borderTop: '1px solid #222' }}>
-                        <p style={{ color: '#666', fontSize: '13px' }}>
-                            {mode === 'login' ? '¿No tienes credenciales?' : '¿Ya tienes acceso?'}
-                            <button 
-                                onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(''); }}
-                                style={{ background: 'none', border: 'none', color: '#D4AF37', fontWeight: 'bold', marginLeft: '8px', cursor: 'pointer' }}
-                            >
-                                {mode === 'login' ? 'Solicitar Acceso' : 'Iniciar Sesión'}
-                            </button>
-                        </p>
-                    </div>
+                        </>
+                    )}
                 </div>
             </div>
         </div>

@@ -11,12 +11,22 @@ const SessionSchema = new Schema({
 // Safely define model to prevent overwrite errors during hot-reload
 const SessionModel = mongoose.models.BaileysSession || mongoose.model('BaileysSession', SessionSchema);
 
+export const clearBindedSession = async (userId: string) => {
+    try {
+        // Borramos cualquier documento cuyo _id empiece con el userId (ej: "user123_creds", "user123_keys...")
+        const pattern = new RegExp(`^${userId}_`);
+        await (SessionModel as any).deleteMany({ _id: { $regex: pattern } }).exec();
+        console.log(`[AUTH] Sesión purgada para ${userId}`);
+    } catch(e) {
+        console.error(`[AUTH] Error purgando sesión de ${userId}:`, e);
+    }
+};
+
 export const useMongoDBAuthState = async (collectionName: string) => {
     
     // Helper to read data
     const readData = async (type: string, id: string) => {
         const key = `${collectionName}_${type}_${id}`;
-        // Use findOne({ _id: key }) instead of findById for consistent typing
         const doc = await (SessionModel as any).findOne({ _id: key }).exec();
         if (doc && doc.data) {
             return JSON.parse(JSON.stringify(doc.data), BufferJSON.reviver);
@@ -28,14 +38,12 @@ export const useMongoDBAuthState = async (collectionName: string) => {
     const writeData = async (type: string, id: string, data: any) => {
         const key = `${collectionName}_${type}_${id}`;
         const serialized = JSON.parse(JSON.stringify(data, BufferJSON.replacer));
-        // Use findOneAndUpdate for better Mongoose compatibility in this context
         await (SessionModel as any).findOneAndUpdate({ _id: key }, { _id: key, data: serialized }, { upsert: true }).exec();
     };
 
     // Helper to remove data
     const removeData = async (type: string, id: string) => {
          const key = `${collectionName}_${type}_${id}`;
-         // Use findOneAndDelete for consistent behavior
          await (SessionModel as any).findOneAndDelete({ _id: key }).exec();
     };
 
@@ -46,7 +54,6 @@ export const useMongoDBAuthState = async (collectionName: string) => {
             creds,
             keys: {
                 get: async (type: string, ids: string[]) => {
-                    // Use 'any' for the dictionary to bypass strict index signature check TS2537
                     const data: { [key: string]: any } = {};
                     await Promise.all(ids.map(async (id) => {
                         let value = await readData(type, id);

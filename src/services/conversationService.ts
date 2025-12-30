@@ -1,6 +1,6 @@
 
-import { Conversation, LeadStatus, Message } from '../types';
-import { db } from '../database';
+import { Conversation, LeadStatus, Message } from '../types.js';
+import { db } from '../database.js';
 
 class ConversationService {
   
@@ -28,20 +28,17 @@ class ConversationService {
         firstMessageAt: new Date(),
         tags: [],
         internalNotes: [],
-        isAiSignalsEnabled: true // Default ON for new leads
+        isAiSignalsEnabled: true 
       };
     }
 
     conversation.messages.push(message);
     conversation.lastActivity = new Date();
     
-    // HUMAN INTERVENTION LOGIC
     if (message.sender === 'owner') {
         conversation.isMuted = false;
-        console.log(`[SIGNAL] Unmuted conversation ${jid} due to human intervention.`);
     }
 
-    // Auto-status update (legacy fallback)
     if (message.sender === 'user' && conversation.status === LeadStatus.COLD) {
         conversation.status = LeadStatus.WARM;
     }

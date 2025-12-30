@@ -1,5 +1,5 @@
 
-// Shared types between Frontend and Backend - v2.6 (Governance Update)
+// Shared types between Frontend and Backend - v2.8.0 (Elite Update)
 
 export enum LeadStatus {
   COLD = 'Frío',
@@ -8,13 +8,13 @@ export enum LeadStatus {
 }
 
 export enum View {
-  CHATS = 'SIGNALS',
+  CHATS = 'SIGNALS', // Renamed to Signals
   SETTINGS = 'CORE',
   CONNECTION = 'NODES',
   SANDBOX = 'SANDBOX',
-  DASHBOARD = 'DASHBOARD', // Added missing member
-  ADMIN_GLOBAL = 'ADMIN_GLOBAL', // Super Admin View
-  AUDIT_MODE = 'AUDIT_MODE'      // Support/Auditing View
+  DASHBOARD = 'DASHBOARD',
+  ADMIN_GLOBAL = 'ADMIN_GLOBAL',
+  AUDIT_MODE = 'AUDIT_MODE'
 }
 
 export enum ConnectionStatus {
@@ -33,7 +33,27 @@ export enum PromptArchetype {
 
 export type SystemState = 'ACTIVE' | 'PAUSED' | 'LIMITED' | 'SUSPENDED';
 
-export type IntendedUse = 'VENTAS_CONSULTIVAS' | 'SOPORTE' | 'OTRO';
+export type IntendedUse = 
+  | 'HIGH_TICKET_AGENCY' 
+  | 'REAL_ESTATE' 
+  | 'ECOMMERCE_SUPPORT' 
+  | 'DIGITAL_LAUNCHES' 
+  | 'PROFESSIONAL_SERVICES'
+  | 'OTHER'
+  | 'VENTAS_CONSULTIVAS'
+  | 'SOPORTE'
+  | 'OTRO';
+
+// FASE 1: Blindaje - Contrato de Señal
+export interface Signal {
+  id: string;
+  source: 'WHATSAPP' | 'INSTAGRAM' | 'WEB';
+  senderId: string;
+  senderName?: string;
+  content: string;
+  timestamp: Date;
+  metadata?: any;
+}
 
 export interface Message {
   id: string;
@@ -61,9 +81,10 @@ export interface Conversation {
   tags: string[];
   internalNotes: InternalNote[];
   isAiSignalsEnabled: boolean;
-  // Added missing fields
   firstMessageAt?: Date | string;
   escalatedAt?: Date | string;
+  // FASE 2: Copiloto
+  suggestedReplies?: string[]; 
 }
 
 export interface BotSettings {
@@ -80,26 +101,36 @@ export interface BotSettings {
   rhythmValue: number;
   intensityValue: number;
   isWizardCompleted: boolean;
+  pwaEnabled: boolean;
+  pushEnabled: boolean;
+  audioEnabled: boolean;
+  ttsEnabled: boolean;
 }
 
 export interface User {
   id: string;
   username: string; 
-  password?: string; // Added password property
-  role: 'admin' | 'client' | 'super_admin'; // Extended roles
+  password?: string;
+  recoveryKey?: string; 
+  loginAttempts?: number; 
+  lockedUntil?: string; 
+  role: 'admin' | 'client' | 'super_admin';
+  intendedUse: IntendedUse;
   settings: BotSettings;
   conversations: Record<string, Conversation>;
   governance: {
     systemState: SystemState;
-    riskScore: number; // 0-100
+    riskScore: number;
+    // FASE 3: Control de Calidad Humana
+    humanDeviationScore: number; 
     accountFlags: string[];
     updatedAt: string;
-    auditLogs: { timestamp: string; adminId: string; action: string }[]; // Added missing auditLogs
+    auditLogs: { timestamp: string; adminId: string; action: string }[];
   };
   planType: 'TRIAL' | 'STARTER' | 'ENTERPRISE';
   isSuspended?: boolean; 
   lastSeen?: string;
-  internalNotes?: string; // Added string notes for UserRow
+  internalNotes?: string;
 }
 
 export interface DashboardMetrics {
@@ -112,6 +143,7 @@ export interface DashboardMetrics {
   revenueEstimated: number;
   avgEscalationTimeMinutes: number;
   activeSessions: number;
+  humanDeviationScore: number; // NUEVO CAMPO REAL
 }
 
 export interface GlobalMetrics {

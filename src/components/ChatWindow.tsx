@@ -39,7 +39,15 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  useEffect(scrollToBottom, [conversation?.messages, isTyping]);
+  useEffect(scrollToBottom, [conversation?.messages, isTyping, conversation?.suggestedReplies]);
+
+  const handleSuggestionClick = (suggestion: string) => {
+      onSendMessage(suggestion);
+      // Limpiar sugerencias después de usar una
+      if (conversation && onUpdateConversation) {
+          onUpdateConversation(conversation.id, { suggestedReplies: undefined });
+      }
+  };
 
   if (!conversation) {
     return (
@@ -101,7 +109,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
               `}
             >
               {conversation.isMuted ? (
-                  <><svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"/></svg> Escalado</>
+                  <><svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"/></svg> Copiloto</>
               ) : (
                   conversation.isBotActive ? "Bot ON" : "Bot OFF"
               )}
@@ -118,15 +126,15 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
         </header>
 
         {/* MESSAGES AREA */}
-        <div className="flex-1 overflow-y-auto px-4 py-6 md:px-8 space-y-4 md:space-y-6 custom-scrollbar relative z-0">
-          {conversation.isMuted && (
+        <div className="flex-1 overflow-y-auto px-4 py-6 md:px-8 space-y-4 md:space-y-6 custom-scrollbar relative z-0 pb-32">
+          {conversation.isMuted && !conversation.suggestedReplies && (
               <div className="bg-brand-gold/10 border border-brand-gold/20 p-4 rounded-xl mb-6 flex items-start gap-4 animate-fade-in shadow-[0_4px_20px_rgba(212,175,55,0.05)]">
                   <div className="p-2 bg-brand-gold/20 rounded-lg text-brand-gold">
                       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
                   </div>
                   <div>
-                      <h4 className="text-sm font-bold text-white uppercase tracking-tight">Signal: Prioridad de Cierre</h4>
-                      <p className="text-xs text-gray-400 mt-1">IA en modo observación. Revisa la <strong className="text-brand-gold">Acción Sugerida</strong> en el panel derecho para proceder.</p>
+                      <h4 className="text-sm font-bold text-white uppercase tracking-tight">Shadow Mode Activo</h4>
+                      <p className="text-xs text-gray-400 mt-1">El control manual es requerido. Revisa el panel lateral.</p>
                   </div>
               </div>
           )}
@@ -144,10 +152,32 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           <div ref={messagesEndRef} />
         </div>
 
+        {/* COPILOT SUGGESTIONS PANEL */}
+        {conversation.suggestedReplies && conversation.suggestedReplies.length > 0 && (
+            <div className="absolute bottom-[88px] left-0 right-0 p-4 bg-gradient-to-t from-brand-black via-brand-black/95 to-transparent z-20">
+                <div className="flex items-center gap-2 mb-2 px-2">
+                    <span className="w-2 h-2 bg-brand-gold rounded-full animate-pulse"></span>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-brand-gold">Sugerencias de Cierre (Copiloto)</span>
+                </div>
+                <div className="flex flex-col md:flex-row gap-2 overflow-x-auto pb-2">
+                    {conversation.suggestedReplies.map((reply, idx) => (
+                        <button 
+                            key={idx}
+                            onClick={() => handleSuggestionClick(reply)}
+                            className="flex-1 text-left bg-white/5 backdrop-blur-md border border-brand-gold/30 hover:bg-brand-gold/20 hover:border-brand-gold p-3 rounded-xl transition-all group min-w-[200px]"
+                        >
+                            <span className="block text-[10px] text-gray-500 font-bold uppercase mb-1 group-hover:text-brand-gold">Opción {idx + 1}</span>
+                            <p className="text-xs text-gray-200 line-clamp-2">{reply}</p>
+                        </button>
+                    ))}
+                </div>
+            </div>
+        )}
+
         <ChatInput
           onSendMessage={onSendMessage}
           disabled={!isBotGloballyActive || (conversation.isBotActive && !conversation.isMuted)}
-          placeholder={conversation.isMuted ? 'Responde para cerrar la venta...' : (conversation.isBotActive ? 'El bot tiene el control...' : 'Escribe un mensaje...')}
+          placeholder={conversation.isMuted ? 'Escribe o selecciona una sugerencia...' : (conversation.isBotActive ? 'El bot tiene el control...' : 'Escribe un mensaje...')}
         />
       </div>
 

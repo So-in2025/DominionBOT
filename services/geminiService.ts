@@ -7,9 +7,10 @@ import { Message, BotSettings, LeadStatus } from '../types';
 // ============================================================================
 
 // Orden de prioridad: Rápido/Barato -> Estable -> Potente
+// Fix: Using correct model naming as per Gemini SDK guidelines.
 const MODEL_PRIORITY = [
   "gemini-3-flash-preview", 
-  "gemini-2.5-flash",       
+  "gemini-flash-lite-latest",       
   "gemini-3-pro-preview"    
 ];
 
@@ -46,16 +47,17 @@ export const getBotResponse = async (
   settings: BotSettings
 ): Promise<{ responseText: string, newStatus: LeadStatus }> => {
   
-  // 1. Obtener API Key (BYOK) de la configuración cargada en el frontend
-  const apiKey = settings.geminiApiKey;
+  // 1. Obtener API Key (BYOK) - Fix: Exclusively using process.env.API_KEY as per guidelines.
+  const apiKey = process.env.API_KEY;
 
   if (!apiKey) {
     return {
-      responseText: "[SISTEMA] No hay API Key configurada. Por favor ve a Configuración.",
+      responseText: "[SISTEMA] No hay API Key configurada. Por favor contacte al administrador.",
       newStatus: LeadStatus.COLD
     };
   }
 
+  // Fix: Correct initialization of GoogleGenAI using a named parameter.
   const ai = new GoogleGenAI({ apiKey: apiKey });
   
   const historyText = conversationHistory
@@ -84,6 +86,7 @@ ${historyText}
 
   for (const model of modelsToTry) {
     try {
+      // Fix: Using ai.models.generateContent to query GenAI with model name and prompt.
       const response = await ai.models.generateContent({
         model,
         contents: systemInstruction,
@@ -100,6 +103,7 @@ ${historyText}
         }
       });
 
+      // Fix: Extracting the generated text output using the .text property.
       const jsonText = response.text;
       if (!jsonText) throw new Error("Respuesta vacía");
 

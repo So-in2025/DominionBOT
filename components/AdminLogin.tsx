@@ -1,14 +1,13 @@
 
 import React, { useState, useEffect } from 'react';
 
-// Support both standard process.env (local) and Vite's import.meta.env (production)
-const BACKEND_URL = ((import.meta as any).env && (import.meta as any).env.VITE_BACKEND_URL) || process.env.BACKEND_URL || 'http://localhost:3001';
+// Fallback directo a la URL de Render para producción
+const BACKEND_URL = (import.meta as any).env?.VITE_BACKEND_URL || 'https://dominion-backend-ahsh.onrender.com';
 
 interface AdminLoginProps {
     onLogin: (token: string, role: string) => void;
 }
 
-// --- SOUND UTILS (No External Assets) ---
 const playSound = (type: 'hover' | 'click' | 'success' | 'error') => {
     try {
         const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
@@ -47,9 +46,7 @@ const playSound = (type: 'hover' | 'click' | 'success' | 'error') => {
             osc.start(now);
             osc.stop(now + 0.6);
         }
-    } catch (e) {
-        // Ignore audio errors
-    }
+    } catch (e) {}
 };
 
 const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin }) => {
@@ -69,31 +66,34 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin }) => {
         setLoading(true);
         setError('');
 
-        // ALWAYS LOGIN, NEVER REGISTER
-        const endpoint = '/api/login';
-
         try {
-            const res = await fetch(`${BACKEND_URL}${endpoint}`, {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 12000);
+
+            const res = await fetch(`${BACKEND_URL}/api/login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, password })
+                body: JSON.stringify({ username, password }),
+                signal: controller.signal
             });
 
+            clearTimeout(timeoutId);
             const data = await res.json();
 
             if (res.ok && data.token) {
-                if (data.role !== 'admin') {
-                    setError('Acceso denegado: Esta cuenta no es administrativa.');
+                if (data.role !== 'admin' && data.role !== 'super_admin') {
+                    setError('Acceso denegado: Esta cuenta no tiene permisos administrativos.');
+                    setLoading(false);
                     return;
                 }
                 playSound('success');
                 onLogin(data.token, data.role);
             } else {
                 playSound('hover'); 
-                setError(data.message || 'Credenciales no válidas');
+                setError(data.message || 'Credenciales no válidas. Prueba master / dominion2024');
             }
         } catch (err) {
-            setError('Error de conexión con el servidor seguro.');
+            setError('Error de enlace con el servidor Render. Verifique conexión.');
         } finally {
             setLoading(false);
         }
@@ -102,33 +102,14 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin }) => {
     const handleInteraction = () => playSound('hover');
 
     return (
-        // FIXED POSITION + EXPLICIT BLACK BACKGROUND
-        <div className="fixed inset-0 w-screen h-screen bg-[#050505] flex items-center justify-center p-4 overflow-hidden font-sans z-50">
-            
-            {/* --- LUXURY DYNAMIC BACKGROUND --- */}
-            {/* Base Noise Texture with explicit opacity */}
+        <div className="fixed inset-0 w-screen h-screen bg-[#050505] flex items-center justify-center p-4 overflow-hidden font-sans z-[9999]">
             <div className="absolute inset-0 bg-noise z-0 opacity-10 pointer-events-none"></div>
-            
-            {/* Animated Gold/Dark Orbs - Using explicit colors */}
             <div className="absolute top-0 -left-20 w-96 h-96 bg-[#D4AF37] opacity-10 rounded-full blur-[100px] animate-blob mix-blend-screen pointer-events-none"></div>
-            <div className="absolute bottom-0 -right-20 w-96 h-96 bg-[#1a1a1a] opacity-40 rounded-full blur-[100px] animate-blob animation-delay-2000 mix-blend-screen pointer-events-none"></div>
             
-            {/* --- MAIN CARD --- */}
-            {/* Explicit background color to prevent transparency issues */}
             <div className={`relative z-10 w-full max-w-[420px] backdrop-blur-xl bg-[#121212]/95 border border-white/10 rounded-2xl shadow-2xl transition-all duration-1000 transform ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
-                
-                {/* Gold Top Border Accent */}
                 <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-[#D4AF37] to-transparent opacity-70"></div>
                 
-                {/* Decorative Glyphs */}
-                <div className="absolute top-4 right-4 opacity-20">
-                    <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" style={{width: '40px', height: '40px'}}>
-                        <path d="M20 0L24.49 15.51L40 20L24.49 24.49L20 40L15.51 24.49L0 20L15.51 15.51L20 0Z" fill="#D4AF37"/>
-                    </svg>
-                </div>
-
                 <div className="p-10">
-                    {/* LOGO & HEADER */}
                     <div className="text-center mb-10">
                         <div className="inline-block p-3 rounded-full bg-gradient-to-br from-gray-900 to-black border border-[#D4AF37]/30 shadow-lg shadow-[#D4AF37]/10 mb-4 animate-float">
                             <svg className="w-8 h-8 text-[#D4AF37]" style={{width: '32px', height: '32px'}} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -136,74 +117,61 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin }) => {
                             </svg>
                         </div>
                         <h1 className="text-2xl font-bold text-white tracking-tight">
-                            Acceso <span className="text-[#D4AF37]">Administrativo</span>
+                            Acceso <span className="text-[#D4AF37]">Dominion</span>
                         </h1>
-                        <p className="text-gray-400 text-xs mt-2 uppercase tracking-[0.2em]">Restricted Area</p>
+                        <p className="text-gray-400 text-xs mt-2 uppercase tracking-[0.2em]">Restricted Administrative Node</p>
                     </div>
 
                     <form onSubmit={handleSubmit} className="space-y-6">
-                        {/* INPUT GROUP 1 */}
                         <div className="group">
-                            <label className="block text-xs font-medium text-[#D4AF37] mb-1 ml-1 opacity-100 transition-opacity">ID ADMIN</label>
-                            <div className="relative">
-                                <input 
-                                    type="text" 
-                                    value={username}
-                                    onChange={(e) => setUsername(e.target.value)}
-                                    onFocus={handleInteraction}
-                                    className="w-full px-4 py-3 bg-[#000000]/60 border border-white/10 rounded-lg text-gray-100 placeholder-gray-600 focus:outline-none focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37] transition-all duration-300"
-                                    placeholder="Usuario"
-                                    required
-                                />
-                            </div>
+                            <label className="block text-[10px] font-black text-[#D4AF37] mb-1 ml-1 uppercase tracking-widest">ID Operador</label>
+                            <input 
+                                type="text" 
+                                value={username}
+                                onChange={(e) => setUsername(e.target.value)}
+                                onFocus={handleInteraction}
+                                className="w-full px-4 py-3 bg-black border border-white/10 rounded-lg text-gray-100 placeholder-gray-700 focus:outline-none focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37] transition-all"
+                                placeholder="master"
+                                required
+                            />
                         </div>
 
-                        {/* INPUT GROUP 2 */}
                         <div className="group">
-                            <label className="block text-xs font-medium text-[#D4AF37] mb-1 ml-1 opacity-100 transition-opacity">CONTRASEÑA</label>
+                            <label className="block text-[10px] font-black text-[#D4AF37] mb-1 ml-1 uppercase tracking-widest">Clave de Encriptación</label>
                             <input 
                                 type="password" 
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
                                 onFocus={handleInteraction}
-                                className="w-full px-4 py-3 bg-[#000000]/60 border border-white/10 rounded-lg text-gray-100 placeholder-gray-600 focus:outline-none focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37] transition-all duration-300"
+                                className="w-full px-4 py-3 bg-black border border-white/10 rounded-lg text-gray-100 placeholder-gray-700 focus:outline-none focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37] transition-all"
                                 placeholder="••••••••"
                                 required
                             />
                         </div>
 
                         {error && (
-                            <div className="p-3 bg-red-900/20 border border-red-500/20 rounded text-red-300 text-xs text-center backdrop-blur-sm animate-fade-in">
+                            <div className="p-3 bg-red-900/20 border border-red-500/20 rounded text-red-300 text-[10px] font-bold text-center animate-fade-in uppercase tracking-tight">
                                 {error}
                             </div>
                         )}
 
-                        {/* CTA BUTTON */}
                         <button 
                             type="submit" 
                             disabled={loading}
                             onMouseEnter={handleInteraction}
-                            className={`relative w-full py-4 rounded-lg font-bold text-sm uppercase tracking-wider transition-all duration-300 overflow-hidden group ${
+                            className={`relative w-full py-4 rounded-lg font-black text-xs uppercase tracking-widest transition-all duration-300 ${
                                 loading 
-                                    ? 'bg-gray-800 text-gray-500 cursor-not-allowed' 
-                                    : 'bg-gradient-to-r from-[#997B19] to-[#D4AF37] text-black hover:shadow-[0_0_20px_rgba(212,175,55,0.4)] hover:scale-[1.01]'
+                                    ? 'bg-white/5 text-gray-500 cursor-not-allowed' 
+                                    : 'bg-gradient-to-r from-[#997B19] to-[#D4AF37] text-black hover:shadow-[0_0_20px_rgba(212,175,55,0.4)]'
                             }`}
                         >
-                            <span className="relative z-10 flex items-center justify-center space-x-2">
-                                {loading && (
-                                    <svg className="animate-spin h-4 w-4 text-black" style={{width: '16px', height: '16px'}} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>
-                                )}
-                                <span>{loading ? 'Verificando...' : 'Entrar al Sistema'}</span>
-                            </span>
+                            {loading ? 'Sincronizando...' : 'Entrar al Núcleo'}
                         </button>
                     </form>
 
                     <div className="mt-8 text-center">
-                        <p className="text-[10px] text-gray-600">
-                           Acceso monitoreado. IP registrada.
+                        <p className="text-[9px] text-gray-600 uppercase tracking-widest font-bold">
+                           Acceso monitoreado vía Neural Guard v2.7.6
                         </p>
                     </div>
                 </div>

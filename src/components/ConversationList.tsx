@@ -25,7 +25,8 @@ const ConversationList: React.FC<ConversationListProps> = ({ conversations, sele
   }, [conversations, searchTerm, statusFilter]);
 
   return (
-    <aside className="hidden md:flex flex-col w-80 bg-brand-surface border-r border-white/10 h-full flex-shrink-0 backdrop-blur-md">
+    // SE ELIMINÓ 'hidden md:flex' para permitir visualización en móviles (controlado por App.tsx)
+    <aside className="flex flex-col w-full md:w-80 bg-brand-surface border-r border-white/10 h-full flex-shrink-0 backdrop-blur-md">
       {/* Search & Filter Header */}
       <div className="p-4 border-b border-white/10 space-y-3">
         <div className="relative">

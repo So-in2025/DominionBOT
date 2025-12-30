@@ -34,16 +34,31 @@ const ConnectionPanel: React.FC<ConnectionPanelProps> = ({ status, qrCode, pairi
         setIsLoading(true);
         try {
             await onConnect(linkMode === 'NUMBER' ? phoneNumber : undefined);
-            // Liberamos la UI rápidamente para dejar que el Polling haga su trabajo
-            setTimeout(() => setIsLoading(false), 3000); 
+            // Si después de 30s no hay cambio, liberamos el botón para reintentar
+            setTimeout(() => {
+                if (status === ConnectionStatus.DISCONNECTED || status === ConnectionStatus.GENERATING_QR) {
+                    setIsLoading(false);
+                }
+            }, 30000); 
         } catch (e) {
             console.error(e);
             setIsLoading(false);
         }
     };
 
+    const handleForceReset = () => {
+        setIsLoading(true);
+        onDisconnect(); // Forzar desconexión local/remota
+        setTimeout(() => setIsLoading(false), 2000);
+    };
+
+    // Si el estado cambia (por SSE), actualizamos isLoading
     useEffect(() => {
         if (status === ConnectionStatus.AWAITING_SCAN || status === ConnectionStatus.CONNECTED) {
+            setIsLoading(false);
+        }
+        // Si el servidor nos dice explícitamente "Desconectado" después de haber intentado conectar, apagamos el loading
+        if (status === ConnectionStatus.DISCONNECTED) {
             setIsLoading(false);
         }
     }, [status]);
@@ -102,7 +117,12 @@ const ConnectionPanel: React.FC<ConnectionPanelProps> = ({ status, qrCode, pairi
                         </button>
                         
                         {isLoading && (
-                            <p className="text-[9px] text-gray-500 animate-pulse">Sincronizando con nodo central...</p>
+                            <div className="space-y-2">
+                                <p className="text-[9px] text-gray-500 animate-pulse">Generando sesión criptográfica...</p>
+                                <button onClick={handleForceReset} className="text-[8px] text-red-400 hover:underline cursor-pointer">
+                                    ¿Tarda mucho? Forzar reinicio
+                                </button>
+                            </div>
                         )}
                     </div>
                 );
@@ -111,7 +131,9 @@ const ConnectionPanel: React.FC<ConnectionPanelProps> = ({ status, qrCode, pairi
                     <div className="flex flex-col items-center py-10 space-y-4">
                         <div className="w-12 h-12 border-2 border-brand-gold/20 border-t-brand-gold rounded-full animate-spin"></div>
                         <p className="text-brand-gold text-[9px] font-black uppercase tracking-[0.3em] animate-pulse">Generando Nodo de Enlace...</p>
-                        <p className="text-gray-600 text-[8px] max-w-[200px] text-center">Si esto tarda más de 30s, recarga la página.</p>
+                        <button onClick={handleForceReset} className="text-gray-600 text-[8px] max-w-[200px] text-center hover:text-red-400">
+                            Si esto tarda más de 30s, haz click para reiniciar.
+                        </button>
                     </div>
                 );
             case ConnectionStatus.AWAITING_SCAN:

@@ -1,26 +1,37 @@
+
 import React from 'react';
 import { LEGAL_TEXTS } from '../data/legalText';
 
-// Simple Markdown-ish renderer
+// Renderer de Markdown simplificado
 const SimpleRenderer: React.FC<{ content: string }> = ({ content }) => {
     return (
-        <div style={{ color: '#ccc', fontSize: '14px', lineHeight: '1.6' }}>
+        <div className="space-y-4 text-gray-300 text-sm leading-relaxed">
             {content.split('\n').map((line, i) => {
-                if (line.startsWith('### ')) {
-                    return <h3 key={i} style={{ color: '#fff', fontSize: '16px', fontWeight: 'bold', marginTop: '24px', marginBottom: '8px' }}>{line.replace('### ', '')}</h3>;
+                const trimmed = line.trim();
+                if (!trimmed) return <div key={i} className="h-2"></div>;
+                
+                if (trimmed.startsWith('### ')) {
+                    return (
+                        <h3 key={i} className="text-white text-base font-bold mt-6 mb-2">
+                            {trimmed.replace('### ', '')}
+                        </h3>
+                    );
                 }
-                if (line.startsWith('* ')) {
-                    return <li key={i} style={{ marginLeft: '20px', marginBottom: '4px' }}>{line.replace('* ', '')}</li>;
+                
+                if (trimmed.startsWith('* ')) {
+                    return (
+                        <li key={i} className="ml-5 mb-1 list-disc">
+                            {trimmed.replace('* ', '')}
+                        </li>
+                    );
                 }
-                if (line.trim() === '') {
-                    return <div key={i} style={{ height: '8px' }}></div>;
-                }
-                // Handle bold text roughly
-                const parts = line.split('**');
+                
+                // Manejo básico de negritas
+                const parts = trimmed.split('**');
                 return (
-                    <p key={i} style={{ marginBottom: '8px' }}>
+                    <p key={i}>
                         {parts.map((part, idx) => 
-                            idx % 2 === 1 ? <strong key={idx} style={{ color: '#D4AF37' }}>{part}</strong> : part
+                            idx % 2 === 1 ? <strong key={idx} className="text-brand-gold font-bold">{part}</strong> : part
                         )}
                     </p>
                 );
@@ -41,42 +52,25 @@ const LegalModal: React.FC<LegalModalProps> = ({ type, onClose }) => {
     const isManifesto = type === 'manifesto';
 
     return (
-        <div style={{
-            position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
-            zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            backdropFilter: 'blur(8px)', backgroundColor: 'rgba(5, 5, 5, 0.8)'
-        }}>
-            <div style={{ position: 'absolute', inset: 0 }} onClick={onClose}></div>
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-brand-black/80 backdrop-blur-md animate-fade-in">
+            <div className="absolute inset-0" onClick={onClose}></div>
             
-            <div style={{
-                position: 'relative',
-                width: '90%', maxWidth: '600px', maxHeight: '85vh',
-                backgroundColor: '#121212', 
-                border: isManifesto ? '1px solid #D4AF37' : '1px solid #333',
-                borderRadius: '16px',
-                boxShadow: isManifesto ? '0 0 50px rgba(212, 175, 55, 0.15)' : '0 20px 50px rgba(0,0,0,0.5)',
-                display: 'flex', flexDirection: 'column',
-                animation: 'fade-in 0.3s ease-out'
-            }}>
+            <div className={`relative w-full max-w-2xl max-h-[85vh] bg-brand-surface border rounded-2xl shadow-2xl flex flex-col overflow-hidden ${isManifesto ? 'border-brand-gold' : 'border-white/10'}`}>
                 {/* Header */}
-                <div style={{ 
-                    padding: '24px', borderBottom: '1px solid #222', 
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    background: isManifesto ? 'linear-gradient(180deg, rgba(212,175,55,0.05) 0%, rgba(0,0,0,0) 100%)' : 'transparent'
-                }}>
+                <div className={`px-6 py-5 border-b border-white/10 flex justify-between items-center ${isManifesto ? 'bg-brand-gold/5' : 'bg-black/20'}`}>
                     <div>
-                        {isManifesto && <span style={{ fontSize: '10px', color: '#D4AF37', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '2px' }}>NUESTRA FILOSOFÍA</span>}
-                        <h2 style={{ color: '#fff', fontSize: '20px', fontWeight: 'bold', margin: 0 }}>{data.title}</h2>
-                        {!isManifesto && <p style={{ color: '#666', fontSize: '11px', margin: '4px 0 0 0' }}>{(data as any).lastUpdated}</p>}
+                        {isManifesto && <span className="text-[10px] text-brand-gold font-black uppercase tracking-[0.2em] mb-1 block">NUESTRA FILOSOFÍA</span>}
+                        <h2 className="text-white text-xl font-black">{data.title}</h2>
+                        {!isManifesto && <p className="text-gray-500 text-[10px] mt-1">{(data as any).lastUpdated}</p>}
                     </div>
-                    <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#666', fontSize: '24px', cursor: 'pointer' }}>×</button>
+                    <button onClick={onClose} className="text-gray-500 hover:text-white text-2xl p-2 transition-colors">&times;</button>
                 </div>
 
                 {/* Content */}
-                <div style={{ padding: '32px', overflowY: 'auto', flex: 1 }}>
+                <div className="p-8 overflow-y-auto flex-1 custom-scrollbar">
                     {isManifesto && (
-                        <div style={{ marginBottom: '24px', padding: '16px', backgroundColor: 'rgba(212, 175, 55, 0.05)', borderRadius: '8px', borderLeft: '3px solid #D4AF37' }}>
-                            <p style={{ fontSize: '13px', fontStyle: 'italic', color: '#e5e7eb' }}>
+                        <div className="mb-6 p-4 bg-brand-gold/5 border-l-4 border-brand-gold rounded-r-lg">
+                            <p className="text-sm italic text-gray-200">
                                 "Esto no es un documento legal. Es un acuerdo de caballeros sobre cómo usamos la tecnología."
                             </p>
                         </div>
@@ -85,15 +79,10 @@ const LegalModal: React.FC<LegalModalProps> = ({ type, onClose }) => {
                 </div>
 
                 {/* Footer */}
-                <div style={{ padding: '20px', borderTop: '1px solid #222', textAlign: 'right' }}>
+                <div className="px-6 py-4 border-t border-white/10 bg-black/40 text-right">
                     <button 
                         onClick={onClose}
-                        style={{
-                            padding: '10px 24px', borderRadius: '8px', border: 'none',
-                            backgroundColor: isManifesto ? '#D4AF37' : '#333',
-                            color: isManifesto ? '#000' : '#fff',
-                            fontWeight: 'bold', cursor: 'pointer', fontSize: '14px'
-                        }}
+                        className={`px-8 py-2.5 rounded-lg font-black text-sm uppercase tracking-widest transition-all ${isManifesto ? 'bg-brand-gold text-black' : 'bg-white/10 text-white hover:bg-white/20'}`}
                     >
                         {isManifesto ? 'Entendido' : 'Cerrar'}
                     </button>

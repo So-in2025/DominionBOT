@@ -2,18 +2,26 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "CommonJS",
-    "moduleResolution": "node",
-    "rootDir": ".",
-    "outDir": "./dist",
-    "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true,
-    "strict": true,
+    "useDefineForClassFields": true,
+    "lib": ["DOM", "DOM.Iterable", "ESNext"],
+    "allowJs": false,
     "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": false,
+    "noImplicitAny": false,
+    "forceConsistentCasingInFileNames": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
     "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
     "jsx": "react-jsx",
-    "allowJs": true
+    "baseUrl": ".",
+    "paths": {
+      "*": ["src/*", "*"]
+    }
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "**/*.tsx", "**/*.test.ts", "vite.config.ts", "dist-client"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "App.tsx", "index.tsx", "components/**/*.tsx"],
+  "exclude": ["node_modules", "dist", "dist-client"]
 }

@@ -9,28 +9,8 @@ interface SettingsPanelProps {
   onOpenLegal: (type: 'privacy' | 'terms' | 'manifesto') => void;
 }
 
-const DEFAULT_SETTINGS: BotSettings = {
-    productName: '',
-    productDescription: '',
-    priceText: '',
-    freeTrialDays: 0,
-    ctaLink: '',
-    isActive: true,
-    disabledMessage: '',
-    archetype: PromptArchetype.CONSULTATIVE,
-    toneValue: 3,
-    rhythmValue: 3,
-    intensityValue: 3,
-    isWizardCompleted: false,
-    pwaEnabled: false,
-    pushEnabled: false,
-    audioEnabled: false,
-    ttsEnabled: false
-};
-
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUpdateSettings, onOpenLegal }) => {
-  // Inicializar con settings si existen, sino con DEFAULT para evitar pantalla en blanco/spinner eterno
-  const [current, setCurrent] = useState<BotSettings>(settings || DEFAULT_SETTINGS);
+  const [current, setCurrent] = useState<BotSettings | null>(settings);
   const [isSaved, setIsSaved] = useState(false);
   const [isSimulating, setIsSimulating] = useState(false);
   const [simResults, setSimResults] = useState<any[]>([]);
@@ -72,8 +52,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
       }
   };
 
-  // Solo mostramos spinner si explícitamente está cargando Y no tenemos datos previos
-  if (isLoading && !settings) {
+  if (isLoading || !current) {
     return (
         <div className="flex-1 flex flex-col items-center justify-center bg-brand-black p-10">
             <div className="relative w-20 h-20 mb-6">
@@ -118,18 +97,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
   return (
     <div className="flex-1 bg-brand-black p-6 md:p-10 overflow-y-auto h-full custom-scrollbar font-sans animate-fade-in">
       <form onSubmit={save} className="max-w-6xl mx-auto space-y-10 pb-20">
-        
-        {/* Aviso si estamos usando defaults */}
-        {!settings && !isLoading && (
-            <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-xl flex items-center gap-4">
-                <span className="text-2xl">⚠️</span>
-                <div>
-                    <h4 className="text-sm font-bold text-red-400">Modo Desconectado</h4>
-                    <p className="text-xs text-gray-400">No se pudo cargar la configuración del servidor. Los cambios se intentarán guardar localmente.</p>
-                </div>
-            </div>
-        )}
-
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
             <div className="space-y-10">
                 <section className="bg-brand-surface border border-white/5 rounded-3xl p-8 shadow-2xl relative overflow-hidden">
@@ -155,6 +122,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
                     {slider("Intensidad", "intensityValue", "Informativo", "Cierre Agresivo", "Impacta en el empuje de ventas.")}
                 </section>
                 
+                {/* FASE 4: LABORATORIO DE PROMPTS */}
                 <section className="bg-brand-surface border border-white/5 rounded-3xl p-8 shadow-2xl border-l-4 border-l-brand-gold">
                     {layerHeader("05", "Laboratorio de Prompts", "Replay de Seguridad: Prueba cambios sin riesgo.")}
                     <div className="space-y-4">
