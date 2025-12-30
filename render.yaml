@@ -1,0 +1,28 @@
+
+# Dominion Bot SaaS - Render Blueprint
+# This file enables one-click deployment for the backend service on Render.
+services:
+  - type: web
+    name: dominion-backend
+    env: node
+    # Plan Free
+    plan: free
+    # --- Build & Start Commands ---
+    buildCommand: "npm install && npm run build"
+    startCommand: "npm start"
+    # --- Health Check ---
+    healthCheckPath: /api/health
+    # --- Environment Variables ---
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: JWT_SECRET
+        generateValue: true
+      - key: MONGO_URI
+        # Tu base de datos de MongoDB Atlas
+        value: mongodb+srv://admin:C3WcIkonjZ4tnYUN@cluster0.rxgrwk7.mongodb.net/dominion_saas?retryWrites=true&w=majority&appName=Cluster0
+      - key: CORS_ORIGIN
+        value: "*" # Permite conexiones desde cualquier lugar (ideal para primer despliegue sin errores)
+    # --- NO DISK NEEDED (Using MongoDB) ---

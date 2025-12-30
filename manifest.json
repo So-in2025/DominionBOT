@@ -1,0 +1,23 @@
+
+{
+  "name": "Dominion OS v2.7",
+  "short_name": "Dominion",
+  "description": "Infraestructura comercial autónoma de alto rendimiento.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#050505",
+  "theme_color": "#D4AF37",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2092/2092040.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2092/2092040.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "orientation": "portrait"
+}

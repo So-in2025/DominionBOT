@@ -1,0 +1,120 @@
+
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>Dominion Bot | Operador Comercial Autónomo</title>
+    
+    <!-- Fuentes Premium -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS Engine -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Configuración de Marca y Estética -->
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+            },
+            colors: {
+              brand: {
+                gold: '#D4AF37',
+                'gold-light': '#F9DF74',
+                'gold-dark': '#997B19',
+                black: '#050505',
+                surface: '#121212',
+              },
+            },
+            animation: {
+              'blob': 'blob 10s infinite',
+              'fade-in': 'fadeIn 0.6s ease-out forwards',
+              'float': 'float 6s ease-in-out infinite',
+              'pulse-gold': 'pulseGold 2s infinite',
+            },
+            keyframes: {
+              blob: {
+                '0%': { transform: 'translate(0px, 0px) scale(1)' },
+                '33%': { transform: 'translate(30px, -50px) scale(1.1)' },
+                '66%': { transform: 'translate(-20px, 20px) scale(0.9)' },
+                '100%': { transform: 'translate(0px, 0px) scale(1)' },
+              },
+              fadeIn: {
+                '0%': { opacity: '0', transform: 'translateY(15px)' },
+                '100%': { opacity: '1', transform: 'translateY(0)' }
+              },
+              float: {
+                '0%, 100%': { transform: 'translateY(0)' },
+                '50%': { transform: 'translateY(-12px)' },
+              },
+              pulseGold: {
+                '0%, 100%': { boxShadow: '0 0 0 0 rgba(212, 175, 55, 0.4)' },
+                '50%': { boxShadow: '0 0 20px 10px rgba(212, 175, 55, 0)' },
+              }
+            }
+          }
+        }
+      }
+    </script>
+    
+    <style type="text/css">
+      :root { color-scheme: dark; }
+      body { background-color: #050505; color: #e5e7eb; margin: 0; padding: 0; font-family: 'Inter', sans-serif; overflow: hidden; }
+      #root { height: 100vh; display: flex; flex-direction: column; }
+      ::-webkit-scrollbar { width: 6px; }
+      ::-webkit-scrollbar-track { background: #050505; }
+      ::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
+      ::-webkit-scrollbar-thumb:hover { background: #D4AF37; }
+      .bg-noise { background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.03'/%3E%3C/svg%3E"); }
+      .perspective-1000 { perspective: 1000px; }
+    </style>
+
+    <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom": "https://esm.sh/react-dom@^19.2.3",
+    "react-dom/client": "https://esm.sh/react-dom@^19.2.3/client",
+    "@google/genai": "https://esm.sh/@google/genai@^1.34.0",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "bcrypt": "https://esm.sh/bcrypt@^6.0.0",
+    "uuid": "https://esm.sh/uuid@^13.0.0",
+    "cors": "https://esm.sh/cors@^2.8.5",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
+    "express": "https://esm.sh/express@^5.2.1",
+    "pino": "https://esm.sh/pino@^10.1.0",
+    "vite": "https://esm.sh/vite@^7.3.0",
+    "jsonwebtoken": "https://esm.sh/jsonwebtoken@^9.0.3",
+    "dotenv": "https://esm.sh/dotenv@^17.2.3",
+    "mongoose": "https://esm.sh/mongoose@^9.1.0",
+    "@hapi/boom": "https://esm.sh/@hapi/boom@^10.0.1",
+    "@whiskeysockets/baileys": "https://esm.sh/@whiskeysockets/baileys@^7.0.0-rc.9"
+  }
+}
+</script>
+  <link rel="stylesheet" href="/index.css">
+</head>
+  <body class="bg-brand-black text-gray-200 antialiased selection:bg-brand-gold selection:text-black">
+    <div id="root"></div>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/service-worker.js')
+            .then(reg => console.log('SW Registered', reg))
+            .catch(err => console.log('SW failed', err));
+        });
+      }
+    </script>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
