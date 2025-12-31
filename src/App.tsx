@@ -531,71 +531,79 @@ export default function App() {
     }
   }, [currentView, userRole]);
 
+  // Define fetchStatus and fetchConversations as useCallback hooks
+  const fetchStatus = useCallback(async () => {
+      if (!token || userRole === 'super_admin') {
+          setConnectionStatus(ConnectionStatus.DISCONNECTED);
+          setQrCode(null);
+          setPairingCode(null);
+          setBackendError(null);
+          return;
+      }
+      try {
+          const res = await fetch(`${BACKEND_URL}/api/status`, { headers: getAuthHeaders(token) });
+          if (res.ok) {
+              const statusData = await res.json();
+              setConnectionStatus(statusData.status);
+              setQrCode(statusData.qr || null);
+              setPairingCode(statusData.pairingCode || null);
+              if (backendError) setBackendError(null);
+          } else {
+              const errorText = await res.text();
+              const msg = `Fallo al obtener estado del nodo (${res.status}). Posiblemente el backend está inactivo.`;
+              setBackendError(`Alerta: ${msg}. Detalles: ${errorText.substring(0, 100)}`);
+              audioService.play('alert_error_connection');
+          }
+      } catch (e: any) {
+          if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
+              setBackendError("Alerta: Error de red al obtener estado. Verifique su conexión y que el servidor backend esté activo y accesible (Ej: Ngrok funcionando).");
+          } else {
+              setBackendError("Alerta: Fallo de conexión con el nodo central al obtener estado.");
+          }
+          audioService.play('alert_error_connection');
+      }
+  }, [token, userRole, backendError]); // Dependencies for useCallback
+
+  const fetchConversations = useCallback(async () => {
+      if (!token || userRole === 'super_admin') {
+          setConversations([]);
+          return;
+      }
+      try {
+          const res = await fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) });
+          if (res.ok) {
+              const latestConversations = await res.json();
+              setConversations(latestConversations.sort((a: Conversation, b: Conversation) => {
+                  const dateA = new Date(a.lastActivity || a.firstMessageAt || 0);
+                  const dateB = new Date(b.lastActivity || b.firstMessageAt || 0);
+                  return dateB.getTime() - dateA.getTime();
+              }));
+              if (backendError) setBackendError(null);
+          } else {
+              const errorText = await res.text();
+              const msg = `Fallo al obtener conversaciones (${res.status}).`;
+              setBackendError(`Alerta: ${msg}. Detalles: ${errorText.substring(0, 100)}`);
+              audioService.play('alert_error_connection');
+          }
+      } catch (e: any) {
+          if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
+              setBackendError("Alerta: Error de red al obtener conversaciones. Verifique su conexión y que el servidor backend esté activo y accesible (Ej: Ngrok funcionando).");
+          } else {
+              setBackendError("Alerta: Fallo de conexión con el nodo central al obtener conversaciones.");
+          }
+          audioService.play('alert_error_connection');
+      }
+  }, [token, userRole, backendError]); // Dependencies for useCallback
+
   // Polling for connection status and conversations
   useEffect(() => {
     if (!token || userRole === 'super_admin') {
-        setCurrentUser(null);
         if (statusPollingIntervalRef.current) clearInterval(statusPollingIntervalRef.current);
         if (convoPollingIntervalRef.current) clearInterval(convoPollingIntervalRef.current);
         statusPollingIntervalRef.current = null;
         convoPollingIntervalRef.current = null;
-        setBackendError(null); // Clear any backend error
         return;
     }
-
-    const fetchStatus = async () => {
-        try {
-            const res = await fetch(`${BACKEND_URL}/api/status`, { headers: getAuthHeaders(token) });
-            if (res.ok) {
-                const statusData = await res.json();
-                setConnectionStatus(statusData.status);
-                setQrCode(statusData.qr || null);
-                setPairingCode(statusData.pairingCode || null);
-                // Clear backend error if status fetch is successful
-                if (backendError) setBackendError(null);
-            } else {
-                const errorText = await res.text();
-                const msg = `Fallo al obtener estado del nodo (${res.status}). Posiblemente el backend está inactivo.`;
-                setBackendError(`Alerta: ${msg}. Detalles: ${errorText.substring(0, 100)}`);
-                audioService.play('alert_error_connection');
-            }
-        } catch (e: any) {
-            if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
-                setBackendError("Alerta: Error de red al obtener estado. Verifique su conexión y que el servidor backend esté activo y accesible (Ej: Ngrok funcionando).");
-            } else {
-                setBackendError("Alerta: Fallo de conexión con el nodo central al obtener estado.");
-            }
-            audioService.play('alert_error_connection');
-        }
-    };
-
-    const fetchConversations = async () => {
-        try {
-            const res = await fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) });
-            if (res.ok) {
-                const latestConversations = await res.json();
-                setConversations(latestConversations.sort((a: Conversation, b: Conversation) => {
-                    const dateA = new Date(a.lastActivity || a.firstMessageAt || 0);
-                    const dateB = new Date(b.lastActivity || b.firstMessageAt || 0);
-                    return dateB.getTime() - dateA.getTime();
-                }));
-                // Clear backend error if conversation fetch is successful
-                if (backendError) setBackendError(null);
-            } else {
-                const errorText = await res.text();
-                const msg = `Fallo al obtener conversaciones (${res.status}).`;
-                setBackendError(`Alerta: ${msg}. Detalles: ${errorText.substring(0, 100)}`);
-                audioService.play('alert_error_connection');
-            }
-        } catch (e: any) {
-            if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
-                setBackendError("Alerta: Error de red al obtener conversaciones. Verifique su conexión y que el servidor backend esté activo y accesible (Ej: Ngrok funcionando).");
-            } else {
-                setBackendError("Alerta: Fallo de conexión con el nodo central al obtener conversaciones.");
-            }
-            audioService.play('alert_error_connection');
-        }
-    };
 
     // Fetch immediately on mount/token change
     fetchStatus();
@@ -610,9 +618,8 @@ export default function App() {
         if (convoPollingIntervalRef.current) clearInterval(convoPollingIntervalRef.current);
         statusPollingIntervalRef.current = null;
         convoPollingIntervalRef.current = null;
-        setBackendError(null); // Clear error on cleanup
     };
-  }, [token, userRole]); // Dependencies: token and userRole
+  }, [token, userRole, fetchStatus, fetchConversations]); // Dependencies: token, userRole, and the memoized callbacks
 
   // Initial user data load (now integrated with polling logic for status/conversations)
   useEffect(() => {
@@ -704,13 +711,21 @@ export default function App() {
       setConnectionStatus(ConnectionStatus.GENERATING_QR); // Set status immediately
       
       try {
-          await fetch(`${BACKEND_URL}/api/connect`, {
+          const res = await fetch(`${BACKEND_URL}/api/connect`, {
               method: 'POST',
               headers: getAuthHeaders(token),
               body: JSON.stringify({ phoneNumber }) 
           });
-          // Polling will update connectionStatus from here
+          if (res.ok) {
+              // Immediately trigger a status fetch after backend confirms initiation
+              await fetchStatus(); 
+          } else {
+              // Revert status on error, handled in outer catch as well
+              setConnectionStatus(ConnectionStatus.DISCONNECTED); 
+              audioService.play('alert_error_connection');
+          }
       } catch (e: any) { 
+          console.error("Fallo de conexión en handleConnect:", e);
           if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
               setBackendError("Alerta: Error de red al iniciar conexión. Verifique su conexión a internet y que el servidor backend esté activo y accesible (Ej: Ngrok funcionando).");
           } else {
