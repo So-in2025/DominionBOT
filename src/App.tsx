@@ -222,7 +222,7 @@ const TestimonialsSection = ({ isLoggedIn, token, showToast }: { isLoggedIn: boo
                 <h3 className="text-center font-bold text-brand-gold mb-4 uppercase text-xs tracking-widest">Comparte tu experiencia</h3>
                 <div className="relative">
                     <textarea value={newTestimonialText} onChange={(e) => setNewTestimonialText(e.target.value)} placeholder="Escribe tu reseña aquí..." className="w-full bg-brand-black border border-white/20 rounded-2xl py-4 px-6 text-white h-28 resize-none focus:border-brand-gold focus:ring-brand-gold/50 outline-none transition" maxLength={250} />
-                    <p className="absolute bottom-3 right-4 text-[10px] text-gray-500 font-mono">{newTestimonialText.length} / 250}</p>
+                    <p className="absolute bottom-3 right-4 text-[10px] text-gray-500 font-mono">{newTestimonialText.length} / 250{'}'}</p>
                 </div>
                 <button type="submit" disabled={isSubmitting || !newTestimonialText.trim()} className="w-full mt-4 py-4 bg-brand-gold text-black rounded-xl font-black text-xs uppercase tracking-[0.2em] shadow-lg shadow-brand-gold/20 hover:scale-[1.02] transition-transform disabled:opacity-50 disabled:cursor-not-allowed">
                     {isSubmitting ? 'Publicando...' : 'Publicar Reseña'}
@@ -545,7 +545,7 @@ export default function App() {
             console.log(`[SSE-PROACTIVE-HEALTH] Backend health OK: ${healthData.status}`);
             setBackendError(null); // Clear any previous backend error
         } catch (fetchError) {
-            const msg = `Fallo de red al conectar con el backend en ${BACKEND_URL} (posiblemente URL incorrecta o servidor caído).`;
+            const msg = `Error de red: No se pudo conectar con el backend en ${BACKEND_URL}. Verifique su conexión a internet y que el servidor backend esté activo y accesible (Ej: Ngrok funcionando).`;
             console.error(`[SSE-PROACTIVE-HEALTH] Network error during health check: ${msg}`, fetchError);
             setBackendError(`Alerta: ${msg}`);
             audioService.play('alert_error_connection');
@@ -626,7 +626,7 @@ export default function App() {
                         const contentType = errRes.headers.get('content-type');
                         let errorDetails = `Status: ${errRes.status}`;
                         if (contentType && contentType.includes('text/html')) {
-                            errorDetails += ` (respondió HTML, probablemente error de routing o Ngrok expirado)`;
+                            errorDetails += ` (respondió HTML, probablemente error de routing, Ngrok expirado, o problema de CORS)`;
                         } else {
                             const errText = await errRes.text();
                             errorDetails += `, Contenido: ${errText.substring(0, 100)}...`;
@@ -634,8 +634,13 @@ export default function App() {
                         
                         console.error(`[SSE-ONERROR-DETAIL] Fallo de EventSource: ${errorDetails}`);
                         setBackendError(`Alerta: Fallo de conexión en tiempo real. ${errorDetails}`);
-                    } catch (fetchErr) {
-                         setBackendError("Alerta: Fallo de conexión con el nodo central (red inalcanzable durante SSE).");
+                    } catch (fetchErr: any) {
+                         // Distinguish network errors from other fetch errors
+                         if (fetchErr.name === 'TypeError' && fetchErr.message === 'Failed to fetch') {
+                             setBackendError("Alerta: Error de red al conectar SSE. Verifique su conexión a internet y que el servidor backend esté activo y accesible (Ej: Ngrok funcionando).");
+                         } else {
+                             setBackendError(`Alerta: Fallo de conexión con el nodo central (red inalcanzable durante SSE).`);
+                         }
                     }
                     
                     const now = Date.now();
@@ -646,9 +651,13 @@ export default function App() {
                     }
                 }
             };
-        } catch (e) {
+        } catch (e: any) {
             console.error("[SSE-CRITICAL] Error creating EventSource object:", e);
-            setBackendError("Error crítico al inicializar la conexión en tiempo real.");
+             if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
+                setBackendError("Error crítico de red al inicializar SSE. Verifique su conexión a internet y que el servidor backend esté activo y accesible (Ej: Ngrok funcionando).");
+            } else {
+                setBackendError("Error crítico al inicializar la conexión en tiempo real.");
+            }
             audioService.play('alert_error_connection');
             setSseReadyState('CLOSED'); // Set SSE status to closed on critical error
         }
@@ -665,7 +674,7 @@ export default function App() {
             setSseReadyState('CLOSED'); // Update SSE status on cleanup
         }
     };
-  }, [token, userRole, lastSseErrorAudioPlayed]); // Removed connectionStatus and BACKEND_URL from dependencies
+  }, [token, userRole, lastSseErrorAudioPlayed, connectionStatus]); // Added connectionStatus as a dependency to ensure rerender on status change for robust logging
 
   useEffect(() => {
     if (!token) {
@@ -715,9 +724,13 @@ export default function App() {
             }
 
             if (backendError) setBackendError(null);
-        } catch (e) {
+        } catch (e: any) {
             console.error("DATA ERROR:", e);
-            setBackendError("Alerta: Fallo de conexión con el nodo central.");
+            if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
+                setBackendError("Alerta: Error de red al cargar datos iniciales. Verifique su conexión a internet y que el servidor backend esté activo y accesible (Ej: Ngrok funcionando).");
+            } else {
+                setBackendError("Alerta: Fallo de conexión con el nodo central.");
+            }
             audioService.play('alert_error_connection');
         } finally {
             setIsLoadingSettings(false);
@@ -781,8 +794,12 @@ export default function App() {
               headers: getAuthHeaders(token),
               body: JSON.stringify({ phoneNumber }) 
           });
-      } catch (e) { 
-          setBackendError("Fallo al iniciar conexión.");
+      } catch (e: any) { 
+          if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
+              setBackendError("Alerta: Error de red al iniciar conexión. Verifique su conexión a internet y que el servidor backend esté activo y accesible (Ej: Ngrok funcionando).");
+          } else {
+              setBackendError("Fallo al iniciar conexión.");
+          }
           audioService.play('alert_error_connection');
           // No need to setIsPollingStatus(false) here, SSE onerror will handle it
       }
@@ -813,8 +830,13 @@ export default function App() {
           } else {
               audioService.play('alert_error_generic');
           }
-      } catch (e) { 
+      } catch (e: any) { 
           console.error(e); 
+          if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
+              setBackendError("Alerta: Error de red al actualizar configuración. Verifique su conexión a internet y que el servidor backend esté activo y accesible (Ej: Ngrok funcionando).");
+          } else {
+              setBackendError("Alerta: Fallo de conexión con el nodo central al actualizar configuración.");
+          }
           audioService.play('alert_error_connection');
       }
   };
@@ -827,7 +849,7 @@ export default function App() {
       if (currentView === View.AUDIT_MODE && auditTarget) {
         return <AuditView user={auditTarget} onClose={() => setCurrentView(View.ADMIN_GLOBAL)} onUpdate={(user) => setAuditTarget(user)} showToast={showToast} />;
       }
-      return <AdminDashboard token={token!} backendUrl={BACKEND_URL} onAudit={(u) => { setAuditTarget(u); setCurrentView(View.AUDIT_MODE); }} showToast={showToast} onLogout={handleLogout} />;
+      return <AdminDashboard token={token!} backendUrl={BACKEND_URL} onAudit={(u) => { setAuditTarget(u); setCurrentView(View.ADMIN_GLOBAL); }} showToast={showToast} onLogout={handleLogout} />;
     }
 
     const handleDisconnect = async () => {
@@ -838,8 +860,12 @@ export default function App() {
             setQrCode(null);
             setPairingCode(null);
             // No need to setIsPollingStatus(false), SSE listener will update status
-        } catch(e) {
-            showToast('Error al intentar desconectar.', 'error');
+        } catch(e: any) {
+            if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
+                showToast('Error de red al intentar desconectar. Verifique su conexión a internet y el backend.', 'error');
+            } else {
+                showToast('Error al intentar desconectar.', 'error');
+            }
         }
     };
 
@@ -854,8 +880,12 @@ export default function App() {
             // No need to setIsPollingStatus(false), SSE listener will update status
             setConnectionStatus(ConnectionStatus.DISCONNECTED);
             showToast('La sesión anterior fue purgada.', 'success');
-        } catch(e) {
-            showToast('Error al purgar la sesión.', 'error');
+        } catch(e: any) {
+            if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
+                showToast('Error de red al purgar la sesión. Verifique su conexión a internet y el backend.', 'error');
+            } else {
+                showToast('Error al purgar la sesión.', 'error');
+            }
             setConnectionStatus(ConnectionStatus.DISCONNECTED);
         }
     };

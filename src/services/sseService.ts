@@ -9,9 +9,15 @@ class SseService {
     client.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Connection': 'keep-alive',
-      'Cache-Control': 'no-cache'
+      'Cache-Control': 'no-cache',
+      'X-Accel-Buffering': 'no', // Disable Nginx buffering if applicable
     });
-    console.log(`[SSE-SERVICE] Headers sent for client ${userId}. Content-Type: text/event-stream.`);
+    
+    // Send an initial comment to establish the connection type reliably
+    client.write(':ok\n\n'); 
+    client.flushHeaders(); // Ensure headers are sent immediately
+
+    console.log(`[SSE-SERVICE] Headers sent and initial data flushed for client ${userId}. Content-Type: text/event-stream.`);
     
     // If user already had a connection, close old one (or we could support arrays for multi-tab)
     // For simplicity, we replace.

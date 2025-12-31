@@ -5,18 +5,16 @@ import { JWT_SECRET } from '../env.js';
 // Usamos 'export function' explícitamente para evitar problemas de resolución de alias en TS
 // Fixed: Changed next parameter type to any to resolve "Type 'NextFunction' has no call signatures"
 export function authenticateToken(req: any, res: any, next: any) {
-  const authHeader = req.headers['authorization'];
-  let token = authHeader && authHeader.split(' ')[1]; 
+  let token: string | undefined;
 
-  // Si no hay token en el encabezado Authorization, verificar el parámetro de consulta para la ruta SSE.
-  // Esto es necesario porque EventSource no permite headers custom y el token se envía por URL.
-  if (!token && req.path === '/api/events' && req.query.token) {
-    console.log(`[AUTH-DEBUG] SSE path detected: ${req.path}. Attempting to retrieve token from query.`);
+  // Prioritize token from query parameters for SSE as EventSource typically doesn't support Authorization headers reliably.
+  if (req.path === '/api/events' && req.query.token) {
+    console.log(`[AUTH-DEBUG] SSE path detected: ${req.path}. Using token from query parameters.`);
     token = req.query.token as string;
-  } else if (req.path === '/api/events') {
-      console.log(`[AUTH-DEBUG] SSE path detected: ${req.path}. No token found in query, checking Authorization header. Current token: ${token}`);
+  } else {
+    // For all other routes, or if SSE query token is not present, check Authorization header.
+    token = req.headers['authorization']?.split(' ')[1];
   }
-
 
   if (!token) {
     console.error(`[AUTH-DEBUG] NO TOKEN PROVIDED. Returning 401 for path: ${req.path}`);

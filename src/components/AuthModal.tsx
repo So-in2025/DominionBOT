@@ -116,7 +116,14 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
             }
         } catch (err: any) {
             console.error("Auth Fail", err);
-            setError(`Fallo de conexión con ${BACKEND_URL}. ¿Backend Activo y Ngrok funcionando? Si no estás en desarrollo, la variable VITE_BACKEND_URL no está configurada correctamente en Vercel.`);
+            // Differentiate network errors from other fetch errors
+            if (err.name === 'AbortError') {
+                setError('La operación de autenticación ha tardado demasiado. Intente nuevamente.');
+            } else if (err.name === 'TypeError' && err.message === 'Failed to fetch') {
+                setError(`Error de red: No se pudo conectar con el backend en ${BACKEND_URL}. Verifique su conexión a internet y que el servidor backend esté activo y accesible (Ej: Ngrok funcionando).`);
+            } else {
+                setError('Fallo de conexión. ¿Backend Activo y Ngrok funcionando? Si no estás en desarrollo, la variable VITE_BACKEND_URL no está configurada correctamente en Vercel.');
+            }
         } finally {
             setLoading(false);
         }

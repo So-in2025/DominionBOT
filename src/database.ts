@@ -198,8 +198,14 @@ class Database {
 
   async getUser(userId: string): Promise<User | null> {
       if (userId === 'master-god-node') return this.getGodModeUser();
+      console.log(`[DB-DEBUG] Attempting to find user with ID: ${userId}`);
       const doc = await UserModel.findOne({ id: userId });
-      return doc ? doc.toObject() : null;
+      if (!doc) {
+          console.log(`[DB-DEBUG] User with ID ${userId} NOT found.`);
+          return null;
+      }
+      console.log(`[DB-DEBUG] User with ID ${userId} FOUND. Username: ${doc.username}, Role: ${doc.role}`);
+      return doc.toObject();
   }
   
   async updateUser(userId: string, updates: Partial<User>) {

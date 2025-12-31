@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { User, LogEntry, GlobalDashboardMetrics } from '../../types';
 import { getAuthHeaders } from '../../config';
@@ -49,9 +48,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
             if (logsRes.ok) setLogs(await logsRes.json());
             if (metricsRes.ok) setMetrics(await metricsRes.json());
 
-        } catch (e) {
+        } catch (e: any) {
             console.error("Admin Dashboard Error:", e);
-            showToast("Error de conexión con el servidor.", 'error');
+            if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
+                showToast("Error de red al conectar con el servidor backend. Verifique su conexión a internet y que el servidor esté activo y accesible (Ej: Ngrok funcionando).", 'error');
+            } else {
+                showToast("Error de conexión con el servidor.", 'error');
+            }
         } finally {
             setLoading(false);
         }
@@ -81,8 +84,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
                 const data = await res.json().catch(() => ({ message: 'Error desconocido en el servidor.' }));
                 showToast(data.message || "Falló el reseteo del sistema.", 'error');
             }
-        } catch(e) {
-            showToast("Error de red al intentar resetear.", 'error');
+        } catch(e: any) {
+            if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
+                showToast("Error de red al intentar resetear. Verifique su conexión a internet y que el servidor backend esté activo y accesible (Ej: Ngrok funcionando).", 'error');
+            } else {
+                showToast("Error de red al intentar resetear.", 'error');
+            }
         } finally {
             setIsResetArmed(false);
             setResetConfirmation('');
