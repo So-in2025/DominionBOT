@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { IntendedUse } from '../types';
-import { BACKEND_URL } from '../config.js';
+import { BACKEND_URL, API_HEADERS } from '../config.js';
 
 interface AuthModalProps {
     isOpen: boolean;
@@ -86,7 +86,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
 
             const res = await fetch(`${BACKEND_URL}${endpoint}`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { ...API_HEADERS }, // Inyectamos el header de Ngrok
                 body: JSON.stringify(payload),
                 signal: controller.signal
             });

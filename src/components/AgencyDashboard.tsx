@@ -1,6 +1,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { BotSettings, DashboardMetrics, User } from '../types.js';
+import { getAuthHeaders } from '../config.js';
 
 interface AgencyDashboardProps {
   token: string;
@@ -74,7 +75,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
         const timeoutId = setTimeout(() => controller.abort(), 8000); 
 
         const res = await fetch(`${backendUrl}/api/metrics`, { 
-            headers: { 'Authorization': `Bearer ${token}` },
+            headers: getAuthHeaders(token),
             signal: controller.signal
         });
         

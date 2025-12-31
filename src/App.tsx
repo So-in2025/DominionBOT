@@ -11,7 +11,8 @@ import AuditView from './components/Admin/AuditView.js';
 import AuthModal from './components/AuthModal.js';
 import LegalModal from './components/LegalModal.js'; 
 import AgencyDashboard from './components/AgencyDashboard.js';
-import { BACKEND_URL } from './config.js';
+// IMPORTACIÓN CENTRALIZADA
+import { BACKEND_URL, API_HEADERS, getAuthHeaders } from './config.js';
 
 const SIMULATION_SCRIPT = [
     { id: 1, type: 'user', text: "Hola, vi el anuncio. ¿Cómo funciona el bot?", delayBefore: 1000 },
@@ -59,7 +60,6 @@ export default function App() {
   useEffect(() => {
       let isMounted = true;
       const checkServer = async () => {
-          // Si no hay variable, no intentamos conectar
           if (!BACKEND_URL) return;
 
           try {
@@ -68,6 +68,7 @@ export default function App() {
               
               const res = await fetch(`${BACKEND_URL}/api/health`, { 
                   method: 'GET',
+                  headers: API_HEADERS, // IMPORTANTE: Header anti-403
                   signal: controller.signal
               });
               clearTimeout(timeoutId);
@@ -75,13 +76,13 @@ export default function App() {
               if (res.ok) {
                   if (isMounted) {
                       setIsServerReady(true);
-                      console.log("🦅 Dominion Core: Online & Ready (Conectado vía Ngrok)");
+                      console.log("🦅 Dominion Core: Online & Ready");
                   }
               } else {
                   throw new Error("Server not ready");
               }
           } catch (e) {
-              console.log(`🦅 Dominion Core: Buscando túnel Ngrok... Intento ${serverCheckAttempts + 1}`);
+              console.log(`🦅 Dominion Core: Buscando túnel... Intento ${serverCheckAttempts + 1}`);
               if (isMounted) {
                   setServerCheckAttempts(prev => prev + 1);
                   setTimeout(checkServer, 3000); 
@@ -101,8 +102,8 @@ export default function App() {
         const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 15000));
         try {
             const fetchData = Promise.all([
-                fetch(`${BACKEND_URL}/api/settings`, { headers: { 'Authorization': `Bearer ${token}` } }),
-                fetch(`${BACKEND_URL}/api/conversations`, { headers: { 'Authorization': `Bearer ${token}` } })
+                fetch(`${BACKEND_URL}/api/settings`, { headers: getAuthHeaders(token) }),
+                fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) })
             ]);
             const [sRes, cRes]: any = await Promise.race([fetchData, timeoutPromise]);
             
@@ -136,7 +137,7 @@ export default function App() {
                 if (data.type === 'pairing_code') setPairingCode(data.code);
                 
                 if (data.type === 'new_message') {
-                    fetch(`${BACKEND_URL}/api/conversations`, { headers: { 'Authorization': `Bearer ${token}` } })
+                    fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) })
                         .then(r => r.json())
                         .then(setConversations)
                         .catch(() => {});
@@ -152,7 +153,7 @@ export default function App() {
 
     const intervalId = setInterval(async () => {
         try {
-            const res = await fetch(`${BACKEND_URL}/api/status`, { headers: { 'Authorization': `Bearer ${token}` } });
+            const res = await fetch(`${BACKEND_URL}/api/status`, { headers: getAuthHeaders(token) });
             if (res.ok) {
                 const data = await res.json();
                 setConnectionStatus(data.status);
@@ -229,10 +230,7 @@ export default function App() {
       try {
           await fetch(`${BACKEND_URL}/api/connect`, {
               method: 'POST',
-              headers: { 
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${token}` 
-              },
+              headers: getAuthHeaders(token),
               body: JSON.stringify({ phoneNumber }) 
           });
       } catch (e) { 
@@ -246,7 +244,7 @@ export default function App() {
       try {
           await fetch(`${BACKEND_URL}/api/send`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+              headers: getAuthHeaders(token),
               body: JSON.stringify({ to: selectedConversationId, text })
           });
       } catch (e) { console.error(e); }
@@ -257,7 +255,7 @@ export default function App() {
       try {
           const res = await fetch(`${BACKEND_URL}/api/settings`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+              headers: getAuthHeaders(token),
               body: JSON.stringify(newSettings)
           });
           if (res.ok) setSettings(newSettings);
@@ -336,7 +334,7 @@ export default function App() {
                     qrCode={qrCode} 
                     pairingCode={pairingCode}
                     onConnect={handleConnect}
-                    onDisconnect={() => fetch(`${BACKEND_URL}/api/disconnect`, { headers: { 'Authorization': `Bearer ${token}` } })}
+                    onDisconnect={() => fetch(`${BACKEND_URL}/api/disconnect`, { headers: getAuthHeaders(token) })}
                 />
               ) : (
                 <div className="flex-1 flex overflow-hidden relative">
@@ -354,7 +352,7 @@ export default function App() {
                             onSendMessage={handleSendMessage}
                             onToggleBot={(id) => fetch(`${BACKEND_URL}/api/conversation/update`, {
                                 method: 'POST',
-                                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                                headers: getAuthHeaders(token),
                                 body: JSON.stringify({ id, updates: { isBotActive: !selectedConversation?.isBotActive } })
                             })}
                             isTyping={isTyping}
@@ -365,7 +363,7 @@ export default function App() {
                                 setConversations(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
                                 fetch(`${BACKEND_URL}/api/conversation/update`, {
                                     method: 'POST',
-                                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                                    headers: getAuthHeaders(token),
                                     body: JSON.stringify({ id, updates })
                                 });
                             }}

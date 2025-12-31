@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { BotSettings, PromptArchetype } from '../types';
-import { BACKEND_URL } from '../config.js';
+import { BACKEND_URL, getAuthHeaders } from '../config.js';
 
 interface SettingsPanelProps {
   settings: BotSettings | null;
@@ -58,7 +58,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
       try {
           const res = await fetch(`${BACKEND_URL}/api/settings/simulate`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+              headers: getAuthHeaders(token),
               body: JSON.stringify(current)
           });
           if (res.ok) {

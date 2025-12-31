@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { BACKEND_URL } from '../config.js';
+import { BACKEND_URL, API_HEADERS } from '../config.js';
 
 interface AdminLoginProps {
     onLogin: (token: string, role: string) => void;
@@ -70,7 +70,7 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin }) => {
 
             const res = await fetch(`${BACKEND_URL}/api/login`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { ...API_HEADERS },
                 body: JSON.stringify({ username, password }),
                 signal: controller.signal
             });

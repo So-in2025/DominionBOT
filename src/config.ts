@@ -1,14 +1,25 @@
 
-// Configuración de Conexión Estricta (Ngrok / Vercel)
 // @ts-ignore
 const envUrl = import.meta.env?.VITE_BACKEND_URL;
 
-// Validación de Seguridad: No permitir hardcoding ni fallbacks automáticos
-if (!envUrl) {
-    console.warn("⚠️ ADVERTENCIA CRÍTICA: VITE_BACKEND_URL no está definida en Vercel. La app no podrá conectarse al túnel Ngrok.");
-}
-
-// Limpiamos la URL de barras finales para evitar errores de doble slash //
+// 1. URL STRICTA: Si no hay variable en Vercel, no hay conexión. Nada de localhost.
 export const BACKEND_URL = envUrl ? envUrl.replace(/\/$/, '') : '';
 
-console.log("🦅 DOMINION TARGET (Ngrok):", BACKEND_URL || "SIN DEFINIR - REVISAR VARIABLES DE ENTORNO");
+if (!BACKEND_URL) {
+    console.error("🚨 ERROR FATAL: Variable VITE_BACKEND_URL no detectada. Configure esto en Vercel.");
+} else {
+    console.log("🦅 DOMINION TARGET (Ngrok):", BACKEND_URL);
+}
+
+// 2. HEADER MÁGICO PARA NGROK
+// Esto evita el error 403 Forbidden y la pantalla de "Visit Site"
+export const API_HEADERS = {
+    'Content-Type': 'application/json',
+    'ngrok-skip-browser-warning': 'true' 
+};
+
+// Helper para headers con Auth
+export const getAuthHeaders = (token: string) => ({
+    ...API_HEADERS,
+    'Authorization': `Bearer ${token}`
+});
