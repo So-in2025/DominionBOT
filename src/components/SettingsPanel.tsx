@@ -59,15 +59,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
       
       setIsGeneratingPitch(true);
       try {
-          const genAI = new GoogleGenAI({ apiKey: current.geminiApiKey });
-          const model = genAI.models.generateContent({
+          const ai = new GoogleGenAI({ apiKey: current.geminiApiKey });
+          const response = await ai.models.generateContent({
               model: "gemini-3-flash-preview",
               contents: `Actúa como un experto en copywriting de ventas High Ticket. 
               Escribe una descripción persuasiva y profesional (pitch) de máximo 150 palabras para el producto: "${current.productName}".
               Enfócate en beneficios, transformación y autoridad. No uses emojis. Responde solo con el texto de la descripción.`,
           });
-          const result = await model;
-          const text = result.text;
+          const text = response.text;
           if (text) {
               setCurrent({ ...current, productDescription: text.trim() });
           }
@@ -105,8 +104,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
   const slider = (label: string, id: keyof BotSettings, desc: string) => (
     <div className="mb-8 group">
         <div className="flex justify-between items-center mb-2">
-            <label className="text-xs font-black uppercase text-white tracking-widest">{label}</label>
-            <span className="text-brand-gold text-[11px] font-bold bg-brand-gold/10 px-3 py-1 rounded-lg border border-brand-gold/20 shadow-lg">Nivel {current[id] as number}</span>
+            <label className="text-sm font-black uppercase text-white tracking-widest">{label}</label>
+            <span className="text-brand-gold text-[11px] font-bold bg-brand-gold/10 px-3 py-1 rounded-lg border border-brand-gold/20 shadow-lg shadow-brand-gold/5">Nivel {current[id] as number}</span>
         </div>
         <p className="text-[10px] text-gray-400 uppercase font-bold mb-4 tracking-tighter leading-tight">{desc}</p>
         <div className="relative flex items-center">
@@ -128,7 +127,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-white/5 pb-8">
             <div>
                 <h2 className="text-3xl font-black text-white tracking-tighter uppercase">Cerebro <span className="text-brand-gold">Operativo</span></h2>
-                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.3em]">Configuración de Red Neuronal v3.1</p>
+                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.3em]">Configuración de Red Neuronal v3.2</p>
             </div>
             <button 
                 onClick={save}
@@ -170,7 +169,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
                 <section className="bg-brand-surface border border-white/5 rounded-3xl p-8 shadow-2xl">
                     <h3 className="text-sm font-black text-white uppercase tracking-widest mb-8 flex items-center gap-3">
                         <span className="w-8 h-8 rounded-lg bg-brand-gold/10 border border-brand-gold/30 flex items-center justify-center text-brand-gold text-[11px]">02</span>
-                        Personalidad de Venta
+                        Constitución & Personalidad
                     </h3>
                     
                     <div className="grid grid-cols-2 gap-3 mb-10">
@@ -186,10 +185,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
                     </div>
 
                     <div className="bg-black/40 p-8 rounded-2xl border border-white/5">
-                        <h4 className="text-[10px] font-black text-brand-gold uppercase tracking-[0.2em] mb-8 border-b border-brand-gold/10 pb-4">Ajustes Manuales</h4>
-                        {slider("Tono de Voz", "toneValue", "Determina la formalidad y el trato.")}
-                        {slider("Ritmo de Chat", "rhythmValue", "Determina la longitud de los mensajes.")}
-                        {slider("Agresividad Comercial", "intensityValue", "Determina el empuje hacia el cierre.")}
+                        <h4 className="text-[10px] font-black text-brand-gold uppercase tracking-[0.2em] mb-8 border-b border-brand-gold/10 pb-4">Ajustes Neurales Manuales</h4>
+                        {slider("Tono de Voz", "toneValue", "Determina el respeto y la formalidad en el trato.")}
+                        {slider("Ritmo de Chat", "rhythmValue", "Determina la longitud y detalle de los mensajes.")}
+                        {slider("Intensidad de Venta", "intensityValue", "Determina la agresividad hacia el cierre.")}
                     </div>
                 </section>
 
@@ -223,7 +222,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
                     <div className="p-8 border-b border-white/5 bg-black/40 flex justify-between items-center backdrop-blur-md">
                         <h3 className="text-sm font-black text-white uppercase tracking-widest flex items-center gap-3">
                             <span className="w-8 h-8 rounded-lg bg-brand-gold/20 border border-brand-gold/40 flex items-center justify-center text-brand-gold text-[11px]">03</span>
-                            Entrenamiento IA
+                            Entrenamiento de Conocimiento
                         </h3>
                         <div className="flex gap-1.5">
                             {[1, 2, 3].map(s => (
@@ -236,9 +235,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
                         {wizardStep === 1 && (
                             <div className="space-y-8 animate-fade-in">
                                 <div className="space-y-3">
-                                    <label className="text-[12px] font-black text-brand-gold uppercase tracking-[0.3em]">PASO 1: IDENTIDAD</label>
+                                    <label className="text-[12px] font-black text-brand-gold uppercase tracking-[0.3em]">PASO 1: IDENTIDAD COMERCIAL</label>
                                     <h4 className="text-2xl font-black text-white tracking-tighter">¿Cómo se llama tu producto?</h4>
-                                    <p className="text-sm text-gray-500 leading-relaxed font-medium">Este es el nombre comercial que el bot defenderá en cada chat.</p>
+                                    <p className="text-sm text-gray-500 leading-relaxed font-medium">Este es el identificador oficial de tu nodo ante los leads.</p>
                                 </div>
                                 <input 
                                     value={current.productName} 
@@ -259,21 +258,21 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
                                         <label className="text-[12px] font-black text-brand-gold uppercase tracking-[0.3em]">PASO 2: EL CEREBRO</label>
                                         <button 
                                             onClick={generatePitchWithIA}
-                                            disabled={isGeneratingPitch}
-                                            className={`flex items-center gap-2 px-4 py-2 bg-brand-gold/10 border border-brand-gold/20 rounded-full text-[10px] font-black uppercase text-brand-gold hover:bg-brand-gold hover:text-black transition-all ${isGeneratingPitch ? 'animate-pulse' : ''}`}
+                                            disabled={isGeneratingPitch || !current.geminiApiKey}
+                                            className={`flex items-center gap-2 px-4 py-2 bg-brand-gold/10 border border-brand-gold/20 rounded-full text-[10px] font-black uppercase text-brand-gold hover:bg-brand-gold hover:text-black transition-all ${isGeneratingPitch ? 'animate-pulse' : ''} disabled:opacity-30 disabled:cursor-not-allowed`}
                                         >
                                             <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                                             {isGeneratingPitch ? 'Redactando...' : 'Magia IA'}
                                         </button>
                                     </div>
-                                    <h4 className="text-2xl font-black text-white tracking-tighter">Describe tu oferta comercial</h4>
-                                    <p className="text-sm text-gray-500 leading-relaxed font-medium">Dile a la IA qué vendes, por qué es único y qué problemas resuelve.</p>
+                                    <h4 className="text-2xl font-black text-white tracking-tighter">Describe tu oferta de valor</h4>
+                                    <p className="text-sm text-gray-500 leading-relaxed font-medium">Define qué vendes y cómo resuelves los problemas del cliente. Usa la "Magia IA" si necesitas ayuda.</p>
                                 </div>
                                 <textarea 
                                     value={current.productDescription} 
                                     onChange={e => setCurrent({...current, productDescription: e.target.value})} 
                                     className="w-full bg-black/60 border border-white/10 rounded-2xl p-6 text-sm text-gray-300 h-80 resize-none focus:border-brand-gold outline-none transition-all custom-scrollbar leading-relaxed" 
-                                    placeholder="Nuestra oferta consiste en..." 
+                                    placeholder="Explica tu producto aquí..." 
                                 />
                                 <div className="flex gap-4 pt-6">
                                     <button onClick={() => setWizardStep(1)} className="flex-1 py-5 text-gray-500 font-black text-[11px] uppercase tracking-widest hover:text-white transition-colors">Atrás</button>
@@ -285,25 +284,25 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
                         {wizardStep === 3 && (
                             <div className="space-y-10 animate-fade-in">
                                 <div className="space-y-3">
-                                    <label className="text-[12px] font-black text-brand-gold uppercase tracking-[0.3em]">PASO 3: CIERRE</label>
-                                    <h4 className="text-2xl font-black text-white tracking-tighter">Datos de Conversión</h4>
-                                    <p className="text-sm text-gray-500 leading-relaxed font-medium">¿Cuál es el precio y a dónde deben ir para comprar o agendar?</p>
+                                    <label className="text-[12px] font-black text-brand-gold uppercase tracking-[0.3em]">PASO 3: CONVERSIÓN</label>
+                                    <h4 className="text-2xl font-black text-white tracking-tighter">Protocolos de Cierre</h4>
+                                    <p className="text-sm text-gray-500 leading-relaxed font-medium">¿Cuál es el precio base y a dónde deben ir para concretar?</p>
                                 </div>
                                 
                                 <div className="space-y-6">
                                     <div className="space-y-2">
-                                        <label className="text-[10px] font-black text-white uppercase tracking-widest">Inversión / Precio</label>
-                                        <input value={current.priceText} onChange={e => setCurrent({...current, priceText: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-2xl p-5 text-white text-sm focus:border-brand-gold outline-none" placeholder="Ej: $1.000 USD" />
+                                        <label className="text-[10px] font-black text-white uppercase tracking-widest">Inversión / Precio Público</label>
+                                        <input value={current.priceText} onChange={e => setCurrent({...current, priceText: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-2xl p-5 text-white text-sm focus:border-brand-gold outline-none" placeholder="Ej: $500 USD / Mensuales" />
                                     </div>
                                     <div className="space-y-2">
-                                        <label className="text-[10px] font-black text-white uppercase tracking-widest">Enlace de Acción (CTA)</label>
-                                        <input value={current.ctaLink} onChange={e => setCurrent({...current, ctaLink: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-2xl p-5 text-white text-xs font-mono focus:border-brand-gold outline-none" placeholder="https://..." />
+                                        <label className="text-[10px] font-black text-white uppercase tracking-widest">Enlace de Pago o Agenda (CTA)</label>
+                                        <input value={current.ctaLink} onChange={e => setCurrent({...current, ctaLink: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-2xl p-5 text-white text-xs font-mono focus:border-brand-gold outline-none" placeholder="https://calendly.com/..." />
                                     </div>
                                 </div>
 
                                 <div className="flex gap-4 pt-6">
                                     <button onClick={() => setWizardStep(2)} className="flex-1 py-5 text-gray-500 font-black text-[11px] uppercase tracking-widest hover:text-white transition-colors">Atrás</button>
-                                    <button onClick={() => { setWizardStep(1); save(); }} className="flex-[2] py-5 bg-brand-gold text-black rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-[0_15px_40px_rgba(212,175,55,0.3)] hover:scale-[1.02] transition-all">Desplegar IA</button>
+                                    <button onClick={() => { setWizardStep(1); save(); }} className="flex-[2] py-5 bg-brand-gold text-black rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-[0_15px_40px_rgba(212,175,55,0.3)] hover:scale-[1.02] transition-all">Desplegar Cerebro</button>
                                 </div>
                             </div>
                         )}
