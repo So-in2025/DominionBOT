@@ -105,6 +105,8 @@ export interface User {
   id: string;
   username: string; 
   password?: string;
+  // Added recoveryKey for consistency with src/types.ts
+  recoveryKey?: string;
   role: 'admin' | 'client' | 'super_admin';
   settings: BotSettings;
   conversations: Record<string, Conversation>;

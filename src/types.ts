@@ -74,7 +74,7 @@ export interface Conversation {
   isAiSignalsEnabled: boolean;
   firstMessageAt?: Date | string;
   escalatedAt?: Date | string;
-  suggestedReplies?: string[]; 
+  suggestedReplies?: string[];
 }
 
 export interface BotSettings {
@@ -103,20 +103,22 @@ export interface User {
   id: string;
   username: string; 
   password?: string;
-  recoveryKey?: string; 
+  recoveryKey?: string;
   role: 'admin' | 'client' | 'super_admin';
-  intendedUse: IntendedUse;
   settings: BotSettings;
   conversations: Record<string, Conversation>;
   governance: {
     systemState: SystemState;
     riskScore: number;
-    humanDeviationScore: number; 
     accountFlags: string[];
     updatedAt: string;
     auditLogs: { timestamp: string; adminId: string; action: string }[];
+    humanDeviationScore: number;
   };
   planType: 'TRIAL' | 'STARTER' | 'ENTERPRISE';
+  isSuspended?: boolean; 
+  lastSeen?: string;
+  internalNotes?: string;
 }
 
 export interface DashboardMetrics {
