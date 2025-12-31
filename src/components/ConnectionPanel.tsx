@@ -34,7 +34,7 @@ const ConnectionPanel: React.FC<ConnectionPanelProps> = ({ status, qrCode, pairi
         setIsLoading(true);
         try {
             await onConnect(linkMode === 'NUMBER' ? phoneNumber : undefined);
-            // Liberamos la UI tras 10s para permitir reintentos si falla el backend
+            // Liberamos la UI tras 10s para permitir reintentos si falla
             setTimeout(() => setIsLoading(false), 10000); 
         } catch (e) {
             setIsLoading(false);
@@ -42,7 +42,7 @@ const ConnectionPanel: React.FC<ConnectionPanelProps> = ({ status, qrCode, pairi
     };
 
     const forceWipe = () => {
-        if(confirm("¿Deseas resetear el motor de conexión? Esto borrará cualquier sesión corrupta.")) {
+        if(confirm("¿Deseas resetear el motor de conexión? Esto borrará sesiones corruptas para permitir un nuevo enlace.")) {
             onDisconnect();
             setIsLoading(false);
         }
@@ -76,20 +76,20 @@ const ConnectionPanel: React.FC<ConnectionPanelProps> = ({ status, qrCode, pairi
 
                         {linkMode === 'NUMBER' ? (
                             <div className="space-y-4">
-                                <p className="text-gray-400 text-[11px] leading-relaxed">Vincular directamente con un código de 8 dígitos enviado a tu WhatsApp.</p>
+                                <p className="text-gray-400 text-[11px] leading-relaxed">Ingresa el número <strong>con código de país</strong> (ej: 549261...)</p>
                                 <div className="relative">
                                     <input 
                                         type="text" 
                                         value={phoneNumber}
                                         onChange={(e) => setPhoneNumber(e.target.value)}
-                                        placeholder="549261..."
+                                        placeholder="549..."
                                         className="w-full bg-black/60 border border-white/10 rounded-xl px-5 py-4 text-white text-sm focus:border-brand-gold outline-none transition-all placeholder-gray-800 font-mono"
                                     />
-                                    <span className="absolute right-4 top-4 text-[8px] font-black text-gray-700 uppercase">Cód. País</span>
+                                    <span className="absolute right-4 top-4 text-[8px] font-black text-gray-700 uppercase">Num. Completo</span>
                                 </div>
                             </div>
                         ) : (
-                            <p className="text-gray-400 text-[11px] leading-relaxed max-w-[280px] mx-auto">Escanea el código QR desde Dispositivos Vinculados en tu WhatsApp.</p>
+                            <p className="text-gray-400 text-[11px] leading-relaxed max-w-[280px] mx-auto">Escanea el código QR desde "Dispositivos Vinculados" en tu aplicación de WhatsApp.</p>
                         )}
 
                         <button
@@ -103,7 +103,7 @@ const ConnectionPanel: React.FC<ConnectionPanelProps> = ({ status, qrCode, pairi
                         </button>
                         
                         <button onClick={forceWipe} className="text-[9px] text-gray-600 hover:text-red-400 font-bold uppercase tracking-widest block mx-auto">
-                            Limpiar sesión corrupta
+                            Limpiar rastro de sesión
                         </button>
                     </div>
                 );
@@ -111,7 +111,7 @@ const ConnectionPanel: React.FC<ConnectionPanelProps> = ({ status, qrCode, pairi
                 return (
                     <div className="flex flex-col items-center py-10 space-y-4 text-center">
                         <div className="w-12 h-12 border-2 border-brand-gold/20 border-t-brand-gold rounded-full animate-spin"></div>
-                        <p className="text-brand-gold text-[9px] font-black uppercase tracking-[0.3em] animate-pulse">Generando Nodo...</p>
+                        <p className="text-brand-gold text-[9px] font-black uppercase tracking-[0.3em] animate-pulse">Estableciendo Nodo...</p>
                         <button onClick={forceWipe} className="text-red-500 text-[10px] font-bold underline mt-4">Cancelar y Resetear</button>
                     </div>
                 );
@@ -121,12 +121,12 @@ const ConnectionPanel: React.FC<ConnectionPanelProps> = ({ status, qrCode, pairi
                         {pairingCode ? (
                             <div className="space-y-8">
                                 <div>
-                                    <h3 className="text-xl font-black text-white uppercase tracking-tighter">Código Dominion</h3>
-                                    <p className="text-[10px] text-gray-500 mt-2 uppercase tracking-widest">Ingresa este código en la notificación de tu móvil</p>
+                                    <h3 className="text-xl font-black text-white uppercase tracking-tighter">Código de Enlace</h3>
+                                    <p className="text-[10px] text-gray-500 mt-2 uppercase tracking-widest">Toca la notificación de WhatsApp en tu móvil e ingresa este código</p>
                                 </div>
                                 <div className="flex gap-2 justify-center">
                                     {pairingCode.split('').map((char, i) => (
-                                        <div key={i} className="w-9 h-12 bg-black/80 border border-brand-gold/30 rounded-lg flex items-center justify-center text-brand-gold text-xl font-black">
+                                        <div key={i} className="w-9 h-12 bg-black/80 border border-brand-gold/30 rounded-lg flex items-center justify-center text-brand-gold text-xl font-black shadow-inner">
                                             {char}
                                         </div>
                                     ))}
@@ -139,13 +139,13 @@ const ConnectionPanel: React.FC<ConnectionPanelProps> = ({ status, qrCode, pairi
                                     {qrCode ? (
                                      <img src={qrCode} alt="WhatsApp QR" className="w-64 h-64" />
                                     ) : (
-                                        <div className="w-64 h-64 bg-gray-100 animate-pulse rounded flex items-center justify-center text-gray-400 text-xs font-black">Obteniendo QR...</div>
+                                        <div className="w-64 h-64 bg-gray-100 animate-pulse rounded flex items-center justify-center text-gray-400 text-xs font-black">Generando...</div>
                                     )}
                                 </div>
                             </div>
                         )}
                         <div className="mt-10">
-                            <button onClick={forceWipe} className="text-red-400 hover:text-red-300 text-[10px] font-black uppercase tracking-[0.2em] border-b border-red-500/20 pb-1">Desconectar y Reiniciar</button>
+                            <button onClick={forceWipe} className="text-red-400 hover:text-red-300 text-[10px] font-black uppercase tracking-[0.2em] border-b border-red-500/20 pb-1">Resetear Conexión</button>
                         </div>
                     </div>
                 );
@@ -156,10 +156,10 @@ const ConnectionPanel: React.FC<ConnectionPanelProps> = ({ status, qrCode, pairi
                             <svg className="w-12 h-12 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                          </div>
                         <div>
-                            <h3 className="text-2xl font-black text-white uppercase tracking-tighter">Nodo Online</h3>
-                            <p className="text-gray-500 mt-2 text-xs font-medium">La infraestructura está operando sobre tu WhatsApp.</p>
+                            <h3 className="text-2xl font-black text-white uppercase tracking-tighter">Nodo Sincronizado</h3>
+                            <p className="text-gray-500 mt-2 text-xs font-medium">Todo listo. La IA ya puede operar sobre tu cuenta.</p>
                         </div>
-                        <button onClick={onDisconnect} className="w-full py-4 bg-red-500/10 text-red-400 border border-red-500/20 font-black text-xs uppercase tracking-[0.2em] rounded-xl hover:bg-red-500 hover:text-white transition-all">Desactivar Nodo</button>
+                        <button onClick={onDisconnect} className="w-full py-4 bg-red-500/10 text-red-400 border border-red-500/20 font-black text-xs uppercase tracking-[0.2em] rounded-xl hover:bg-red-500 hover:text-white transition-all">Terminar Sesión</button>
                     </div>
                 );
         }

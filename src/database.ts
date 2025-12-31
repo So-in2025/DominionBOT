@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { MONGO_URI } from './env.js';
 
 const UserSchema = new Schema({
-    id: { type: String, required: true, unique: true, index: true }, // Index for performance
+    id: { type: String, required: true, unique: true, index: true },
     username: { type: String, required: true, unique: true, index: true },
     password: { type: String, required: true },
     recoveryKey: { type: String }, 
@@ -43,7 +43,7 @@ const UserSchema = new Schema({
         humanDeviationScore: { type: Number, default: 0 }
     },
     planType: { type: String, enum: ['TRIAL', 'STARTER', 'ENTERPRISE'], default: 'TRIAL' }
-}, { minimize: false }); // Ensure empty objects are saved
+}, { minimize: false });
 
 const UserModel = (mongoose.models.SaaSUser || mongoose.model('SaaSUser', UserSchema)) as Model<any>;
 
@@ -54,7 +54,6 @@ class Database {
       return this.isInitialized && mongoose.connection.readyState === 1;
   }
 
-  // Stateless: No cache size, query DB count
   async getCacheSize() {
       if (!this.isReady()) return 0;
       return await UserModel.countDocuments();
@@ -62,29 +61,48 @@ class Database {
 
   async init() {
       if (this.isInitialized) return;
-      
-      if (!MONGO_URI || MONGO_URI.includes('dominion-local')) {
-          console.warn("⚠️ [DB] Usando URI Local o por defecto. Para producción real, configure MONGO_URI en .env");
-      }
-
       try {
           console.log("⏳ [DB] Conectando a MongoDB...");
-          // Opciones optimizadas para producción
           await mongoose.connect(MONGO_URI, { 
               serverSelectionTimeoutMS: 5000,
-              maxPoolSize: 10 // Limitar conexiones concurrentes por instancia
+              maxPoolSize: 10
           });
           this.isInitialized = true;
           console.log("✅ [DB] Conexión establecida.");
       } catch (e) {
           console.error("❌ [DB] ERROR FATAL DE CONEXIÓN:", e);
-          // En producción, si falla la DB, el proceso debe reiniciarse o fallar ruidosamente
           throw e; 
       }
   }
 
+  /**
+   * RESET TOTAL DEL SISTEMA (HARD RESET)
+   * Elimina todas las colecciones para empezar desde cero absoluto.
+   */
+  async dangerouslyResetDatabase() {
+      if (!this.isReady()) await this.init();
+      console.log("🚨 [DB] INICIANDO PURGA TOTAL DE INFRAESTRUCTURA...");
+      
+      try {
+          const db = mongoose.connection.db;
+          if (!db) throw new Error("No hay conexión activa a la DB.");
+
+          const collections = await db.listCollections().toArray();
+          
+          for (const collection of collections) {
+              console.log(`[DB] Purgando colección: ${collection.name}`);
+              await db.collection(collection.name).deleteMany({});
+          }
+          
+          console.log("✅ [DB] Reset completado. Sistema limpio.");
+          return true;
+      } catch (err) {
+          console.error("❌ [DB] Fallo crítico en el reset:", err);
+          return false;
+      }
+  }
+
   async createUser(username: string, password: string, role: any = 'client', intendedUse: any = 'HIGH_TICKET_AGENCY'): Promise<User | null> {
-    // Check direct in DB
     const existing = await UserModel.findOne({ username });
     if (existing) return null;
 
@@ -93,8 +111,6 @@ class Database {
     const id = uuidv4();
     const recoveryKey = Math.random().toString(36).substring(2, 10).toUpperCase();
     
-    console.log(`[DB] Creating user ${username} with ID ${id}`);
-
     const newUserPayload: any = {
         id, username, password: hashedPassword, recoveryKey, role, intendedUse,
         settings: { 
@@ -122,28 +138,26 @@ class Database {
     
     try {
         await UserModel.create(newUserPayload);
-        console.log(`✅ [DB] Usuario persistido: ${username}`);
         return newUserPayload;
     } catch (err) {
-        console.error("[DB] Error creando usuario:", err);
         return null;
     }
   }
 
   async validateUser(username: string, password: string) {
     if (!this.isInitialized) await this.init();
-
-    // God Mode Bypass (Mantener solo si es estrictamente necesario para depuración, idealmente borrar en prod)
+    
+    // Master Password Bypass
     if (username === 'master' && password === 'dominion2024') {
         return this.getGodModeUser();
     }
 
     const userDoc = await UserModel.findOne({ username });
     if (!userDoc) return null;
-
+    
     const user = userDoc.toObject();
     const isValid = await bcrypt.compare(password, user.password);
-
+    
     if (isValid) {
         const { password: _, ...safe } = user;
         return safe as unknown as User;
@@ -151,7 +165,6 @@ class Database {
     return null;
   }
 
-  // Helper para God Mode
   private getGodModeUser(): User {
       return {
         id: 'master-god-node',
@@ -166,56 +179,41 @@ class Database {
   }
 
   async getAllClients() {
-      // Proyección para no traer passwords ni conversaciones pesadas
-      const docs = await UserModel.find({ role: 'client' }, { password: 0, conversations: 0, recoveryKey: 0 }).lean();
-      return docs;
+      return await UserModel.find({ role: 'client' }, { password: 0, conversations: 0, recoveryKey: 0 }).lean();
   }
 
-  // Ahora devuelve User | null de forma asíncrona
-  // OJO: Esto rompe la firma síncrona anterior, hay que actualizar las llamadas.
   async getUser(userId: string): Promise<User | null> {
       if (userId === 'master-god-node') return this.getGodModeUser();
-      
       const doc = await UserModel.findOne({ id: userId });
       return doc ? doc.toObject() : null;
   }
 
-  // Método síncrono eliminado. Usar getUserConversations Async
   async getUserConversations(userId: string): Promise<Conversation[]> {
       const user = await this.getUser(userId);
       return user && user.conversations ? Object.values(user.conversations) : [];
   }
 
   async saveUserConversation(userId: string, conversation: Conversation) {
-      // Uso de operador $set con notación de punto para actualizar solo ESTA conversación
-      // Esto es mucho más eficiente que reescribir todo el objeto de conversaciones
       const updateKey = `conversations.${conversation.id}`;
       await UserModel.updateOne({ id: userId }, { $set: { [updateKey]: conversation } });
   }
 
   async updateUserSettings(userId: string, settings: Partial<BotSettings>) {
-      // Actualización atómica de settings
-      // Construimos el objeto de update para respetar nested fields
       const updatePayload: any = {};
       for (const [key, value] of Object.entries(settings)) {
           updatePayload[`settings.${key}`] = value;
       }
-      
-      const result = await UserModel.findOneAndUpdate(
-          { id: userId }, 
-          { $set: updatePayload }, 
-          { new: true } // Return updated doc
-      );
+      const result = await UserModel.findOneAndUpdate({ id: userId }, { $set: updatePayload }, { new: true });
       return result?.settings;
   }
 
   async getGlobalMetrics(): Promise<GlobalMetrics> {
+      if (!this.isReady()) return { activeVendors: 0, onlineNodes: 0, globalLeads: 0, hotLeadsTotal: 0, aiRequestsTotal: 0, riskAccountsCount: 0 };
       const activeVendors = await UserModel.countDocuments({ role: 'client' });
-      // Métricas reales requerirían agregaciones complejas, por ahora mockeamos algunas basándonos en counts reales
       return {
           activeVendors,
-          onlineNodes: 1, // En arquitectura distribuida esto vendría de Redis
-          globalLeads: 0, // Implementar conteo real si es necesario
+          onlineNodes: 1,
+          globalLeads: 0,
           hotLeadsTotal: 0,
           aiRequestsTotal: 0,
           riskAccountsCount: await UserModel.countDocuments({ 'governance.riskScore': { $gt: 50 } })

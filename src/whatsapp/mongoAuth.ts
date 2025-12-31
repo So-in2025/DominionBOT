@@ -1,10 +1,7 @@
+
 import { proto, AuthenticationCreds, initAuthCreds, BufferJSON } from '@whiskeysockets/baileys';
 import mongoose, { Schema, Model } from 'mongoose';
 
-/**
- * Interfaz para definir la estructura de la sesión en MongoDB
- * Previene errores de "Property 'data' does not exist" durante el build.
- */
 interface IBaileysSession {
     _id: string;
     data: string;
@@ -15,20 +12,20 @@ const SessionSchema = new Schema({
     data: { type: String, required: true } 
 }, { versionKey: false, timestamps: true });
 
-// Casteo explícito del modelo para evitar ambigüedad en los métodos de búsqueda
 const SessionModel = (mongoose.models.BaileysSession || mongoose.model('BaileysSession', SessionSchema)) as Model<IBaileysSession>;
 
 /**
- * Limpia todos los registros de sesión de un usuario específico.
- * Vital para resolver el error 405 (Connection Failure).
+ * Purgado completo de sesión. 
+ * Se usa para resetear el estado y permitir una vinculación limpia.
  */
 export const clearBindedSession = async (userId: string) => {
     try {
-        const result = await SessionModel.deleteMany({ _id: new RegExp(`^${userId}_`) });
-        console.log(`[AUTH-CLEAN] Purga completada para ${userId}. Documentos eliminados: ${result.deletedCount}`);
-        return (result.deletedCount ?? 0) > 0;
+        // Buscamos cualquier registro que empiece con el ID del usuario
+        const result = await SessionModel.deleteMany({ _id: { $regex: `^${userId}_` } });
+        console.log(`[AUTH-CLEAN] Sesión purgada para ${userId}.`);
+        return true;
     } catch (e) {
-        console.error(`[AUTH-ERROR] Fallo al limpiar sesión de ${userId}:`, e);
+        console.error(`[AUTH-ERROR] Error al limpiar:`, e);
         return false;
     }
 };
@@ -37,36 +34,29 @@ export const useMongoDBAuthState = async (userId: string) => {
     const writeData = async (data: any, id: string) => {
         try {
             const serialized = JSON.stringify(data, BufferJSON.replacer);
-            // findByIdAndUpdate con upsert: true para manejar inserción/actualización atómica
             await SessionModel.findByIdAndUpdate(id, { data: serialized }, { upsert: true });
         } catch (err) {
-            console.error(`[AUTH-WRITE-ERR] ID: ${id}`, err);
+            console.error(`[AUTH-WRITE-ERR]`, err);
         }
     };
 
     const readData = async (id: string) => {
         try {
-            // Casting explícito a la interfaz para asegurar acceso a 'data'
             const doc = await SessionModel.findById(id).lean() as IBaileysSession | null;
             if (doc && doc.data) {
                 return JSON.parse(doc.data, BufferJSON.reviver);
             }
-        } catch (error) {
-            console.error(`[AUTH-READ-ERR] ID: ${id}`, error);
-        }
+        } catch (error) {}
         return null;
     };
 
     const removeData = async (id: string) => {
         try {
             await SessionModel.findByIdAndDelete(id);
-        } catch (error) {
-            console.error(`[AUTH-DEL-ERR] ID: ${id}`, error);
-        }
+        } catch (error) {}
     };
 
-    // Inicializar credenciales o cargar existentes desde la DB
-    const credsKey = `${userId}_creds_me`;
+    const credsKey = `${userId}_creds`;
     const existingCreds = await readData(credsKey);
     const creds: AuthenticationCreds = existingCreds || initAuthCreds();
 
