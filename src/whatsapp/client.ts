@@ -148,7 +148,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
         });
 
         sock.ev.on('messages.upsert', async ({ messages, type }) => {
-            // We process 'notify' (new messages) AND 'append' (history)
+            // Process ALL messages. 'type' can be 'notify' (new message) or 'append' (history).
             for (const msg of messages) {
                 // Ignore status messages and messages from self (unless it helps context, but for now ignoring self to keep simple)
                 if (!msg.message || msg.key.remoteJid === 'status@broadcast') continue;
@@ -174,13 +174,11 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                     timestamp: new Date(msgTimestamp * 1000)
                 };
 
-                // Ingest the message (History or Live)
+                // Ingest the message (History or Live).
+                // `isHistoryImport` flag tells `conversationService` to set `isBotActive: false` by default for these.
                 await conversationService.addMessage(userId, jid, userMessage, contactName, isHistory);
 
-                // AI TRIGGER LOGIC
-                // 1. Must NOT be from me
-                // 2. Must NOT be history
-                // 3. Must be of type 'notify' (double check)
+                // AI TRIGGER LOGIC: Only trigger AI for NEW, INCOMING, NON-HISTORICAL messages.
                 if (!isFromMe && !isHistory && type === 'notify') {
                     logService.info(`[WA-CLIENT] Live message detected from ${jid}. Queuing AI response.`, userId);
                     
@@ -195,8 +193,8 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                         messageDebounceMap.delete(jid);
                     }, DEBOUNCE_TIME_MS));
                 } else if (isHistory) {
-                    // Just logging occasionally to debug
-                    // console.log(`[WA-CLIENT] History message ingested for ${jid} (timestamp: ${msgTimestamp})`);
+                    // Log that history message was ingested, but AI was not triggered.
+                    // console.log(`[WA-CLIENT] History message ingested for ${jid} (timestamp: ${msgTimestamp}). AI not triggered.`);
                 }
             }
         });
