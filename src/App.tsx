@@ -11,7 +11,6 @@ import AuditView from './components/Admin/AuditView.js';
 import AuthModal from './components/AuthModal.js';
 import LegalModal from './components/LegalModal.js'; 
 import AgencyDashboard from './components/AgencyDashboard.js';
-// IMPORTACIÓN CENTRALIZADA
 import { BACKEND_URL, API_HEADERS, getAuthHeaders } from './config.js';
 
 const SIMULATION_SCRIPT = [
@@ -36,7 +35,6 @@ export default function App() {
   const [isBotGloballyActive, setIsBotGloballyActive] = useState(true);
   const [auditTarget, setAuditTarget] = useState<User | null>(null);
   
-  // App States
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [settings, setSettings] = useState<BotSettings | null>(null);
@@ -47,7 +45,6 @@ export default function App() {
   const [isTyping, setIsTyping] = useState(false);
   const [isLoadingSettings, setIsLoadingSettings] = useState(false);
   
-  // Estado de Salud del Servidor
   const [isServerReady, setIsServerReady] = useState(false);
   const [serverCheckAttempts, setServerCheckAttempts] = useState(0);
 
@@ -56,36 +53,29 @@ export default function App() {
   const [isSimTyping, setIsSimTyping] = useState(false);
   const simScrollRef = useRef<HTMLDivElement>(null);
 
-  // WAKE UP CALL & HEALTH CHECK
+  // HEALTH CHECK INICIAL
   useEffect(() => {
       let isMounted = true;
       const checkServer = async () => {
-          // VALIDACIÓN ESTRICTA: Si no hay URL configurada, no intentamos nada.
-          if (!BACKEND_URL || BACKEND_URL.trim() === '') {
-              console.error("⛔ ERROR: VITE_BACKEND_URL no configurada en Vercel. Deteniendo intentos.");
+          if (!BACKEND_URL) {
+              console.error("⛔ ERROR: No hay BACKEND_URL definida.");
               return;
           }
 
           try {
-              const controller = new AbortController();
-              const timeoutId = setTimeout(() => controller.abort(), 8000); 
-              
               const res = await fetch(`${BACKEND_URL}/api/health`, { 
                   method: 'GET',
-                  headers: API_HEADERS, 
-                  signal: controller.signal
+                  headers: API_HEADERS 
               });
-              clearTimeout(timeoutId);
 
-              // Validación extra: Asegurar que la respuesta es válida y no un index.html de Vercel
-              const contentType = res.headers.get("content-type");
-              if (res.ok && contentType && contentType.includes("application/json")) {
+              if (res.ok) {
+                  const data = await res.json();
                   if (isMounted) {
                       setIsServerReady(true);
-                      console.log("🦅 Dominion Core: Online & Ready");
+                      console.log("🦅 Dominion Core: Online & Ready", data);
                   }
               } else {
-                  throw new Error("Respuesta inválida del servidor (posible error 404/SPA fallback)");
+                  throw new Error(`Status ${res.status}`);
               }
           } catch (e) {
               console.log(`🦅 Dominion Core: Buscando túnel... Intento ${serverCheckAttempts + 1}`);
@@ -100,24 +90,24 @@ export default function App() {
       return () => { isMounted = false; };
   }, [serverCheckAttempts]);
 
+  // CARGA DE DATOS AL INICIAR SESIÓN
   useEffect(() => {
     if (!token || !isServerReady) return;
 
     const loadData = async () => {
         setIsLoadingSettings(true);
-        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 15000));
         try {
             const fetchData = Promise.all([
                 fetch(`${BACKEND_URL}/api/settings`, { headers: getAuthHeaders(token) }),
                 fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) })
             ]);
-            const [sRes, cRes]: any = await Promise.race([fetchData, timeoutPromise]);
+            const [sRes, cRes]: any = await fetchData;
             
             if (sRes.ok) setSettings(await sRes.json());
             if (cRes.ok) setConversations(await cRes.json());
             setBackendError(null);
         } catch (e) {
-            console.warn("Backend lento o desconectado.");
+            console.warn("Error cargando datos:", e);
             setBackendError("Reconectando con el servidor...");
         } finally {
             setIsLoadingSettings(false);
@@ -125,23 +115,20 @@ export default function App() {
     };
     loadData();
 
-    // SSE connection logic...
+    // SSE CONNECTION
     let eventSource: EventSource | null = null;
     try {
         eventSource = new EventSource(`${BACKEND_URL}/api/sse?token=${token}`);
         eventSource.onmessage = (e) => {
             try {
                 const data = JSON.parse(e.data);
-                
                 if (data.type === 'status_update') {
                     setConnectionStatus(data.status);
                     if (data.qr) setQrCode(data.qr);
                     if (data.pairingCode) setPairingCode(data.pairingCode);
                 }
-                
                 if (data.type === 'qr') setQrCode(data.qr);
                 if (data.type === 'pairing_code') setPairingCode(data.code);
-                
                 if (data.type === 'new_message') {
                     fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) })
                         .then(r => r.json())
@@ -150,13 +137,9 @@ export default function App() {
                 }
             } catch (err) { console.error("SSE Parse Error", err); }
         };
-        eventSource.onerror = () => {
-            console.log("SSE Reconnecting...");
-        };
-    } catch(e) {
-        console.error("SSE Setup Failed");
-    }
+    } catch(e) { console.error("SSE Failed"); }
 
+    // POLLING FALLBACK
     const intervalId = setInterval(async () => {
         try {
             const res = await fetch(`${BACKEND_URL}/api/status`, { headers: getAuthHeaders(token) });
@@ -168,7 +151,7 @@ export default function App() {
                 setBackendError(null);
             }
         } catch (e) { }
-    }, 3000);
+    }, 5000);
 
     return () => {
         if(eventSource) eventSource.close();
@@ -176,7 +159,7 @@ export default function App() {
     };
   }, [token, isServerReady]);
 
-  // Animation Logic for Landing
+  // Landing Animation
   useEffect(() => {
     if (token) return; 
     let timeoutId: any;
@@ -191,7 +174,6 @@ export default function App() {
             }, 8000); 
             return;
         }
-
         const step = SIMULATION_SCRIPT[currentIndex];
         if (step.type === 'bot') {
             setIsSimTyping(true);
@@ -214,9 +196,7 @@ export default function App() {
   }, [token]);
 
   useEffect(() => {
-      if (simScrollRef.current) {
-          simScrollRef.current.scrollTop = simScrollRef.current.scrollHeight;
-      }
+      if (simScrollRef.current) simScrollRef.current.scrollTop = simScrollRef.current.scrollHeight;
   }, [visibleMessages, isSimTyping]);
 
   const handleLoginSuccess = (t: string, r: string) => {
@@ -240,8 +220,7 @@ export default function App() {
               body: JSON.stringify({ phoneNumber }) 
           });
       } catch (e) { 
-          console.error("Error connecting:", e);
-          setBackendError("Fallo al iniciar conexión. Intente nuevamente.");
+          setBackendError("Fallo al iniciar conexión.");
       }
   };
 
@@ -277,18 +256,9 @@ export default function App() {
             <div className="relative z-10 flex flex-col items-center animate-fade-in">
                 <div className="w-24 h-24 border-4 border-brand-gold/20 border-t-brand-gold rounded-full animate-spin mb-8 shadow-[0_0_50px_rgba(212,175,55,0.2)]"></div>
                 <h1 className="text-2xl font-black uppercase tracking-widest text-white mb-2 animate-pulse">Conectando Túnel Ngrok</h1>
-                <p className="text-[10px] text-brand-gold font-bold uppercase tracking-[0.3em]">
-                    Intento {serverCheckAttempts}
-                </p>
+                <p className="text-[10px] text-brand-gold font-bold uppercase tracking-[0.3em]">Intento {serverCheckAttempts}</p>
                 <div className="mt-8 max-w-md text-center p-4 bg-black/40 border border-white/5 rounded-xl">
-                    <p className="text-[10px] text-gray-400 font-mono">
-                        Target: <span className="text-brand-gold">{BACKEND_URL || "SIN CONFIGURAR"}</span>
-                    </p>
-                    {!BACKEND_URL && (
-                        <p className="text-[10px] text-red-500 font-bold mt-2">
-                            ERROR: Variable VITE_BACKEND_URL no detectada en Vercel.
-                        </p>
-                    )}
+                    <p className="text-[10px] text-gray-400 font-mono">Target: <span className="text-brand-gold">{BACKEND_URL}</span></p>
                 </div>
             </div>
         </div>

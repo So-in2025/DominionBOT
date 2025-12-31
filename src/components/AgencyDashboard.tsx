@@ -74,6 +74,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 8000); 
 
+        // FIX: Usamos getAuthHeaders para inyectar ngrok-skip-browser-warning
         const res = await fetch(`${backendUrl}/api/metrics`, { 
             headers: getAuthHeaders(token),
             signal: controller.signal

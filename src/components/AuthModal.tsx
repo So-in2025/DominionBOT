@@ -84,9 +84,10 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 15000);
 
+            // FIX: Inyección de headers Ngrok
             const res = await fetch(`${BACKEND_URL}${endpoint}`, {
                 method: 'POST',
-                headers: { ...API_HEADERS }, // Inyectamos el header de Ngrok
+                headers: { ...API_HEADERS }, 
                 body: JSON.stringify(payload),
                 signal: controller.signal
             });

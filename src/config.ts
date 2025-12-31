@@ -1,25 +1,27 @@
 
+// Detección automática del entorno
+// Prioridad: Variable de Entorno > Localhost por defecto
 // @ts-ignore
 const envUrl = import.meta.env?.VITE_BACKEND_URL;
 
-// 1. URL STRICTA: Si no hay variable en Vercel, no hay conexión. Nada de localhost.
-export const BACKEND_URL = envUrl ? envUrl.replace(/\/$/, '') : '';
+// Lógica de limpieza de URL
+export const BACKEND_URL = envUrl 
+    ? envUrl.replace(/\/$/, '') 
+    : 'http://localhost:3001'; 
 
-if (!BACKEND_URL) {
-    console.error("🚨 ERROR FATAL: Variable VITE_BACKEND_URL no detectada. Configure esto en Vercel.");
-} else {
-    console.log("🦅 DOMINION TARGET (Ngrok):", BACKEND_URL);
-}
+// LOG DE DEPURACIÓN (Visible en Consola del Navegador)
+console.log(`%c 🦅 DOMINION INFRASTRUCTURE DETECTED `, 'background: #D4AF37; color: #000; font-weight: bold; padding: 4px;');
+console.log(`%c 🎯 TARGET NODE: ${BACKEND_URL} `, 'background: #000; color: #D4AF37; border: 1px solid #D4AF37;');
 
-// 2. HEADER MÁGICO PARA NGROK
-// Esto evita el error 403 Forbidden y la pantalla de "Visit Site"
+// HEADERS GLOBALES (CRÍTICO PARA NGROK)
+// 'ngrok-skip-browser-warning': Evita la pantalla de "Visit Site" que rompe los fetchs
 export const API_HEADERS = {
     'Content-Type': 'application/json',
     'ngrok-skip-browser-warning': 'true' 
 };
 
-// Helper para headers con Auth
-export const getAuthHeaders = (token: string) => ({
+// Helper para peticiones autenticadas
+export const getAuthHeaders = (token: string | null) => ({
     ...API_HEADERS,
-    'Authorization': `Bearer ${token}`
+    'Authorization': `Bearer ${token || ''}`
 });

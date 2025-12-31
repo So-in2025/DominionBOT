@@ -56,7 +56,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
       setIsSimulating(true);
       setSimResults([]);
       try {
-          // Uso estricto de BACKEND_URL importado
           const res = await fetch(`${BACKEND_URL}/api/settings/simulate`, {
               method: 'POST',
               headers: getAuthHeaders(token),
