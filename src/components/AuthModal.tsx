@@ -84,7 +84,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-            // FIX: Inyección de headers Ngrok
+            // FIX: Usamos BACKEND_URL y headers de config.ts
             const res = await fetch(`${BACKEND_URL}${endpoint}`, {
                 method: 'POST',
                 headers: { ...API_HEADERS }, 
@@ -110,7 +110,8 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
                 setError(data.message || 'Error en la operación. Verifique sus datos.');
             }
         } catch (err: any) {
-            setError('Fallo de conexión con el nodo central Dominion.');
+            console.error("AUTH ERROR:", err);
+            setError(`Fallo de conexión con ${BACKEND_URL}. ¿Backend Activo?`);
         } finally {
             setLoading(false);
         }

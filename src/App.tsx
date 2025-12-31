@@ -11,6 +11,7 @@ import AuditView from './components/Admin/AuditView.js';
 import AuthModal from './components/AuthModal.js';
 import LegalModal from './components/LegalModal.js'; 
 import AgencyDashboard from './components/AgencyDashboard.js';
+// IMPORTACIÓN CRÍTICA: Conexión centralizada
 import { BACKEND_URL, API_HEADERS, getAuthHeaders } from './config.js';
 
 const SIMULATION_SCRIPT = [
@@ -44,71 +45,50 @@ export default function App() {
   const [backendError, setBackendError] = useState<string | null>(null);
   const [isTyping, setIsTyping] = useState(false);
   const [isLoadingSettings, setIsLoadingSettings] = useState(false);
-  
   const [isServerReady, setIsServerReady] = useState(false);
-  const [serverCheckAttempts, setServerCheckAttempts] = useState(0);
 
   // Simulación de Landing
   const [visibleMessages, setVisibleMessages] = useState<any[]>([]);
   const [isSimTyping, setIsSimTyping] = useState(false);
   const simScrollRef = useRef<HTMLDivElement>(null);
 
-  // HEALTH CHECK INICIAL
+  // CHECK DE CONEXIÓN INICIAL
   useEffect(() => {
-      let isMounted = true;
-      const checkServer = async () => {
-          if (!BACKEND_URL) {
-              console.error("⛔ ERROR: No hay BACKEND_URL definida.");
-              return;
-          }
+      // Usamos API_HEADERS para evitar bloqueo de Ngrok
+      fetch(`${BACKEND_URL}/api/health`, { headers: API_HEADERS })
+        .then(res => {
+            if(res.ok) {
+                console.log("✅ HEALTH CHECK OK");
+                setIsServerReady(true);
+                setBackendError(null);
+            } else {
+                console.error("❌ HEALTH CHECK FAILED", res.status);
+                setBackendError(`Error ${res.status}: Backend inalcanzable`);
+            }
+        })
+        .catch(err => {
+            console.error("❌ NETWORK ERROR", err);
+            setBackendError(`No se puede conectar a: ${BACKEND_URL}`);
+        });
+  }, []);
 
-          try {
-              const res = await fetch(`${BACKEND_URL}/api/health`, { 
-                  method: 'GET',
-                  headers: API_HEADERS 
-              });
-
-              if (res.ok) {
-                  const data = await res.json();
-                  if (isMounted) {
-                      setIsServerReady(true);
-                      console.log("🦅 Dominion Core: Online & Ready", data);
-                  }
-              } else {
-                  throw new Error(`Status ${res.status}`);
-              }
-          } catch (e) {
-              console.log(`🦅 Dominion Core: Buscando túnel... Intento ${serverCheckAttempts + 1}`);
-              if (isMounted) {
-                  setServerCheckAttempts(prev => prev + 1);
-                  setTimeout(checkServer, 4000); 
-              }
-          }
-      };
-
-      checkServer();
-      return () => { isMounted = false; };
-  }, [serverCheckAttempts]);
-
-  // CARGA DE DATOS AL INICIAR SESIÓN
   useEffect(() => {
-    if (!token || !isServerReady) return;
+    if (!token) return;
 
     const loadData = async () => {
         setIsLoadingSettings(true);
         try {
-            const fetchData = Promise.all([
+            const [sRes, cRes] = await Promise.all([
                 fetch(`${BACKEND_URL}/api/settings`, { headers: getAuthHeaders(token) }),
                 fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) })
             ]);
-            const [sRes, cRes]: any = await fetchData;
             
             if (sRes.ok) setSettings(await sRes.json());
             if (cRes.ok) setConversations(await cRes.json());
             setBackendError(null);
         } catch (e) {
-            console.warn("Error cargando datos:", e);
-            setBackendError("Reconectando con el servidor...");
+            console.error("DATA LOAD ERROR:", e);
+            setBackendError("Error cargando datos. Reintentando...");
         } finally {
             setIsLoadingSettings(false);
         }
@@ -122,11 +102,7 @@ export default function App() {
         eventSource.onmessage = (e) => {
             try {
                 const data = JSON.parse(e.data);
-                if (data.type === 'status_update') {
-                    setConnectionStatus(data.status);
-                    if (data.qr) setQrCode(data.qr);
-                    if (data.pairingCode) setPairingCode(data.pairingCode);
-                }
+                if (data.type === 'status_update') setConnectionStatus(data.status);
                 if (data.type === 'qr') setQrCode(data.qr);
                 if (data.type === 'pairing_code') setPairingCode(data.code);
                 if (data.type === 'new_message') {
@@ -137,9 +113,9 @@ export default function App() {
                 }
             } catch (err) { console.error("SSE Parse Error", err); }
         };
-    } catch(e) { console.error("SSE Failed"); }
+    } catch(e) { console.error("SSE Connection Failed"); }
 
-    // POLLING FALLBACK
+    // POLLING FALLBACK (Respaldo para Ngrok Free)
     const intervalId = setInterval(async () => {
         try {
             const res = await fetch(`${BACKEND_URL}/api/status`, { headers: getAuthHeaders(token) });
@@ -147,49 +123,41 @@ export default function App() {
                 const data = await res.json();
                 setConnectionStatus(data.status);
                 if (data.qr) setQrCode(data.qr);
-                if (data.pairingCode) setPairingCode(data.pairingCode); 
-                setBackendError(null);
+                if (data.pairingCode) setPairingCode(data.pairingCode);
+                
+                // Actualizar conversaciones silenciosamente
+                const convRes = await fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) });
+                if(convRes.ok) setConversations(await convRes.json());
             }
-        } catch (e) { }
+        } catch (e) {
+            // Silencioso
+        }
     }, 5000);
 
     return () => {
         if(eventSource) eventSource.close();
         clearInterval(intervalId);
     };
-  }, [token, isServerReady]);
+  }, [token]);
 
-  // Landing Animation
+  // Landing Animation (Mantenido)
   useEffect(() => {
     if (token) return; 
     let timeoutId: any;
     let currentIndex = 0;
-
     const runStep = () => {
         if (currentIndex >= SIMULATION_SCRIPT.length) {
-            timeoutId = setTimeout(() => {
-                setVisibleMessages([]);
-                currentIndex = 0;
-                runStep();
-            }, 8000); 
+            timeoutId = setTimeout(() => { setVisibleMessages([]); currentIndex = 0; runStep(); }, 8000); 
             return;
         }
         const step = SIMULATION_SCRIPT[currentIndex];
-        if (step.type === 'bot') {
-            setIsSimTyping(true);
-            timeoutId = setTimeout(() => {
-                setIsSimTyping(false);
-                setVisibleMessages(prev => [...prev, step]);
-                currentIndex++;
-                runStep();
-            }, step.delayBefore);
-        } else {
-            timeoutId = setTimeout(() => {
-                setVisibleMessages(prev => [...prev, step]);
-                currentIndex++;
-                runStep();
-            }, step.delayBefore);
-        }
+        setIsSimTyping(true);
+        timeoutId = setTimeout(() => {
+            setIsSimTyping(false);
+            setVisibleMessages(prev => [...prev, step]);
+            currentIndex++;
+            runStep();
+        }, step.delayBefore);
     };
     runStep();
     return () => clearTimeout(timeoutId);
@@ -220,7 +188,7 @@ export default function App() {
               body: JSON.stringify({ phoneNumber }) 
           });
       } catch (e) { 
-          setBackendError("Fallo al iniciar conexión.");
+          setBackendError("Fallo al iniciar conexión. Verifica tu internet.");
       }
   };
 
@@ -249,24 +217,8 @@ export default function App() {
 
   const selectedConversation = conversations.find(c => c.id === selectedConversationId) || null;
 
-  if (!isServerReady) {
-      return (
-        <div className="flex flex-col h-screen bg-brand-black text-white font-sans items-center justify-center p-6 relative overflow-hidden">
-            <div className="absolute inset-0 bg-noise opacity-10 pointer-events-none"></div>
-            <div className="relative z-10 flex flex-col items-center animate-fade-in">
-                <div className="w-24 h-24 border-4 border-brand-gold/20 border-t-brand-gold rounded-full animate-spin mb-8 shadow-[0_0_50px_rgba(212,175,55,0.2)]"></div>
-                <h1 className="text-2xl font-black uppercase tracking-widest text-white mb-2 animate-pulse">Conectando Túnel Ngrok</h1>
-                <p className="text-[10px] text-brand-gold font-bold uppercase tracking-[0.3em]">Intento {serverCheckAttempts}</p>
-                <div className="mt-8 max-w-md text-center p-4 bg-black/40 border border-white/5 rounded-xl">
-                    <p className="text-[10px] text-gray-400 font-mono">Target: <span className="text-brand-gold">{BACKEND_URL}</span></p>
-                </div>
-            </div>
-        </div>
-      );
-  }
-
   return (
-    <div className="flex-1 flex flex-col h-screen bg-brand-black text-white font-sans overflow-hidden">
+    <div className="flex flex-col h-screen bg-brand-black text-white font-sans overflow-hidden">
       <AuthModal isOpen={authModal.isOpen} initialMode={authModal.mode} onClose={() => setAuthModal({ ...authModal, isOpen: false })} onSuccess={handleLoginSuccess} onOpenLegal={setLegalModalType} />
       <LegalModal type={legalModalType} onClose={() => setLegalModalType(null)} />
       
@@ -284,6 +236,12 @@ export default function App() {
       />
 
       <main className="flex-1 overflow-hidden flex relative">
+        {backendError && (
+            <div className="absolute top-0 left-0 right-0 bg-red-600/90 text-white text-[10px] font-bold p-2 text-center z-50">
+                ⚠️ ERROR DE RED: {backendError}
+            </div>
+        )}
+
         {!token ? (
             <LandingPage 
                 onAuth={() => setAuthModal({ isOpen: true, mode: 'login' })} 
@@ -362,10 +320,9 @@ function LandingPage({ onAuth, onRegister, visibleMessages, isSimTyping, simScro
             <section className="relative z-10 flex-1 flex flex-col items-center justify-center p-6 md:p-12 pt-24 pb-32">
                 <div className="max-w-7xl w-full grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-24 items-center">
                     <div className="space-y-10 text-center lg:text-left">
-                        {/* SYSTEM ONLINE BADGE */}
-                        <div className={`inline-flex items-center gap-3 px-4 py-1.5 border rounded-full text-[11px] font-black uppercase tracking-[0.3em] backdrop-blur-xl transition-all ${isServerReady ? 'border-green-500/30 bg-green-500/10 text-green-400 shadow-[0_0_20px_rgba(34,197,94,0.2)]' : 'border-brand-gold/30 bg-brand-gold/5 text-brand-gold'}`}>
-                            <span className={`w-2 h-2 rounded-full ${isServerReady ? 'bg-green-500 animate-pulse' : 'bg-brand-gold animate-pulse'}`}></span>
-                            {isServerReady ? 'SISTEMA ONLINE' : 'Conectando Nodo...'}
+                        <div className={`inline-flex items-center gap-3 px-4 py-1.5 border rounded-full text-[11px] font-black uppercase tracking-[0.3em] backdrop-blur-xl transition-all ${isServerReady ? 'border-green-500/30 bg-green-500/10 text-green-400 shadow-[0_0_20px_rgba(34,197,94,0.2)]' : 'border-red-500/30 bg-red-500/10 text-red-400'}`}>
+                            <span className={`w-2 h-2 rounded-full ${isServerReady ? 'bg-green-500 animate-pulse' : 'bg-red-500 animate-pulse'}`}></span>
+                            {isServerReady ? 'SISTEMA ONLINE' : 'BUSCANDO TÚNEL...'}
                         </div>
                         
                         <h1 className="text-6xl md:text-8xl lg:text-[90px] font-black text-white leading-tight tracking-normal py-2">
@@ -373,7 +330,7 @@ function LandingPage({ onAuth, onRegister, visibleMessages, isSimTyping, simScro
                             <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-gold via-brand-gold-light to-brand-gold-dark">Piloto Automático</span>
                         </h1>
                         <p className="text-xl md:text-2xl text-gray-400 leading-relaxed border-l-4 border-brand-gold/40 pl-8 mx-auto lg:mx-0 max-w-2xl font-medium">
-                            La infraestructura neural diseñada para escalar negocios de todos los rubros. Dominion filtra curiosos y califica a tus leads en tiempo real, entregándote solo clientes listos para comprar. Vende 24/7 sin esfuerzo operativo.
+                            La infraestructura neural diseñada para escalar negocios de todos los rubros. Dominion filtra curiosos y califica a tus leads en tiempo real.
                         </p>
                         
                         <div className="flex flex-col sm:flex-row gap-6 justify-center lg:justify-start pt-6">
@@ -428,14 +385,8 @@ function LandingPage({ onAuth, onRegister, visibleMessages, isSimTyping, simScro
                     <p className="text-white font-black text-lg tracking-tight flex items-center justify-center md:justify-start gap-2">
                         Dominion Bot by <a href="https://websoin.netlify.app" target="_blank" rel="noopener noreferrer" className="text-brand-gold hover:text-brand-gold-light transition-colors">SO-&gt;IN</a>
                     </p>
-                    <div className="flex gap-6 justify-center md:justify-start items-center">
-                        <a href="https://www.instagram.com/so.in_mendoza/" target="_blank" rel="noopener noreferrer" className="text-gray-500 hover:text-brand-gold transition-colors">
-                            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 1.366.062 2.633.332 3.608 1.308.975.975 1.245 2.242 1.308 3.607.058 1.266.07 1.646.07 4.85s-.012 3.584-.07 4.85c-.063 1.366-.333 2.633-1.308 3.608-.975.975-2.242 1.245-3.607 1.308-1.266.058-1.646.07-4.85.07s-3.584-.012-4.85-.07c-1.366-.063-2.633-.333-3.608-1.308-.975-.975-1.245-2.242-1.308-3.607-.058-1.266-.07-1.646-.07-4.85s.012-3.584.07-4.85c.062-1.366.332-2.633 1.308-3.608.975-.975 2.242-1.245 3.607-1.308 1.266-.058-1.646-.07 4.85-.07zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948s.014 3.667.072 4.947c.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072s3.667-.014 4.947-.072c4.358-.2 6.78-2.618 6.98-6.98.058-1.281.072-1.689.072-4.948s-.014-3.667-.072-4.947c-.2-4.358-2.618-6.78-6.98-6.98-1.281-.058-1.689-.072-4.948-.072zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.162 6.162 6.162 6.162-2.759 6.162-6.162-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.791-4-4s1.791-4 4-4 4 1.791 4 4-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>
-                        </a>
-                    </div>
                     <p className="text-gray-600 text-[10px] font-black uppercase tracking-[0.3em]">Neural Infrastructure Division • Mendoza, ARG</p>
                 </div>
-
                 <div className="flex flex-col items-center md:items-end gap-6">
                     <div className="flex gap-8 text-[10px] font-black text-gray-500 uppercase tracking-widest">
                         <button onClick={() => onOpenLegal('privacy')} className="hover:text-brand-gold transition-colors">Privacidad</button>

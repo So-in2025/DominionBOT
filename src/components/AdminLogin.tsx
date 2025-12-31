@@ -68,6 +68,7 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin }) => {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 12000);
 
+            // FIX: Uso de BACKEND_URL central y headers Ngrok
             const res = await fetch(`${BACKEND_URL}/api/login`, {
                 method: 'POST',
                 headers: { ...API_HEADERS },
@@ -91,7 +92,8 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin }) => {
                 setError(data.message || 'Credenciales no válidas. Prueba master / dominion2024');
             }
         } catch (err) {
-            setError('Error de enlace con el servidor central. Verifique conexión.');
+            console.error("LOGIN FAIL:", err);
+            setError(`Fallo de conexión con ${BACKEND_URL}. Verifique Ngrok.`);
         } finally {
             setLoading(false);
         }
