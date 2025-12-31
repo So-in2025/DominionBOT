@@ -15,7 +15,7 @@ import { generateBotResponse } from '../services/aiService.js';
 import { useMongoDBAuthState, clearBindedSession } from './mongoAuth.js';
 import { logService } from '../services/logService.js';
 import * as QRCode from 'qrcode';
-import { sseService } from '../services/sseService.js';
+// import { sseService } from '../services/sseService.js'; // Removed SSE service import
 
 const sessions = new Map<string, WASocket>();
 const qrCache = new Map<string, string>(); 
@@ -57,7 +57,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
   }
   qrCache.delete(userId);
   codeCache.delete(userId);
-  sseService.sendEvent(userId, 'connection_status', getSessionStatus(userId)); // Notify immediately of state change
+  // sseService.sendEvent(userId, 'connection_status', getSessionStatus(userId)); // Removed SSE event: Notify immediately of state change
 
   if (phoneNumber) {
       logService.info(`[WA-CLIENT-DEBUG] Phone number ${phoneNumber} provided. Clearing binded session.`, userId);
@@ -97,12 +97,12 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
               const code = await sock.requestPairingCode(phoneNumber.replace(/[^0-9]/g, ''));
               codeCache.set(userId, code);
               logService.info(`[WA-CLIENT-DEBUG] Pairing code generated for ${userId}: ${code}`, userId);
-              sseService.sendEvent(userId, 'connection_status', getSessionStatus(userId));
+              // sseService.sendEvent(userId, 'connection_status', getSessionStatus(userId)); // Removed SSE event
           } catch (err) {
               logService.error('Error solicitando pairing code', err as Error, userId, user?.username);
               qrCache.delete(userId);
               codeCache.delete(userId);
-              sseService.sendEvent(userId, 'connection_status', getSessionStatus(userId));
+              // sseService.sendEvent(userId, 'connection_status', getSessionStatus(userId)); // Removed SSE event
           }
       }
       
@@ -117,7 +117,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
             const qrImage = await QRCode.toDataURL(qr);
             qrCache.set(userId, qrImage);
             logService.info(`[WA-CLIENT-DEBUG] QR code generated for ${userId}.`, userId);
-            sseService.sendEvent(userId, 'connection_status', getSessionStatus(userId)); // Notify frontend of QR
+            // sseService.sendEvent(userId, 'connection_status', getSessionStatus(userId)); // Removed SSE event: Notify frontend of QR
           }
           if (connection === 'close') {
             qrCache.delete(userId);
@@ -135,12 +135,12 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                     logService.info(`Conexión cerrada, no se reintentará.`, userId);
                 }
             }
-            sseService.sendEvent(userId, 'connection_status', getSessionStatus(userId)); // Notify frontend of disconnection
+            // sseService.sendEvent(userId, 'connection_status', getSessionStatus(userId)); // Removed SSE event: Notify frontend of disconnection
           } else if (connection === 'open') {
             logService.info('Conexión a WhatsApp establecida', userId);
             qrCache.delete(userId);
             codeCache.delete(userId);
-            sseService.sendEvent(userId, 'connection_status', getSessionStatus(userId)); // Notify frontend of successful connection
+            // sseService.sendEvent(userId, 'connection_status', getSessionStatus(userId)); // Removed SSE event: Notify frontend of successful connection
           }
       });
 
@@ -218,8 +218,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
       });
   } catch (err) {
       logService.error('Fallo crítico en conexión a WhatsApp', err as Error, userId, user?.username);
-      // Ensure SSE event is sent even on critical failure
-      sseService.sendEvent(userId, 'connection_status', getSessionStatus(userId));
+      // sseService.sendEvent(userId, 'connection_status', getSessionStatus(userId)); // Removed SSE event: Ensure SSE event is sent even on critical failure
   }
 }
 
@@ -237,7 +236,7 @@ export async function disconnectWhatsApp(userId: string) {
     codeCache.delete(userId);
     await clearBindedSession(userId);
     logService.info('Nodo de WhatsApp desconectado', userId);
-    sseService.sendEvent(userId, 'connection_status', getSessionStatus(userId));
+    // sseService.sendEvent(userId, 'connection_status', getSessionStatus(userId)); // Removed SSE event
 }
 
 export async function sendMessage(userId: string, jid: string, text: string) {
