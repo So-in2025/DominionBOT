@@ -61,15 +61,15 @@ const Header: React.FC<HeaderProps> = ({
       <div className="max-w-[1400px] mx-auto px-4 sm:px-6 h-full flex justify-between items-center">
         
         <div className="flex items-center gap-2 sm:gap-4 overflow-hidden flex-shrink-0">
-            <div className="flex items-center gap-2 cursor-pointer group" onClick={handleLogoClick}>
-                <div className="w-9 h-9 md:w-10 md:h-10 rounded-lg bg-gradient-to-br from-brand-gold to-brand-gold-dark flex items-center justify-center text-black font-black text-xl shadow-lg">
+            <div className="flex items-center gap-3 cursor-pointer group" onClick={handleLogoClick}>
+                <div className="w-10 h-10 md:w-12 md:h-12 rounded-lg bg-gradient-to-br from-brand-gold to-brand-gold-dark flex items-center justify-center text-black font-black text-2xl shadow-lg">
                     D
                 </div>
                 <div className="flex flex-col">
-                    <h1 className="text-white font-black text-sm md:text-xl leading-none tracking-tighter uppercase">
+                    <h1 className="text-white font-black text-lg md:text-2xl leading-none tracking-tighter uppercase">
                         DOMINION <span className="text-brand-gold">BOT</span>
                     </h1>
-                    <p className="text-[7px] text-gray-500 uppercase tracking-[0.1em] font-bold hidden sm:block">Infrastructure Elite</p>
+                    <p className="text-[9px] md:text-[10px] text-gray-500 uppercase tracking-widest font-bold hidden sm:block">Inteligencia Comercial Autónoma</p>
                 </div>
             </div>
         </div>
@@ -126,9 +126,9 @@ const Header: React.FC<HeaderProps> = ({
                     </button>
                 </div>
             ) : (
-                <div className="flex items-center gap-2">
-                    <button onClick={onLoginClick} className="text-[9px] font-black text-gray-400 hover:text-white uppercase px-2">Entrar</button>
-                    <button onClick={onRegisterClick} className="bg-brand-gold text-black px-3 py-2 rounded-lg text-[9px] font-black uppercase shadow-lg shadow-brand-gold/20 active:scale-95 transition-transform">Acceso</button>
+                <div className="flex items-center gap-4">
+                    <button onClick={onLoginClick} className="hidden md:inline-block px-4 py-3 rounded-lg text-[10px] font-black uppercase tracking-widest text-gray-400 hover:text-white hover:bg-white/5 transition-all">Entrar</button>
+                    <button onClick={onRegisterClick} className="bg-brand-gold text-black px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-brand-gold/20 active:scale-95 transition-transform hover:scale-105">Solicitar Acceso</button>
                 </div>
             )}
         </div>

