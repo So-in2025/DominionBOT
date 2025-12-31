@@ -68,7 +68,6 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin }) => {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 12000);
 
-            // FIX: Uso de BACKEND_URL central y headers Ngrok
             const res = await fetch(`${BACKEND_URL}/api/login`, {
                 method: 'POST',
                 headers: { ...API_HEADERS },

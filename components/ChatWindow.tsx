@@ -1,4 +1,3 @@
-
 import React, { useRef, useEffect } from 'react';
 import { Conversation, LeadStatus } from '../types';
 import MessageBubble from './MessageBubble';
@@ -12,6 +11,7 @@ interface ChatWindowProps {
   isBotGloballyActive: boolean;
   isMobile: boolean;
   onBack: () => void;
+  onUpdateConversation?: (id: string, updates: Partial<Conversation>) => void;
 }
 
 const statusBadgeClass = {

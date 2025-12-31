@@ -123,6 +123,7 @@ export interface DashboardMetrics {
   revenueEstimated: number;
   avgEscalationTimeMinutes: number;
   activeSessions: number;
+  humanDeviationScore: number;
 }
 
 export interface GlobalMetrics {

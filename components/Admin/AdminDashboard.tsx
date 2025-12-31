@@ -1,25 +1,25 @@
-
 import React, { useEffect, useState } from 'react';
 import { GlobalTelemetry, User, SystemState } from '../../types';
 
 interface AdminDashboardProps {
     token: string;
+    backendUrl: string;
     onAudit: (user: User) => void;
 }
 
-const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, onAudit }) => {
+const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAudit }) => {
     const [telemetry, setTelemetry] = useState<GlobalTelemetry | null>(null);
     const [accounts, setAccounts] = useState<User[]>([]);
 
     useEffect(() => {
         const fetchGlobal = async () => {
-            const res = await fetch('/api/admin/metrics', { headers: { 'Authorization': `Bearer ${token}` } });
+            const res = await fetch(`${backendUrl}/api/admin/metrics`, { headers: { 'Authorization': `Bearer ${token}` } });
             if (res.ok) setTelemetry(await res.json());
-            const uRes = await fetch('/api/admin/users', { headers: { 'Authorization': `Bearer ${token}` } });
+            const uRes = await fetch(`${backendUrl}/api/admin/users`, { headers: { 'Authorization': `Bearer ${token}` } });
             if (uRes.ok) setAccounts(await uRes.json());
         };
         fetchGlobal();
-    }, [token]);
+    }, [token, backendUrl]);
 
     const kpi = (label: string, value: string | number, color = "text-white") => (
         <div className="bg-brand-surface border border-white/5 p-6 rounded-xl">

@@ -1,9 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { IntendedUse } from '../types';
-
-// URL de la infraestructura central
-const BACKEND_URL = 'https://dominion-backend-ahsh.onrender.com';
+import { API_HEADERS } from '../src/config.js';
 
 interface AuthModalProps {
     isOpen: boolean;
@@ -11,9 +9,10 @@ interface AuthModalProps {
     onClose: () => void;
     onSuccess: (token: string, role: string) => void;
     onOpenLegal: (type: 'privacy' | 'terms' | 'manifesto') => void;
+    backendUrl: string;
 }
 
-const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onSuccess, onOpenLegal }) => {
+const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onSuccess, onOpenLegal, backendUrl }) => {
     const [mode, setMode] = useState<'login' | 'register' | 'recovery' | 'registered_success'>(initialMode as any);
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
@@ -86,9 +85,9 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-            const res = await fetch(`${BACKEND_URL}${endpoint}`, {
+            const res = await fetch(`${backendUrl}${endpoint}`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { ...API_HEADERS },
                 body: JSON.stringify(payload),
                 signal: controller.signal
             });
@@ -111,7 +110,8 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
                 setError(data.message || 'Error en la operación. Verifique sus datos.');
             }
         } catch (err: any) {
-            setError('Fallo de conexión con el nodo central Dominion.');
+            console.error("Auth Error:", err);
+            setError(`Fallo de conexión con el nodo central (${backendUrl}).`);
         } finally {
             setLoading(false);
         }

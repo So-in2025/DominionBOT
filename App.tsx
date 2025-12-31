@@ -11,9 +11,7 @@ import AuditView from './components/Admin/AuditView.js';
 import AuthModal from './components/AuthModal.js';
 import LegalModal from './components/LegalModal.js'; 
 import AgencyDashboard from './components/AgencyDashboard.js';
-
-// @ts-ignore
-const BACKEND_URL = (import.meta.env?.VITE_BACKEND_URL) || 'https://dominion-backend-ahsh.onrender.com';
+import { BACKEND_URL, API_HEADERS, getAuthHeaders } from './src/config.js';
 
 const SIMULATION_SCRIPT = [
     { id: 1, type: 'user', text: "Hola, vi el anuncio. ¿Cómo funciona el bot?", delayBefore: 1000 },
@@ -47,104 +45,92 @@ export default function App() {
   const [backendError, setBackendError] = useState<string | null>(null);
   const [isTyping, setIsTyping] = useState(false);
   const [isLoadingSettings, setIsLoadingSettings] = useState(false);
+  const [isServerReady, setIsServerReady] = useState(false);
 
   // Simulación de Landing
   const [visibleMessages, setVisibleMessages] = useState<any[]>([]);
   const [isSimTyping, setIsSimTyping] = useState(false);
   const simScrollRef = useRef<HTMLDivElement>(null);
 
+  // HEALTH CHECK
+  useEffect(() => {
+      fetch(`${BACKEND_URL}/api/health`, { headers: API_HEADERS })
+        .then(res => {
+            if(res.ok) {
+                console.log("✅ SYSTEM ONLINE");
+                setIsServerReady(true);
+                setBackendError(null);
+            } else {
+                setBackendError(`Error ${res.status}: Backend inalcanzable`);
+            }
+        })
+        .catch(err => {
+            console.error("❌ CONEXIÓN FALLIDA:", err);
+            setBackendError(`No conecta a: ${BACKEND_URL}`);
+        });
+  }, []);
+
   useEffect(() => {
     if (!token) return;
 
     const loadData = async () => {
         setIsLoadingSettings(true);
-        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 5000));
         try {
-            const fetchData = Promise.all([
-                fetch(`${BACKEND_URL}/api/settings`, { headers: { 'Authorization': `Bearer ${token}` } }),
-                fetch(`${BACKEND_URL}/api/conversations`, { headers: { 'Authorization': `Bearer ${token}` } })
+            const [sRes, cRes] = await Promise.all([
+                fetch(`${BACKEND_URL}/api/settings`, { headers: getAuthHeaders(token) }),
+                fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) })
             ]);
-            const [sRes, cRes]: any = await Promise.race([fetchData, timeoutPromise]);
+            
             if (sRes.ok) setSettings(await sRes.json());
             if (cRes.ok) setConversations(await cRes.json());
+            setBackendError(null);
         } catch (e) {
-            console.warn("Backend lento o desconectado, iniciando en modo offline.");
-            setBackendError("Modo Offline: Servidor reconectando...");
+            console.error("DATA ERROR:", e);
+            setBackendError("Error cargando datos. Verifique su conexión.");
         } finally {
             setIsLoadingSettings(false);
         }
     };
     loadData();
 
-    // SSE connection logic...
-    const eventSource = new EventSource(`${BACKEND_URL}/api/sse?token=${token}`);
-    eventSource.onmessage = (e) => {
-        try {
-            const data = JSON.parse(e.data);
-            if (data.type === 'status_update') setConnectionStatus(data.status);
-            if (data.type === 'qr') setQrCode(data.qr);
-            if (data.type === 'pairing_code') setPairingCode(data.code);
-            if (data.type === 'new_message') {
-                fetch(`${BACKEND_URL}/api/conversations`, { headers: { 'Authorization': `Bearer ${token}` } })
-                    .then(r => r.json())
-                    .then(setConversations)
-                    .catch(() => {});
-            }
-        } catch (err) { console.error("SSE Parse Error", err); }
-    };
-
-    // POLLING FALLBACK: Si SSE falla, preguntamos al servidor cada 3s
+    // POLLING ROBUSTO
     const intervalId = setInterval(async () => {
         try {
-            const res = await fetch(`${BACKEND_URL}/api/status`, { headers: { 'Authorization': `Bearer ${token}` } });
+            const res = await fetch(`${BACKEND_URL}/api/status`, { headers: getAuthHeaders(token) });
             if (res.ok) {
                 const data = await res.json();
                 setConnectionStatus(data.status);
                 if (data.qr) setQrCode(data.qr);
-                if (data.pairingCode) setPairingCode(data.pairingCode); // Recuperar código
+                if (data.pairingCode) setPairingCode(data.pairingCode);
+                
+                const convRes = await fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) });
+                if(convRes.ok) setConversations(await convRes.json());
             }
         } catch (e) {
             // Silencioso
         }
-    }, 3000);
+    }, 4000);
 
-    return () => {
-        eventSource.close();
-        clearInterval(intervalId);
-    };
+    return () => clearInterval(intervalId);
   }, [token]);
 
   useEffect(() => {
     if (token) return; 
     let timeoutId: any;
     let currentIndex = 0;
-
     const runStep = () => {
         if (currentIndex >= SIMULATION_SCRIPT.length) {
-            timeoutId = setTimeout(() => {
-                setVisibleMessages([]);
-                currentIndex = 0;
-                runStep();
-            }, 8000); 
+            timeoutId = setTimeout(() => { setVisibleMessages([]); currentIndex = 0; runStep(); }, 8000); 
             return;
         }
-
         const step = SIMULATION_SCRIPT[currentIndex];
-        if (step.type === 'bot') {
-            setIsSimTyping(true);
-            timeoutId = setTimeout(() => {
-                setIsSimTyping(false);
-                setVisibleMessages(prev => [...prev, step]);
-                currentIndex++;
-                runStep();
-            }, step.delayBefore);
-        } else {
-            timeoutId = setTimeout(() => {
-                setVisibleMessages(prev => [...prev, step]);
-                currentIndex++;
-                runStep();
-            }, step.delayBefore);
-        }
+        setIsSimTyping(true);
+        timeoutId = setTimeout(() => {
+            setIsSimTyping(false);
+            setVisibleMessages(prev => [...prev, step]);
+            currentIndex++;
+            runStep();
+        }, step.delayBefore);
     };
     runStep();
     return () => clearTimeout(timeoutId);
@@ -166,7 +152,6 @@ export default function App() {
 
   const handleConnect = async (phoneNumber?: string) => {
       if (!token) return;
-      // Reset states
       setQrCode(null);
       setPairingCode(null);
       setConnectionStatus(ConnectionStatus.GENERATING_QR);
@@ -174,10 +159,7 @@ export default function App() {
       try {
           await fetch(`${BACKEND_URL}/api/connect`, {
               method: 'POST',
-              headers: { 
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${token}` 
-              },
+              headers: getAuthHeaders(token),
               body: JSON.stringify({ phoneNumber }) 
           });
       } catch (e) { 
@@ -191,7 +173,7 @@ export default function App() {
       try {
           await fetch(`${BACKEND_URL}/api/send`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+              headers: getAuthHeaders(token),
               body: JSON.stringify({ to: selectedConversationId, text })
           });
       } catch (e) { console.error(e); }
@@ -202,7 +184,7 @@ export default function App() {
       try {
           const res = await fetch(`${BACKEND_URL}/api/settings`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+              headers: getAuthHeaders(token),
               body: JSON.stringify(newSettings)
           });
           if (res.ok) setSettings(newSettings);
@@ -213,7 +195,14 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen bg-brand-black text-white font-sans overflow-hidden">
-      <AuthModal isOpen={authModal.isOpen} initialMode={authModal.mode} onClose={() => setAuthModal({ ...authModal, isOpen: false })} onSuccess={handleLoginSuccess} onOpenLegal={setLegalModalType} />
+      <AuthModal 
+        isOpen={authModal.isOpen} 
+        initialMode={authModal.mode} 
+        onClose={() => setAuthModal({ ...authModal, isOpen: false })} 
+        onSuccess={handleLoginSuccess} 
+        onOpenLegal={setLegalModalType} 
+        backendUrl={BACKEND_URL}
+      />
       <LegalModal type={legalModalType} onClose={() => setLegalModalType(null)} />
       
       <Header 
@@ -230,6 +219,12 @@ export default function App() {
       />
 
       <main className="flex-1 overflow-hidden flex relative">
+        {backendError && (
+            <div className="absolute top-0 left-0 right-0 bg-red-600/90 text-white text-[10px] font-bold p-2 text-center z-50 animate-pulse">
+                ⚠️ SISTEMA DESCONECTADO: {backendError}
+            </div>
+        )}
+
         {!token ? (
             <LandingPage 
                 onAuth={() => setAuthModal({ isOpen: true, mode: 'login' })} 
@@ -238,11 +233,12 @@ export default function App() {
                 isSimTyping={isSimTyping}
                 simScrollRef={simScrollRef}
                 onOpenLegal={setLegalModalType}
+                isServerReady={isServerReady}
             />
         ) : (
             <>
               {currentView === View.ADMIN_GLOBAL ? (
-                <AdminDashboard token={token} onAudit={(u) => { setAuditTarget(u); setCurrentView(View.AUDIT_MODE); }} />
+                <AdminDashboard token={token} backendUrl={BACKEND_URL} onAudit={(u) => { setAuditTarget(u); setCurrentView(View.AUDIT_MODE); }} />
               ) : currentView === View.AUDIT_MODE && auditTarget ? (
                 <AuditView user={auditTarget} onClose={() => setCurrentView(View.ADMIN_GLOBAL)} />
               ) : currentView === View.DASHBOARD ? (
@@ -255,11 +251,11 @@ export default function App() {
                     qrCode={qrCode} 
                     pairingCode={pairingCode}
                     onConnect={handleConnect}
-                    onDisconnect={() => fetch(`${BACKEND_URL}/api/disconnect`, { headers: { 'Authorization': `Bearer ${token}` } })}
+                    onDisconnect={() => fetch(`${BACKEND_URL}/api/disconnect`, { headers: getAuthHeaders(token) })}
                 />
               ) : (
                 <div className="flex-1 flex overflow-hidden relative">
-                    <div className={`${selectedConversationId ? 'hidden md:flex' : 'flex'} w-full md:w-auto h-full`}>
+                    <div className={`${selectedConversationId ? 'hidden md:flex' : 'flex'} w-full md:w-80 h-full`}>
                         <ConversationList 
                             conversations={conversations} 
                             selectedConversationId={selectedConversationId} 
@@ -273,13 +269,21 @@ export default function App() {
                             onSendMessage={handleSendMessage}
                             onToggleBot={(id) => fetch(`${BACKEND_URL}/api/conversation/update`, {
                                 method: 'POST',
-                                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                                headers: getAuthHeaders(token),
                                 body: JSON.stringify({ id, updates: { isBotActive: !selectedConversation?.isBotActive } })
                             })}
                             isTyping={isTyping}
                             isBotGloballyActive={isBotGloballyActive}
                             isMobile={true} 
                             onBack={() => setSelectedConversationId(null)}
+                            onUpdateConversation={(id, updates) => {
+                                setConversations(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
+                                fetch(`${BACKEND_URL}/api/conversation/update`, {
+                                    method: 'POST',
+                                    headers: getAuthHeaders(token),
+                                    body: JSON.stringify({ id, updates })
+                                });
+                            }}
                         />
                     </div>
                 </div>
@@ -291,8 +295,7 @@ export default function App() {
   );
 }
 
-function LandingPage({ onAuth, onRegister, visibleMessages, isSimTyping, simScrollRef, onOpenLegal }: any) {
-    // (Sin cambios en LandingPage)
+function LandingPage({ onAuth, onRegister, visibleMessages, isSimTyping, simScrollRef, onOpenLegal, isServerReady }: any) {
     return (
         <div className="relative flex-1 overflow-y-auto overflow-x-hidden bg-brand-black flex flex-col font-sans">
             <div className="absolute inset-0 neural-grid opacity-40 z-0"></div>
@@ -300,16 +303,17 @@ function LandingPage({ onAuth, onRegister, visibleMessages, isSimTyping, simScro
             <section className="relative z-10 flex-1 flex flex-col items-center justify-center p-6 md:p-12 pt-24 pb-32">
                 <div className="max-w-7xl w-full grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-24 items-center">
                     <div className="space-y-10 text-center lg:text-left">
-                        <div className="inline-flex items-center gap-3 px-4 py-1.5 border border-brand-gold/30 rounded-full text-brand-gold text-[11px] font-black uppercase tracking-[0.3em] bg-brand-gold/5 backdrop-blur-xl">
-                            <span className="w-2 h-2 bg-brand-gold rounded-full animate-pulse shadow-[0_0_10px_rgba(212,175,55,0.8)]"></span>
-                            Dominion Bot v2.7.6 Elite
+                        <div className={`inline-flex items-center gap-3 px-4 py-1.5 border rounded-full text-[11px] font-black uppercase tracking-[0.3em] backdrop-blur-xl transition-all ${isServerReady ? 'border-green-500/30 bg-green-500/10 text-green-400 shadow-[0_0_20px_rgba(34,197,94,0.2)]' : 'border-red-500/30 bg-red-500/10 text-red-400'}`}>
+                            <span className={`w-2 h-2 rounded-full ${isServerReady ? 'bg-green-500 animate-pulse' : 'bg-red-500 animate-pulse'}`}></span>
+                            {isServerReady ? 'SISTEMA ONLINE' : 'BUSCANDO TÚNEL...'}
                         </div>
+                        
                         <h1 className="text-6xl md:text-8xl lg:text-[90px] font-black text-white leading-tight tracking-normal py-2">
                             Vender en <br />
                             <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-gold via-brand-gold-light to-brand-gold-dark">Piloto Automático</span>
                         </h1>
                         <p className="text-xl md:text-2xl text-gray-400 leading-relaxed border-l-4 border-brand-gold/40 pl-8 mx-auto lg:mx-0 max-w-2xl font-medium">
-                            La infraestructura neural diseñada para escalar negocios de todos los rubros. Dominion filtra curiosos y califica a tus leads en tiempo real, entregándote solo clientes listos para comprar. Vende 24/7 sin esfuerzo operativo.
+                            La infraestructura neural diseñada para escalar negocios de todos los rubros. Dominion filtra curiosos y califica a tus leads en tiempo real.
                         </p>
                         
                         <div className="flex flex-col sm:flex-row gap-6 justify-center lg:justify-start pt-6">
@@ -364,20 +368,8 @@ function LandingPage({ onAuth, onRegister, visibleMessages, isSimTyping, simScro
                     <p className="text-white font-black text-lg tracking-tight flex items-center justify-center md:justify-start gap-2">
                         Dominion Bot by <a href="https://websoin.netlify.app" target="_blank" rel="noopener noreferrer" className="text-brand-gold hover:text-brand-gold-light transition-colors">SO-&gt;IN</a>
                     </p>
-                    <div className="flex gap-6 justify-center md:justify-start items-center">
-                        <a href="https://www.instagram.com/so.in_mendoza/" target="_blank" rel="noopener noreferrer" className="text-gray-500 hover:text-brand-gold transition-colors">
-                            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 1.366.062 2.633.332 3.608 1.308.975.975 1.245 2.242 1.308 3.607.058 1.266.07 1.646.07 4.85s-.012 3.584-.07 4.85c-.063 1.366-.333 2.633-1.308 3.608-.975.975-2.242 1.245-3.607 1.308-1.266.058-1.646.07-4.85.07s-3.584-.012-4.85-.07c-1.366-.063-2.633-.333-3.608-1.308-.975-.975-1.245-2.242-1.308-3.607-.058-1.266-.07-1.646-.07-4.85s.012-3.584.07-4.85c.062-1.366.332-2.633 1.308-3.608.975-.975 2.242-1.245 3.607-1.308 1.266-.058-1.646-.07 4.85-.07zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948s.014 3.667.072 4.947c.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072s3.667-.014 4.947-.072c4.358-.2 6.78-2.618 6.98-6.98.058-1.281.072-1.689.072-4.948s-.014-3.667-.072-4.947c-.2-4.358-2.618-6.78-6.98-6.98-1.281-.058-1.689-.072-4.948-.072zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.162 6.162 6.162 6.162-2.759 6.162-6.162-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.791-4-4s1.791-4 4-4 4 1.791 4 4-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>
-                        </a>
-                        <a href="https://www.facebook.com/SolucionesSOIN" target="_blank" rel="noopener noreferrer" className="text-gray-500 hover:text-brand-gold transition-colors">
-                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M22.675 0h-21.35c-.732 0-1.325.593-1.325 1.325v21.351c0 .731.593 1.324 1.325 1.324h11.495v-9.294h-3.128v-3.622h3.128v-2.671c0-3.1 1.893-4.788 4.659-4.788 1.325 0 2.463.099 2.795.143v3.24l-1.918.001c-1.504 0-1.795.715-1.795 1.763v2.313h3.587l-.467 3.622h-3.12v9.293h6.116c.73 0 1.323-.593 1.323-1.325v-21.35c0-.732-.593-1.325-1.325-1.325z"/></svg>
-                        </a>
-                        <a href="https://wa.me/5492617145654" target="_blank" rel="noopener noreferrer" className="text-gray-500 hover:text-brand-gold transition-colors">
-                            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.414 0 .018 5.394 0 12.03a11.782 11.782 0 001.583 5.962l-1.683 6.149 6.291-1.65a11.781 11.781 0 005.856 1.551h.005c6.634 0 12.032-5.394 12.036-12.031a11.782 11.782 0 00-3.51-8.514"/></svg>
-                        </a>
-                    </div>
                     <p className="text-gray-600 text-[10px] font-black uppercase tracking-[0.3em]">Neural Infrastructure Division • Mendoza, ARG</p>
                 </div>
-
                 <div className="flex flex-col items-center md:items-end gap-6">
                     <div className="flex gap-8 text-[10px] font-black text-gray-500 uppercase tracking-widest">
                         <button onClick={() => onOpenLegal('privacy')} className="hover:text-brand-gold transition-colors">Privacidad</button>

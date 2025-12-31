@@ -11,7 +11,7 @@ import AuditView from './components/Admin/AuditView.js';
 import AuthModal from './components/AuthModal.js';
 import LegalModal from './components/LegalModal.js'; 
 import AgencyDashboard from './components/AgencyDashboard.js';
-// IMPORTACIÓN CRÍTICA: Conexión centralizada
+// IMPORTACIÓN CRÍTICA
 import { BACKEND_URL, API_HEADERS, getAuthHeaders } from './config.js';
 
 const SIMULATION_SCRIPT = [
@@ -52,23 +52,21 @@ export default function App() {
   const [isSimTyping, setIsSimTyping] = useState(false);
   const simScrollRef = useRef<HTMLDivElement>(null);
 
-  // CHECK DE CONEXIÓN INICIAL
+  // HEALTH CHECK
   useEffect(() => {
-      // Usamos API_HEADERS para evitar bloqueo de Ngrok
       fetch(`${BACKEND_URL}/api/health`, { headers: API_HEADERS })
         .then(res => {
             if(res.ok) {
-                console.log("✅ HEALTH CHECK OK");
+                console.log("✅ SYSTEM ONLINE");
                 setIsServerReady(true);
                 setBackendError(null);
             } else {
-                console.error("❌ HEALTH CHECK FAILED", res.status);
                 setBackendError(`Error ${res.status}: Backend inalcanzable`);
             }
         })
         .catch(err => {
-            console.error("❌ NETWORK ERROR", err);
-            setBackendError(`No se puede conectar a: ${BACKEND_URL}`);
+            console.error("❌ CONEXIÓN FALLIDA:", err);
+            setBackendError(`No conecta a: ${BACKEND_URL}`);
         });
   }, []);
 
@@ -87,35 +85,15 @@ export default function App() {
             if (cRes.ok) setConversations(await cRes.json());
             setBackendError(null);
         } catch (e) {
-            console.error("DATA LOAD ERROR:", e);
-            setBackendError("Error cargando datos. Reintentando...");
+            console.error("DATA ERROR:", e);
+            setBackendError("Error cargando datos.");
         } finally {
             setIsLoadingSettings(false);
         }
     };
     loadData();
 
-    // SSE CONNECTION
-    let eventSource: EventSource | null = null;
-    try {
-        eventSource = new EventSource(`${BACKEND_URL}/api/sse?token=${token}`);
-        eventSource.onmessage = (e) => {
-            try {
-                const data = JSON.parse(e.data);
-                if (data.type === 'status_update') setConnectionStatus(data.status);
-                if (data.type === 'qr') setQrCode(data.qr);
-                if (data.type === 'pairing_code') setPairingCode(data.code);
-                if (data.type === 'new_message') {
-                    fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) })
-                        .then(r => r.json())
-                        .then(setConversations)
-                        .catch(() => {});
-                }
-            } catch (err) { console.error("SSE Parse Error", err); }
-        };
-    } catch(e) { console.error("SSE Connection Failed"); }
-
-    // POLLING FALLBACK (Respaldo para Ngrok Free)
+    // POLLING ROBUSTO (Reemplazo de SSE para estabilidad en Ngrok)
     const intervalId = setInterval(async () => {
         try {
             const res = await fetch(`${BACKEND_URL}/api/status`, { headers: getAuthHeaders(token) });
@@ -125,22 +103,19 @@ export default function App() {
                 if (data.qr) setQrCode(data.qr);
                 if (data.pairingCode) setPairingCode(data.pairingCode);
                 
-                // Actualizar conversaciones silenciosamente
+                // Actualizar conversaciones en segundo plano
                 const convRes = await fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) });
                 if(convRes.ok) setConversations(await convRes.json());
             }
         } catch (e) {
             // Silencioso
         }
-    }, 5000);
+    }, 4000);
 
-    return () => {
-        if(eventSource) eventSource.close();
-        clearInterval(intervalId);
-    };
+    return () => clearInterval(intervalId);
   }, [token]);
 
-  // Landing Animation (Mantenido)
+  // Landing Animation
   useEffect(() => {
     if (token) return; 
     let timeoutId: any;
@@ -188,7 +163,7 @@ export default function App() {
               body: JSON.stringify({ phoneNumber }) 
           });
       } catch (e) { 
-          setBackendError("Fallo al iniciar conexión. Verifica tu internet.");
+          setBackendError("Fallo al iniciar conexión.");
       }
   };
 

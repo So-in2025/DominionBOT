@@ -56,7 +56,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
       setIsSimulating(true);
       setSimResults([]);
       try {
-          // FIX: Uso de BACKEND_URL central
           const res = await fetch(`${BACKEND_URL}/api/settings/simulate`, {
               method: 'POST',
               headers: getAuthHeaders(token),
@@ -223,7 +222,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
             </div>
         </div>
 
-        <div className="flex justify-center pt-10">
+        <div className="flex-1 flex justify-center pt-10">
             <button type="submit" className={`px-20 py-5 rounded-2xl font-black text-xs uppercase tracking-[0.3em] transition-all duration-500 shadow-2xl ${isSaved ? 'bg-green-600 text-white scale-95' : 'bg-brand-gold text-black hover:scale-105 hover:shadow-brand-gold/20'}`}>
                 {isSaved ? "Infraestructura Actualizada" : "Sincronizar Cerebro IA"}
             </button>

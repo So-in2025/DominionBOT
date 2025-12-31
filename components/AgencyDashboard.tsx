@@ -1,6 +1,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { BotSettings, DashboardMetrics, User } from '../types.js';
+import { getAuthHeaders } from '../src/config.js';
 
 interface AgencyDashboardProps {
   token: string;
@@ -70,12 +71,11 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
       setLoading(true);
       setError(null);
       try {
-        // Establecer un timeout manual para la petición
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 segundos timeout
+        const timeoutId = setTimeout(() => controller.abort(), 8000); 
 
         const res = await fetch(`${backendUrl}/api/metrics`, { 
-            headers: { 'Authorization': `Bearer ${token}` },
+            headers: getAuthHeaders(token),
             signal: controller.signal
         });
         
@@ -120,7 +120,6 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
       </div>
   );
 
-  // Fallback si no hay métricas ni error ni loading
   if (!metrics) return (
       <div className="flex-1 flex flex-col items-center justify-center bg-brand-black p-10 text-center">
           <p className="text-gray-500">No hay datos disponibles.</p>
@@ -150,7 +149,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
             <KpiCard label="ROI Proyectado" value={`$${metrics.revenueEstimated.toLocaleString()}`} isGold icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>} trend="+18%" />
             <KpiCard label="Conversión" value={`${metrics.conversionRate}%`} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>} />
             <KpiCard label="Captación" value={metrics.totalLeads} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857" /></svg>} />
-            <KpiCard label="Signals" value={metrics.totalMessages} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01" /></svg>} />
+            <KpiCard label="Señales" value={metrics.totalMessages} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01" /></svg>} />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -160,9 +159,9 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
                     <p className="text-[10px] text-gray-500 font-black uppercase tracking-[0.3em]">Estado Neural de tus Ventas</p>
                 </div>
                 <div className="space-y-8 max-w-3xl">
-                    <FunnelStep label="Ingesta (COLD)" value={metrics.coldLeads} total={metrics.totalLeads} color="bg-blue-600/80" delay="0s" />
-                    <FunnelStep label="Interés (WARM)" value={metrics.warmLeads} total={metrics.totalLeads} color="bg-orange-500/80" delay="0.1s" />
-                    <FunnelStep label="Cierre (HOT)" value={metrics.hotLeads} total={metrics.totalLeads} color="bg-brand-gold shadow-[0_0_20px_rgba(212,175,55,0.4)]" delay="0.2s" />
+                    <FunnelStep label="Ingesta (FRÍO)" value={metrics.coldLeads} total={metrics.totalLeads} color="bg-blue-600/80" delay="0s" />
+                    <FunnelStep label="Interés (TIBIO)" value={metrics.warmLeads} total={metrics.totalLeads} color="bg-orange-500/80" delay="0.1s" />
+                    <FunnelStep label="Cierre (CALIENTE)" value={metrics.hotLeads} total={metrics.totalLeads} color="bg-brand-gold shadow-[0_0_20px_rgba(212,175,55,0.4)]" delay="0.2s" />
                 </div>
             </div>
 
@@ -185,13 +184,13 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
                     </div>
 
                     <div className="flex items-center justify-between">
-                        <span className="text-xs text-gray-400 font-bold uppercase">Human Deviation Score</span>
-                        <span className="text-xl font-black text-white">4.5%</span>
+                        <span className="text-xs text-gray-400 font-bold uppercase">Tasa de Desviación Humana</span>
+                        <span className="text-xl font-black text-white">{metrics.humanDeviationScore}%</span>
                     </div>
                     <div className="w-full bg-white/5 h-2 rounded-full relative overflow-hidden">
-                        <div className="w-[4.5%] h-full bg-brand-gold rounded-full"></div>
+                        <div className="h-full bg-brand-gold rounded-full transition-all duration-1000" style={{ width: `${metrics.humanDeviationScore}%` }}></div>
                     </div>
-                    <p className="text-[9px] text-gray-500 italic">Porcentaje de veces que el humano ignoró la sugerencia de cierre de la IA.</p>
+                    <p className="text-[9px] text-gray-500 italic">Porcentaje de mensajes enviados manualmente por el humano vs la IA.</p>
                 </div>
 
                 <button className="w-full py-4 bg-white/5 border border-white/10 rounded-xl text-[10px] font-black uppercase tracking-widest text-gray-400 hover:text-white hover:bg-white/10 transition-all">Auditar Protocolos</button>
