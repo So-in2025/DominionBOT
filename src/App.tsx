@@ -59,9 +59,12 @@ export default function App() {
   useEffect(() => {
       let isMounted = true;
       const checkServer = async () => {
+          // Si no hay variable, no intentamos conectar
+          if (!BACKEND_URL) return;
+
           try {
               const controller = new AbortController();
-              const timeoutId = setTimeout(() => controller.abort(), 3000); 
+              const timeoutId = setTimeout(() => controller.abort(), 5000); 
               
               const res = await fetch(`${BACKEND_URL}/api/health`, { 
                   method: 'GET',
@@ -72,16 +75,16 @@ export default function App() {
               if (res.ok) {
                   if (isMounted) {
                       setIsServerReady(true);
-                      console.log("🦅 Dominion Core: Online & Ready");
+                      console.log("🦅 Dominion Core: Online & Ready (Conectado vía Ngrok)");
                   }
               } else {
                   throw new Error("Server not ready");
               }
           } catch (e) {
-              console.log(`🦅 Dominion Core: Buscando servidor... (${BACKEND_URL}) Intento ${serverCheckAttempts + 1}`);
+              console.log(`🦅 Dominion Core: Buscando túnel Ngrok... Intento ${serverCheckAttempts + 1}`);
               if (isMounted) {
                   setServerCheckAttempts(prev => prev + 1);
-                  setTimeout(checkServer, 2000); 
+                  setTimeout(checkServer, 3000); 
               }
           }
       };
@@ -107,8 +110,8 @@ export default function App() {
             if (cRes.ok) setConversations(await cRes.json());
             setBackendError(null);
         } catch (e) {
-            console.warn("Backend lento o desconectado, iniciando en modo offline.");
-            setBackendError("Modo Offline: Reconectando...");
+            console.warn("Backend lento o desconectado.");
+            setBackendError("Reconectando con el servidor...");
         } finally {
             setIsLoadingSettings(false);
         }
@@ -123,10 +126,8 @@ export default function App() {
             try {
                 const data = JSON.parse(e.data);
                 
-                // Manejo de eventos
                 if (data.type === 'status_update') {
                     setConnectionStatus(data.status);
-                    // Si el update trae QR o código, actualizarlos también
                     if (data.qr) setQrCode(data.qr);
                     if (data.pairingCode) setPairingCode(data.pairingCode);
                 }
@@ -154,7 +155,6 @@ export default function App() {
             const res = await fetch(`${BACKEND_URL}/api/status`, { headers: { 'Authorization': `Bearer ${token}` } });
             if (res.ok) {
                 const data = await res.json();
-                // Prioridad del servidor
                 setConnectionStatus(data.status);
                 if (data.qr) setQrCode(data.qr);
                 if (data.pairingCode) setPairingCode(data.pairingCode); 
@@ -222,7 +222,6 @@ export default function App() {
 
   const handleConnect = async (phoneNumber?: string) => {
       if (!token) return;
-      // Reseteamos UI inmediatamente
       setQrCode(null);
       setPairingCode(null);
       setConnectionStatus(ConnectionStatus.GENERATING_QR);
@@ -273,17 +272,19 @@ export default function App() {
             <div className="absolute inset-0 bg-noise opacity-10 pointer-events-none"></div>
             <div className="relative z-10 flex flex-col items-center animate-fade-in">
                 <div className="w-24 h-24 border-4 border-brand-gold/20 border-t-brand-gold rounded-full animate-spin mb-8 shadow-[0_0_50px_rgba(212,175,55,0.2)]"></div>
-                <h1 className="text-2xl font-black uppercase tracking-widest text-white mb-2 animate-pulse">Iniciando Sistemas</h1>
+                <h1 className="text-2xl font-black uppercase tracking-widest text-white mb-2 animate-pulse">Conectando Túnel Ngrok</h1>
                 <p className="text-[10px] text-brand-gold font-bold uppercase tracking-[0.3em]">
-                    Buscando Nodo Local o Nube (Intento {serverCheckAttempts})
+                    Intento {serverCheckAttempts}
                 </p>
                 <div className="mt-8 max-w-md text-center p-4 bg-black/40 border border-white/5 rounded-xl">
                     <p className="text-[10px] text-gray-400 font-mono">
-                        Target: <span className="text-brand-gold">{BACKEND_URL}</span>
+                        Target: <span className="text-brand-gold">{BACKEND_URL || "SIN CONFIGURAR"}</span>
                     </p>
-                    <p className="text-[9px] text-gray-600 mt-2 leading-relaxed">
-                        Asegúrate de ejecutar "npm start" en tu terminal.
-                    </p>
+                    {!BACKEND_URL && (
+                        <p className="text-[10px] text-red-500 font-bold mt-2">
+                            ERROR: Variable VITE_BACKEND_URL no detectada en Vercel.
+                        </p>
+                    )}
                 </div>
             </div>
         </div>

@@ -1,21 +1,14 @@
 
-// Detección de Backend para Arquitectura Híbrida (Vercel + Tu PC)
+// Configuración de Conexión Estricta (Ngrok / Vercel)
+// @ts-ignore
+const envUrl = import.meta.env?.VITE_BACKEND_URL;
 
-const getBackendUrl = () => {
-    // 1. Si está en Vercel, buscará la variable de entorno VITE_BACKEND_URL (tu link de Ngrok)
-    // @ts-ignore
-    const envUrl = (import.meta as any).env?.VITE_BACKEND_URL;
-    
-    // Si hay una URL en Vercel, la usamos.
-    if (envUrl) {
-        return envUrl.trim().replace(/\/$/, '');
-    }
+// Validación de Seguridad: No permitir hardcoding ni fallbacks automáticos
+if (!envUrl) {
+    console.warn("⚠️ ADVERTENCIA CRÍTICA: VITE_BACKEND_URL no está definida en Vercel. La app no podrá conectarse al túnel Ngrok.");
+}
 
-    // 2. Si no hay variable (estás en local o la variable falló), usa localhost.
-    // Esto asegura que si abres la app en tu navegador local, funcione directo.
-    return 'http://localhost:3001';
-};
+// Limpiamos la URL de barras finales para evitar errores de doble slash //
+export const BACKEND_URL = envUrl ? envUrl.replace(/\/$/, '') : '';
 
-export const BACKEND_URL = getBackendUrl();
-
-console.log("🦅 DOMINION TARGET:", BACKEND_URL);
+console.log("🦅 DOMINION TARGET (Ngrok):", BACKEND_URL || "SIN DEFINIR - REVISAR VARIABLES DE ENTORNO");
