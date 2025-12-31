@@ -34,6 +34,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
     const [metrics, setMetrics] = useState<GlobalDashboardMetrics | null>(null);
     const [view, setView] = useState<AdminView>('dashboard');
     const [loading, setLoading] = useState(true);
+    const [isResetArmed, setIsResetArmed] = useState(false);
+    const [resetConfirmation, setResetConfirmation] = useState('');
 
     const fetchData = async () => {
         setLoading(true);
@@ -61,12 +63,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
         return () => clearInterval(interval);
     }, [token, backendUrl]);
 
-    const handleReset = async () => {
-        if (!window.confirm("ADVERTENCIA: Estás a punto de borrar TODA la información de la base de datos (clientes, sesiones, logs). ¿Continuar?")) return;
-        
-        const confirmation = prompt("Esta acción es IRREVERSIBLE. Escribe 'RESET' para confirmar.");
-        if (confirmation !== 'RESET') {
-            showToast("Reseteo cancelado.", 'error');
+    const executeReset = async () => {
+        if (resetConfirmation !== 'RESET') {
+            showToast("Confirmación incorrecta.", 'error');
             return;
         }
 
@@ -79,10 +78,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
                 showToast("Sistema reseteado exitosamente. Saliendo...", 'success');
                 setTimeout(onLogout, 2000);
             } else {
-                showToast("Falló el reseteo del sistema.", 'error');
+                const data = await res.json().catch(() => ({ message: 'Error desconocido en el servidor.' }));
+                showToast(data.message || "Falló el reseteo del sistema.", 'error');
             }
         } catch(e) {
             showToast("Error de red al intentar resetear.", 'error');
+        } finally {
+            setIsResetArmed(false);
+            setResetConfirmation('');
         }
     };
 
@@ -91,6 +94,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
             active: 'bg-green-500/10 text-green-400 border-green-500/20',
             expired: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
             suspended: 'bg-red-500/10 text-red-400 border-red-500/20',
+            trial: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
         };
         return <span className={`px-2 py-1 rounded text-[9px] font-black uppercase ${colors[status]} border`}>{type} - {status}</span>;
     };
@@ -136,14 +140,41 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
 
                 {renderContent()}
 
-                <section className="bg-red-900/20 border border-red-500/30 rounded-2xl p-6 mt-12">
+                <section className={`bg-red-900/20 border border-red-500/30 rounded-2xl p-6 mt-12 transition-all duration-300 ${isResetArmed ? 'ring-2 ring-red-500 shadow-2xl shadow-red-500/20' : ''}`}>
                     <h3 className="text-sm font-black text-red-400 uppercase tracking-widest">Acciones de Alto Riesgo</h3>
-                    <div className="flex flex-col md:flex-row justify-between items-center mt-4 gap-4">
-                        <p className="text-xs text-gray-400 flex-1">El reseteo del sistema es una acción destructiva que elimina todos los datos. Úselo solo para una limpieza completa del entorno de producción.</p>
-                        <button onClick={handleReset} className="px-6 py-3 bg-red-600/80 text-white border border-red-400/50 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-red-500 transition-all shadow-lg">
-                            Hard Reset del Sistema
-                        </button>
-                    </div>
+                    {!isResetArmed ? (
+                        <div className="flex flex-col md:flex-row justify-between items-center mt-4 gap-4">
+                            <p className="text-xs text-gray-400 flex-1">El reseteo del sistema es una acción destructiva que elimina todos los datos. Úselo solo para una limpieza completa del entorno de producción.</p>
+                            <button onClick={() => setIsResetArmed(true)} className="px-6 py-3 bg-red-600/80 text-white border border-red-400/50 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-red-500 transition-all shadow-lg">
+                                Hard Reset del Sistema
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="mt-4 space-y-4 animate-fade-in">
+                            <p className="text-xs text-yellow-300 font-bold">Esta acción borrará TODOS los clientes, logs y sesiones de WhatsApp. Es irreversible.</p>
+                            <div className="flex flex-col md:flex-row gap-4 items-center">
+                                <input 
+                                    type="text"
+                                    value={resetConfirmation}
+                                    onChange={(e) => setResetConfirmation(e.target.value)}
+                                    placeholder="Escriba 'RESET' para confirmar"
+                                    className="flex-1 w-full md:w-auto bg-black/50 border border-red-500/50 rounded-lg py-2.5 px-4 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-all font-mono"
+                                />
+                                <div className="flex gap-2 w-full md:w-auto">
+                                    <button onClick={() => { setIsResetArmed(false); setResetConfirmation(''); }} className="flex-1 px-4 py-2 bg-white/10 text-white rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-white/20 transition-all">
+                                        Cancelar
+                                    </button>
+                                    <button 
+                                        onClick={executeReset} 
+                                        disabled={resetConfirmation !== 'RESET'}
+                                        className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg text-[9px] font-black uppercase tracking-widest transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:bg-red-500"
+                                    >
+                                        Confirmar Reseteo
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </section>
             </div>
         </div>

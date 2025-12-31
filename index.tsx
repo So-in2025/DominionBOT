@@ -2,6 +2,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './src/App';
+import ErrorBoundary from './src/components/ErrorBoundary';
 
 // Importación de CSS global solo si el archivo existe físicamente
 // Como estamos usando Tailwind vía CDN en el HTML, no es estrictamente necesario aquí
@@ -16,6 +17,8 @@ if (!rootElement) {
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </React.StrictMode>
 );

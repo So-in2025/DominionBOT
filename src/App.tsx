@@ -15,6 +15,7 @@ import Toast, { ToastData } from './components/Toast';
 import HowItWorksArt from './components/HowItWorksArt';
 import HowItWorksSection from './components/HowItWorksSection';
 import { BACKEND_URL, API_HEADERS, getAuthHeaders } from './config';
+import { audioService } from './services/audioService';
 
 const SIMULATION_SCRIPT = [
     { id: 1, type: 'user', text: "Hola, vi el anuncio. ¿Cómo funciona el bot?", delayBefore: 1000 },
@@ -53,6 +54,37 @@ const PREDEFINED_TESTIMONIALS = [
     { name: "Emilia Ponce", location: "Mendoza", text: "Ojalá lo sigan mejorando, pero la base está muy bien." },
 ];
 
+const TrialBanner: React.FC<{ user: User | null }> = ({ user }) => {
+    if (!user || user.role === 'super_admin' || user.plan_status === 'active') return null;
+
+    const endDate = new Date(user.billing_end_date);
+    const now = new Date();
+    const daysRemaining = Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (user.plan_status === 'trial' && daysRemaining > 0) {
+        return (
+            <div className="bg-gradient-to-r from-brand-gold-dark via-brand-gold to-brand-gold-dark text-black text-center py-2 px-4 text-xs font-bold shadow-lg">
+                Estás en un período de prueba PRO. Quedan {daysRemaining} {daysRemaining > 1 ? 'días' : 'día'}.
+            </div>
+        );
+    }
+
+    if (user.plan_status === 'expired' || (user.plan_status === 'trial' && daysRemaining <= 0)) {
+        if (!sessionStorage.getItem('trial_ended_alert_played')) {
+            audioService.play('alert_warning_trial_ended');
+            sessionStorage.setItem('trial_ended_alert_played', 'true');
+        }
+        return (
+            <div className="bg-red-800 text-white text-center py-2 px-4 text-xs font-bold shadow-lg flex items-center justify-center gap-4">
+                <span>Tu período de prueba ha finalizado. Activa tu licencia para restaurar las funcionalidades.</span>
+                <button className="bg-white text-red-800 px-3 py-1 rounded font-bold text-[10px] uppercase">Contactar Soporte</button>
+            </div>
+        );
+    }
+
+    return null;
+};
+
 export default function App() {
   const [token, setToken] = useState<string | null>(localStorage.getItem('saas_token'));
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -84,6 +116,7 @@ export default function App() {
   const simScrollRef = useRef<HTMLDivElement>(null);
 
   const showToast = (message: string, type: 'success' | 'error') => {
+    if (type === 'error') audioService.play('alert_error_generic');
     setToast({ message, type });
   };
   
@@ -97,10 +130,10 @@ export default function App() {
       (window as any).IS_LANDING_VIEW = view === View.CHATS && showLanding;
   };
 
-
   const handleLogout = () => {
       localStorage.removeItem('saas_token');
       localStorage.removeItem('saas_role');
+      sessionStorage.removeItem('trial_ended_alert_played');
       setToken(null);
       setUserRole(null);
       setCurrentUser(null);
@@ -138,38 +171,60 @@ export default function App() {
             if (userRes.ok) setCurrentUser(await userRes.json());
             if (sRes.ok) setSettings(await sRes.json());
             if (cRes.ok) setConversations(await cRes.json());
-            setBackendError(null);
+            if (backendError) setBackendError(null);
         } catch (e) {
             console.error("DATA ERROR:", e);
-            setBackendError("Error cargando datos. Revisa el túnel/backend.");
+            setBackendError("Alerta: Fallo de conexión con el nodo central.");
+            audioService.play('alert_error_connection');
         } finally {
             setIsLoadingSettings(false);
         }
     };
     loadUserData();
+    
+    // Server-Sent Events listener for real-time updates
+    const eventSource = new EventSource(`${BACKEND_URL}/api/sse?token=${token}`);
+    eventSource.addEventListener('status_update', (event) => {
+        const data = JSON.parse(event.data);
+        setConnectionStatus(data.status);
+        if (data.qr) setQrCode(data.qr);
+        if (data.pairingCode) setPairingCode(data.pairingCode);
 
-    const intervalId = setInterval(async () => {
+        // Play audio based on status
+        switch(data.status) {
+            case ConnectionStatus.GENERATING_QR: audioService.play('connection_establishing'); break;
+            case ConnectionStatus.AWAITING_SCAN: audioService.play('connection_pending'); break;
+            case ConnectionStatus.CONNECTED: audioService.play('connection_success'); break;
+            case ConnectionStatus.DISCONNECTED: audioService.play('connection_disconnected'); break;
+        }
+    });
+
+    const conversationPoll = setInterval(async () => {
         try {
-            const res = await fetch(`${BACKEND_URL}/api/status`, { headers: getAuthHeaders(token) });
-            if (res.status === 403) {
-                clearInterval(intervalId);
-                handleLogout();
-                return;
-            }
-
-            if (res.ok) {
-                const data = await res.json();
-                setConnectionStatus(data.status);
-                if (data.qr) setQrCode(data.qr);
-                if (data.pairingCode) setPairingCode(data.pairingCode);
-                
-                const convRes = await fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) });
-                if(convRes.ok) setConversations(await convRes.json());
-            }
+            const convRes = await fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) });
+            if(convRes.ok) setConversations(await convRes.json());
         } catch (e) { /* Silencioso para polling */ }
-    }, 4000);
+    }, 8000);
 
-    return () => clearInterval(intervalId);
+    return () => {
+        eventSource.close();
+        clearInterval(conversationPoll);
+    };
+  }, [token]);
+  
+  // Landing page scroll audio effect
+  useEffect(() => {
+    if (token) return; // Only for logged-out users
+
+    const handleScroll = () => {
+        if (window.scrollY > 150 && !sessionStorage.getItem('landing_intro_played')) {
+            audioService.play('landing_intro');
+            sessionStorage.setItem('landing_intro_played', 'true');
+            window.removeEventListener('scroll', handleScroll);
+        }
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
   }, [token]);
 
   useEffect(() => {
@@ -178,7 +233,6 @@ export default function App() {
     let currentIndex = 0;
     const runStep = () => {
         if (currentIndex >= SIMULATION_SCRIPT.length) {
-            // FIX: Reset simulation when it ends to create a continuous loop
             timeoutId = setTimeout(() => { setVisibleMessages([]); currentIndex = 0; runStep(); }, 8000); 
             return;
         }
@@ -207,6 +261,7 @@ export default function App() {
       setShowLanding(false);
       setCurrentView(r === 'super_admin' ? View.ADMIN_GLOBAL : View.CHATS);
       setAuthModal({ ...authModal, isOpen: false });
+      audioService.play('login_welcome');
   };
 
   const handleConnect = async (phoneNumber?: string) => {
@@ -223,6 +278,7 @@ export default function App() {
           });
       } catch (e) { 
           setBackendError("Fallo al iniciar conexión.");
+          audioService.play('alert_error_connection');
       }
   };
 
@@ -245,11 +301,20 @@ export default function App() {
               headers: getAuthHeaders(token),
               body: JSON.stringify(newSettings)
           });
-          if (res.ok) setSettings(newSettings);
-      } catch (e) { console.error(e); }
+          if (res.ok) {
+              setSettings(newSettings);
+              audioService.play('action_success');
+          } else {
+              audioService.play('alert_error_generic');
+          }
+      } catch (e) { 
+          console.error(e); 
+          audioService.play('alert_error_connection');
+      }
   };
 
   const selectedConversation = conversations.find(c => c.id === selectedConversationId) || null;
+  const isFunctionalityDisabled = currentUser?.plan_status === 'expired' || (currentUser?.plan_status === 'trial' && new Date() > new Date(currentUser.billing_end_date));
 
   const renderClientView = () => {
     if (userRole === 'super_admin') {
@@ -263,9 +328,9 @@ export default function App() {
         case View.DASHBOARD:
             return <AgencyDashboard token={token!} backendUrl={BACKEND_URL} settings={settings!} onUpdateSettings={handleUpdateSettings} />;
         case View.SETTINGS:
-            return <SettingsPanel settings={settings} isLoading={isLoadingSettings} onUpdateSettings={handleUpdateSettings} onOpenLegal={setLegalModalType} />;
+            return <SettingsPanel settings={settings} isLoading={isLoadingSettings} onUpdateSettings={isFunctionalityDisabled ? ()=>{} : handleUpdateSettings} onOpenLegal={setLegalModalType} />;
         case View.CONNECTION:
-            return <ConnectionPanel user={currentUser} status={connectionStatus} qrCode={qrCode} pairingCode={pairingCode} onConnect={handleConnect} onDisconnect={() => fetch(`${BACKEND_URL}/api/disconnect`, { headers: getAuthHeaders(token!) })} />;
+            return <ConnectionPanel user={currentUser} status={connectionStatus} qrCode={qrCode} pairingCode={pairingCode} onConnect={isFunctionalityDisabled ? async ()=>{} : handleConnect} onDisconnect={() => fetch(`${BACKEND_URL}/api/disconnect`, { headers: getAuthHeaders(token!) })} />;
         case View.CHATS:
         default:
             return (
@@ -274,7 +339,7 @@ export default function App() {
                         <ConversationList conversations={conversations} selectedConversationId={selectedConversationId} onSelectConversation={setSelectedConversationId} backendError={backendError} />
                     </div>
                     <div className={`${!selectedConversationId ? 'hidden md:flex' : 'flex'} flex-1 h-full`}>
-                        <ChatWindow conversation={selectedConversation} onSendMessage={handleSendMessage} onToggleBot={(id) => fetch(`${BACKEND_URL}/api/conversation/update`, { method: 'POST', headers: getAuthHeaders(token!), body: JSON.stringify({ id, updates: { isBotActive: !selectedConversation?.isBotActive } }) })} isTyping={isTyping} isBotGloballyActive={isBotGloballyActive} isMobile={true} onBack={() => setSelectedConversationId(null)} onUpdateConversation={(id, updates) => { setConversations(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c)); fetch(`${BACKEND_URL}/api/conversation/update`, { method: 'POST', headers: getAuthHeaders(token!), body: JSON.stringify({ id, updates }) }); }} />
+                        <ChatWindow conversation={selectedConversation} onSendMessage={isFunctionalityDisabled ? ()=>{} : handleSendMessage} onToggleBot={(id) => fetch(`${BACKEND_URL}/api/conversation/update`, { method: 'POST', headers: getAuthHeaders(token!), body: JSON.stringify({ id, updates: { isBotActive: !selectedConversation?.isBotActive } }) })} isTyping={isTyping} isBotGloballyActive={isBotGloballyActive} isMobile={true} onBack={() => setSelectedConversationId(null)} onUpdateConversation={(id, updates) => { setConversations(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c)); fetch(`${BACKEND_URL}/api/conversation/update`, { method: 'POST', headers: getAuthHeaders(token!), body: JSON.stringify({ id, updates }) }); }} />
                     </div>
                 </div>
             );
@@ -307,11 +372,12 @@ export default function App() {
         onNavigate={handleNavigate} 
         connectionStatus={connectionStatus}
       />
+      {isAppView && <TrialBanner user={currentUser} />}
 
       <main className={`flex-1 flex relative ${isAppView ? 'overflow-hidden' : ''}`}>
         {backendError && (
             <div className="absolute top-0 left-0 right-0 bg-red-600/95 text-white text-[10px] font-black p-2 text-center z-[200] shadow-xl animate-pulse">
-                ⚠️ SISTEMA OFFLINE: {backendError}
+                ⚠️ {backendError}
             </div>
         )}
 
@@ -352,15 +418,31 @@ const TestimonialsSection = ({ isLoggedIn, token, showToast }: { isLoggedIn: boo
                     return;
                 }
                 const res = await fetch(`${BACKEND_URL}/api/testimonials`);
+
+                if (!res.ok) {
+                    console.error(`Fallo al cargar reseñas: El servidor respondió con estado ${res.status}`);
+                    return;
+                }
+
+                const resClone = res.clone();
+                const bodyText = await resClone.text();
+
+                if (!bodyText) {
+                    setRealTestimonials([]);
+                    return;
+                }
+
                 const contentType = res.headers.get("content-type");
-                
-                if (res.ok && contentType && contentType.includes("application/json")) {
-                    setRealTestimonials(await res.json());
+                if (contentType && contentType.includes("application/json")) {
+                    const data = await res.json();
+                    setRealTestimonials(data);
                 } else {
-                    console.error("Fallo al cargar reseñas: La respuesta no es un JSON válido.");
+                    console.warn("Fallo al cargar reseñas: La respuesta no es un JSON válido, probablemente una página de advertencia de proxy.");
+                    setRealTestimonials([]);
                 }
             } catch (e) { 
-                console.error("Fallo al cargar reseñas", e); 
+                console.error("Fallo de red o de parseo al cargar reseñas:", e); 
+                setRealTestimonials([]);
             }
         };
         fetchRealTestimonials();
@@ -428,6 +510,7 @@ const TestimonialsSection = ({ isLoggedIn, token, showToast }: { isLoggedIn: boo
                 setRealTestimonials(prev => [newTestimonial, ...prev]);
                 setNewTestimonialText('');
                 showToast('¡Gracias por tu reseña!', 'success');
+                audioService.play('action_success_feedback');
             } else {
                 showToast('Hubo un error al enviar tu reseña.', 'error');
             }

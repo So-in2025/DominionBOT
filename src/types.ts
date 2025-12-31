@@ -47,7 +47,7 @@ export type IntendedUse =
   | 'OTRO';
 
 export type PlanType = 'starter' | 'pro';
-export type PlanStatus = 'active' | 'expired' | 'suspended';
+export type PlanStatus = 'active' | 'expired' | 'suspended' | 'trial';
 export type LogLevel = 'INFO' | 'WARN' | 'ERROR' | 'AUDIT';
 
 export interface Message {

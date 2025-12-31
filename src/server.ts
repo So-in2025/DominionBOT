@@ -7,6 +7,7 @@ import jwt from 'jsonwebtoken';
 import { db } from './database.js';
 import { authenticateToken } from './middleware/auth.js';
 import { logService } from './services/logService.js';
+import { ttsService } from './services/ttsService.js'; // Importar el nuevo servicio
 
 const app = express();
 
@@ -53,7 +54,7 @@ app.post('/api/login', async (req: any, res: any) => {
         }
         await new Promise(r => setTimeout(r, 1000));
         logService.warn('Intento de login fallido', undefined, username);
-        res.status(401).json({ message: 'Credenciales inválidas.' });
+        res.status(401).json({ message: 'Algun dato parece incorrecto, revisa e intenta nuevamente.' });
     } catch (e: any) {
         logService.error('Error interno en login', e, undefined, username);
         res.status(500).json({ message: "Error interno." });
@@ -118,9 +119,9 @@ app.get('/api/metrics', authenticateToken, async (req: any, res: any) => {
 });
 
 import { 
-    handleSse, handleConnect, handleDisconnect, handleSendMessage, handleUpdateConversation, handleGetStatus, handleGetConversations, handleGetTestimonials, handlePostTestimonial 
+    handleSse, handleConnect, handleDisconnect, handleSendMessage, handleUpdateConversation, handleGetStatus, handleGetConversations, handleGetTestimonials, handlePostTestimonial, handleGetTtsAudio
 } from './controllers/apiController.js';
-import { handleGetAllClients, handleUpdateClient, handleRenewClient, handleGetLogs, handleGetDashboardMetrics } from './controllers/adminController.js';
+import { handleGetAllClients, handleUpdateClient, handleRenewClient, handleGetLogs, handleGetDashboardMetrics, handleActivateClient } from './controllers/adminController.js';
 
 // SSE & Standard Client Routes
 app.get('/api/sse', handleSse);
@@ -135,6 +136,9 @@ app.get('/api/conversations', authenticateToken, handleGetConversations);
 app.get('/api/testimonials', handleGetTestimonials);
 app.post('/api/testimonials', authenticateToken, handlePostTestimonial);
 
+// TTS Pre-generated Audio Route
+app.get('/api/tts/:eventName', authenticateToken, handleGetTtsAudio);
+
 // Super Admin Routes
 const adminRouter = express.Router();
 adminRouter.use(authenticateToken, (req: any, res, next) => {
@@ -146,6 +150,7 @@ adminRouter.get('/dashboard-metrics', handleGetDashboardMetrics);
 adminRouter.get('/clients', handleGetAllClients);
 adminRouter.put('/clients/:id', handleUpdateClient);
 adminRouter.post('/clients/:id/renew', handleRenewClient);
+adminRouter.post('/clients/:id/activate', handleActivateClient);
 adminRouter.get('/logs', handleGetLogs);
 adminRouter.post('/system/reset', async (req: any, res: any) => {
     logService.audit('HARD RESET DEL SISTEMA INICIADO', req.user.id, req.user.username);
@@ -165,7 +170,8 @@ app.listen(Number(PORT), '0.0.0.0', async () => {
     try {
         await db.init();
         logService.info('El sistema backend se ha iniciado correctamente.');
+        await ttsService.init(); // Inicializar el servicio TTS para pre-generar audios
     } catch(e) {
-        logService.error('Fallo crítico al inicializar la base de datos', e);
+        logService.error('Fallo crítico al inicializar la base de datos o el servicio TTS', e);
     }
 });

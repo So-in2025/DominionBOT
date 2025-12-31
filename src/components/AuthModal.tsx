@@ -99,6 +99,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
 
             if (res.ok) {
                 if (mode === 'register') {
+                    onSuccess(data.token, data.role); // Iniciar sesión inmediatamente
                     setGeneratedKey(data.recoveryKey);
                     setMode('registered_success');
                 } else if (mode === 'recovery') {
@@ -148,7 +149,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
                                 {generatedKey}
                             </div>
 
-                            <button onClick={() => { localStorage.clear(); window.location.reload(); }} className="w-full py-5 bg-brand-gold text-black rounded-xl font-black text-xs uppercase tracking-[0.2em] shadow-[0_10px_40px_rgba(212,175,55,0.3)] hover:scale-105 transition-all">He asegurado mi llave</button>
+                            <button onClick={onClose} className="w-full py-5 bg-brand-gold text-black rounded-xl font-black text-xs uppercase tracking-[0.2em] shadow-[0_10px_40px_rgba(212,175,55,0.3)] hover:scale-105 transition-all">He asegurado mi llave</button>
                         </div>
                     ) : (
                         <>

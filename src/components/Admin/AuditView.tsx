@@ -47,6 +47,30 @@ const ClientManagementView: React.FC<ClientManagementViewProps> = ({ user, onClo
             setIsSaving(false);
         }
     };
+
+    const handleActivate = async () => {
+        if (!window.confirm(`¿Activar la licencia PRO para ${clientData.business_name} por 30 días?`)) return;
+        setIsSaving(true);
+        try {
+            const token = localStorage.getItem('saas_token');
+            const res = await fetch(`${BACKEND_URL}/api/admin/clients/${clientData.id}/activate`, {
+                method: 'POST',
+                headers: getAuthHeaders(token!),
+            });
+            if(res.ok) {
+                const updated = await res.json();
+                setClientData(updated); // Update local state
+                onUpdate(updated); // Update parent state
+                showToast('Licencia activada por 30 días.', 'success');
+            } else {
+                showToast('Error al activar la licencia.', 'error');
+            }
+        } catch(e) {
+            showToast('Error de conexión con el servidor.', 'error');
+        } finally {
+            setIsSaving(false);
+        }
+    };
     
     const handleRenew = async () => {
         if (!window.confirm(`¿Renovar el plan para ${clientData.username} por 30 días?`)) return;
@@ -71,6 +95,8 @@ const ClientManagementView: React.FC<ClientManagementViewProps> = ({ user, onClo
             setIsSaving(false);
         }
     };
+
+    const showActivateButton = clientData.plan_status === 'trial' || clientData.plan_status === 'expired';
 
     return (
         <div className="flex-1 bg-brand-black flex flex-col h-full overflow-hidden animate-fade-in font-sans p-8">
@@ -113,6 +139,7 @@ const ClientManagementView: React.FC<ClientManagementViewProps> = ({ user, onClo
                         <div>
                             <label className="text-xs font-bold text-gray-400">Estado del Plan</label>
                             <select value={clientData.plan_status} onChange={e => handleInputChange('plan_status', e.target.value as PlanStatus)} className="w-full mt-1 p-2 bg-white/5 rounded text-white">
+                                <option value="trial">Prueba</option>
                                 <option value="active">Activo</option>
                                 <option value="expired">Expirado</option>
                                 <option value="suspended">Suspendido</option>
@@ -123,9 +150,16 @@ const ClientManagementView: React.FC<ClientManagementViewProps> = ({ user, onClo
                             <p><strong>Vencimiento Actual:</strong> <span className="font-mono text-gray-400">{new Date(clientData.billing_end_date).toLocaleDateString()}</span></p>
                         </div>
 
-                        <div className="flex gap-4 pt-4">
-                            <button onClick={handleSave} disabled={isSaving} className="flex-1 py-3 bg-brand-gold text-black font-bold text-xs rounded uppercase hover:opacity-80 disabled:opacity-50">Guardar Cambios</button>
-                            <button onClick={handleRenew} disabled={isSaving} className="flex-1 py-3 bg-white/10 text-white font-bold text-xs rounded uppercase hover:bg-white/20 disabled:opacity-50">Renovar 30 Días</button>
+                        <div className="flex flex-col gap-4 pt-4">
+                            {showActivateButton && (
+                                <button onClick={handleActivate} disabled={isSaving} className="w-full py-3 bg-green-600 text-white font-bold text-xs rounded uppercase hover:bg-green-500 disabled:opacity-50 shadow-lg">
+                                    Activar Licencia (30 Días)
+                                </button>
+                            )}
+                            <div className="flex gap-4">
+                               <button onClick={handleSave} disabled={isSaving} className="flex-1 py-3 bg-white/10 text-white font-bold text-xs rounded uppercase hover:bg-white/20 disabled:opacity-50">Guardar Cambios</button>
+                               <button onClick={handleRenew} disabled={isSaving || showActivateButton} className="flex-1 py-3 bg-brand-gold text-black font-bold text-xs rounded uppercase hover:opacity-80 disabled:opacity-50 disabled:bg-gray-600 disabled:text-gray-400">Renovar Plan</button>
+                            </div>
                         </div>
                     </div>
                 </div>

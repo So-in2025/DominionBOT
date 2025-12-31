@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { BotSettings, DashboardMetrics, User } from '../types.js';
 import { getAuthHeaders } from '../config';
+import { GoogleGenAI } from '@google/genai';
 
 interface AgencyDashboardProps {
   token: string;
@@ -66,6 +67,31 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [apiKeyStatus, setApiKeyStatus] = useState<'UNKNOWN' | 'VALID' | 'INVALID' | 'VERIFYING'>('UNKNOWN');
+  
+  const verifyApiKey = async () => {
+    if (!settings?.geminiApiKey) {
+        alert('API Key de Gemini no configurada. Ve a Ajustes para añadirla.');
+        return;
+    }
+    setApiKeyStatus('VERIFYING');
+    try {
+        const ai = new GoogleGenAI({ apiKey: settings.geminiApiKey });
+        await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: 'test' });
+        setApiKeyStatus('VALID');
+        alert('API Key verificada y operativa.');
+    } catch (error) {
+        setApiKeyStatus('INVALID');
+        alert('API Key inválida o sin permisos.');
+        console.error("API Key verification failed:", error);
+    }
+  };
+
+  useEffect(() => {
+    if (settings?.geminiApiKey) {
+      setApiKeyStatus('UNKNOWN');
+    }
+  }, [settings?.geminiApiKey]);
 
   const fetchData = async () => {
       setLoading(true);
@@ -96,6 +122,13 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
 
   if (!metrics) return null;
 
+  const statusInfo = {
+    'UNKNOWN': { color: 'text-gray-500', text: 'Sin Verificar' },
+    'VALID': { color: 'text-green-500', text: 'Operativa' },
+    'INVALID': { color: 'text-red-500', text: 'Inválida' },
+    'VERIFYING': { color: 'text-yellow-500', text: 'Verificando...' }
+  };
+
   return (
     <div className="flex-1 bg-brand-black p-6 md:p-10 overflow-y-auto custom-scrollbar font-sans relative">
       <div className="max-w-7xl mx-auto space-y-10 relative z-10 animate-fade-in">
@@ -117,11 +150,11 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
             <KpiCard label="Retorno Estimado" value={`$${metrics.revenueEstimated.toLocaleString()}`} isGold icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>} trend="+14% Sem" />
             <KpiCard label="Tasa Conversión" value={`${metrics.conversionRate}%`} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>} />
             <KpiCard label="Leads Captados" value={metrics.totalLeads} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857" /></svg>} />
-            <KpiCard label="Signals Proc." value={metrics.totalMessages} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01" /></svg>} />
+            <KpiCard label="Peticiones IA (Total)" value={metrics.totalMessages} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01" /></svg>} />
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 pb-20">
-            <div className="bg-brand-surface border border-white/5 rounded-[32px] p-10 shadow-2xl space-y-10 relative overflow-hidden">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 pb-20">
+            <div className="lg:col-span-2 bg-brand-surface border border-white/5 rounded-[32px] p-10 shadow-2xl space-y-10 relative overflow-hidden">
                 <div className="flex justify-between items-center">
                     <div>
                         <h3 className="text-xl font-black text-white uppercase tracking-widest">Ciclo de Venta</h3>
@@ -135,36 +168,37 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
                 </div>
             </div>
 
-            <div className="bg-brand-surface border border-white/5 rounded-[32px] p-10 shadow-2xl flex flex-col justify-between">
-                <div>
-                    <h3 className="text-xl font-black text-white uppercase tracking-widest">Gobernanza</h3>
-                    <p className="text-[9px] text-gray-500 font-black uppercase tracking-[0.3em] mt-1">Salud del Nodo & Humano</p>
-                </div>
-                
-                <div className="flex-1 flex flex-col justify-center py-6 gap-8">
-                    <div className="flex items-center justify-between p-5 bg-black/40 rounded-2xl border border-white/5">
-                        <div className="flex items-center gap-4">
-                            <div className="relative">
-                                <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse shadow-[0_0_10px_rgba(34,197,94,1)]"></div>
+            <div className="lg:col-span-1 space-y-8">
+                 <div className="bg-brand-surface border border-white/5 rounded-[32px] p-8 shadow-2xl flex flex-col justify-between h-full">
+                    <div>
+                        <h3 className="text-xl font-black text-white uppercase tracking-widest">Salud del Nodo</h3>
+                        <p className="text-[9px] text-gray-500 font-black uppercase tracking-[0.3em] mt-1">Conexión y Gobernanza</p>
+                    </div>
+                    
+                    <div className="flex-1 flex flex-col justify-center py-6 gap-6">
+                        <div className="flex items-center justify-between p-4 bg-black/40 rounded-2xl border border-white/5">
+                            <span className="text-[10px] font-black text-gray-300 uppercase tracking-widest">Estado API Gemini</span>
+                            <span className={`font-black text-[10px] uppercase tracking-widest px-3 py-1 rounded-full border ${
+                                apiKeyStatus === 'VALID' ? 'bg-green-500/10 text-green-400 border-green-500/20' : 
+                                apiKeyStatus === 'INVALID' ? 'bg-red-500/10 text-red-400 border-red-500/20' : 
+                                'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
+                            }`}>{statusInfo[apiKeyStatus].text}</span>
+                        </div>
+                         <div className="space-y-3">
+                            <div className="flex justify-between">
+                                <span className="text-[10px] text-gray-500 font-black uppercase tracking-widest">Intervención Humana</span>
+                                <span className="text-sm font-black text-white">{metrics.humanDeviationScore}%</span>
                             </div>
-                            <span className="text-[10px] font-black text-gray-300 uppercase tracking-widest">Enlace Sincronizado</span>
+                            <div className="w-full bg-white/5 h-2.5 rounded-full relative overflow-hidden p-0.5 border border-white/5">
+                                <div className="h-full bg-brand-gold rounded-full transition-all duration-1000 shadow-[0_0_15px_rgba(212,175,55,0.5)]" style={{ width: `${metrics.humanDeviationScore}%` }}></div>
+                            </div>
                         </div>
-                        <span className="text-green-500 font-black text-[10px] uppercase tracking-widest bg-green-500/10 px-3 py-1 rounded-full border border-green-500/20">ESTABLE</span>
                     </div>
 
-                    <div className="space-y-4">
-                        <div className="flex justify-between">
-                            <span className="text-[10px] text-gray-500 font-black uppercase tracking-widest">Intervención Humana</span>
-                            <span className="text-sm font-black text-white">{metrics.humanDeviationScore}%</span>
-                        </div>
-                        <div className="w-full bg-white/5 h-3 rounded-full relative overflow-hidden p-0.5 border border-white/5">
-                            <div className="h-full bg-brand-gold rounded-full transition-all duration-1000 shadow-[0_0_15px_rgba(212,175,55,0.5)]" style={{ width: `${metrics.humanDeviationScore}%` }}></div>
-                        </div>
-                        <p className="text-[9px] text-gray-600 italic">Mide el balance entre respuestas automatizadas y cierres manuales.</p>
-                    </div>
+                    <button onClick={verifyApiKey} disabled={apiKeyStatus === 'VERIFYING'} className="w-full py-3 bg-brand-gold/10 border border-brand-gold/20 rounded-xl text-[10px] font-black uppercase tracking-widest text-brand-gold hover:bg-brand-gold hover:text-black transition-all disabled:opacity-50">
+                        {apiKeyStatus === 'VERIFYING' ? 'Verificando...' : 'Verificar Conexión IA'}
+                    </button>
                 </div>
-
-                <button className="w-full py-4 bg-brand-gold/10 border border-brand-gold/20 rounded-xl text-[10px] font-black uppercase tracking-widest text-brand-gold hover:bg-brand-gold hover:text-black transition-all">Auditar Protocolos IA</button>
             </div>
         </div>
       </div>

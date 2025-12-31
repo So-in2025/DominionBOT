@@ -136,12 +136,11 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
           const user = await db.getUser(userId);
           if(!user) return;
           
-          // CRITICAL: Plan Expiration Check
-          if (new Date() > new Date(user.billing_end_date) && user.plan_status === 'active') {
+          // CRITICAL: Plan & Trial Expiration Check
+          if (new Date() > new Date(user.billing_end_date) && (user.plan_status === 'active' || user.plan_status === 'trial')) {
               user.plan_status = 'expired';
               await db.updateUser(userId, { plan_status: 'expired' });
-              logService.audit('Plan expirado, downgrade automático', userId, user.username);
-              // Opcional: enviar mensaje al dueño de la cuenta.
+              logService.audit('Plan/Prueba expirado, downgrade automático', userId, user.username);
           }
 
           const userMessage: Message = { id: msg.key.id!, text, sender: 'user', timestamp: new Date() };

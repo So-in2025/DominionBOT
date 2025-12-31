@@ -31,7 +31,7 @@ const UserSchema = new Schema({
     role: { type: String, enum: ['super_admin', 'admin', 'client'], default: 'client' },
     
     plan_type: { type: String, enum: ['starter', 'pro'], default: 'starter' },
-    plan_status: { type: String, enum: ['active', 'expired', 'suspended'], default: 'active' },
+    plan_status: { type: String, enum: ['active', 'expired', 'suspended', 'trial'], default: 'active' },
     billing_start_date: { type: String, default: () => new Date().toISOString() },
     billing_end_date: { type: String, default: () => new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() },
     
@@ -95,10 +95,15 @@ class Database {
       try {
           const collections = await mongoose.connection.db.listCollections().toArray();
           for (const collection of collections) {
-              await mongoose.connection.db.collection(collection.name).deleteMany({});
+              if (!collection.name.startsWith('system.')) {
+                  await mongoose.connection.db.collection(collection.name).deleteMany({});
+              }
           }
           return true;
-      } catch (err) { return false; }
+      } catch (err) { 
+          console.error("[DB-RESET-FAIL] Error during database reset:", err);
+          return false; 
+      }
   }
 
   async createUser(username: string, password: string, businessName: string, role: any = 'client', intendedUse: any = 'HIGH_TICKET_AGENCY'): Promise<User | null> {
@@ -114,10 +119,10 @@ class Database {
         id, username, password: hashedPassword, recoveryKey, role, 
         business_name: businessName,
         whatsapp_number: username,
-        plan_type: 'pro',
-        plan_status: 'active',
+        plan_type: 'pro', // Start with PRO features
+        plan_status: 'trial', // But in a trial state
         billing_start_date: new Date().toISOString(),
-        billing_end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        billing_end_date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(), // 3-day trial
         created_at: new Date().toISOString(),
         settings: { 
             productName: businessName,

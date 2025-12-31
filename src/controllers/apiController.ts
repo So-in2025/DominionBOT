@@ -1,11 +1,16 @@
 
 import { Request, Response } from 'express';
+// FIX: Import Buffer to resolve 'Cannot find name Buffer' error.
+import { Buffer } from 'buffer';
 import { sseService } from '../services/sseService.js';
 import { connectToWhatsApp, disconnectWhatsApp, sendMessage, getSessionStatus } from '../whatsapp/client.js';
 import { conversationService } from '../services/conversationService.js';
 import { Message } from '../types.js';
 import { db } from '../database.js';
 import { logService } from '../services/logService.js';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 const getUserId = (req: any) => req.user.id;
 
@@ -132,4 +137,25 @@ export const handlePostTestimonial = async (req: any, res: any) => {
   } catch (error) {
     res.status(500).json({ message: 'Error creating testimonial.' });
   }
+};
+
+// --- Generic TTS Audio Handler ---
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+export const handleGetTtsAudio = async (req: any, res: any) => {
+    const { eventName } = req.params;
+    if (!eventName || !/^[a-zA-Z0-9_]+$/.test(eventName)) {
+        return res.status(400).send('Nombre de evento inválido.');
+    }
+    
+    const audioDir = path.resolve(__dirname, '..', '..', 'public', 'audio');
+    const audioPath = path.join(audioDir, `${eventName}.mp3`);
+    
+    if (fs.existsSync(audioPath)) {
+        return res.sendFile(audioPath);
+    } else {
+        logService.warn(`[TTS] Archivo de audio no encontrado para el evento: ${eventName}`, getUserId(req));
+        return res.status(404).send('Audio no encontrado.');
+    }
 };

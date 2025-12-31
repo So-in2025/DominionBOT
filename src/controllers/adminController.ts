@@ -90,6 +90,34 @@ export const handleUpdateClient = async (req: any, res: any) => {
     }
 };
 
+export const handleActivateClient = async (req: any, res: any) => {
+    const { id } = req.params;
+    const admin = getAdminUser(req);
+    try {
+        const client = await db.getUser(id);
+        if (!client) {
+            return res.status(404).json({ message: 'Cliente no encontrado.' });
+        }
+        
+        const newStartDate = new Date();
+        const newEndDate = new Date();
+        newEndDate.setDate(newEndDate.getDate() + 30);
+
+        const updates: Partial<User> = {
+            plan_status: 'active',
+            billing_start_date: newStartDate.toISOString(),
+            billing_end_date: newEndDate.toISOString()
+        };
+
+        const updatedClient = await db.updateUser(id, updates);
+        logService.audit(`Licencia activada por 30 días para: ${client.username}`, admin.id, admin.username, { clientId: id });
+        res.json(updatedClient);
+    } catch (error: any) {
+        logService.error(`Error al activar licencia para ${id}`, error, admin.id, admin.username);
+        res.status(500).json({ message: 'Error interno del servidor.' });
+    }
+};
+
 export const handleRenewClient = async (req: any, res: any) => {
     const { id } = req.params;
     const admin = getAdminUser(req);
