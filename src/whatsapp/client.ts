@@ -91,6 +91,12 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
 
       if (phoneNumber && !sock.authState.creds.registered) {
           setTimeout(async () => {
+              // RACE CONDITION FIX: Check if the current session is still valid.
+              // If the user disconnected or reconnected, this request is obsolete.
+              if (sessions.get(userId) !== sock) {
+                  logService.info('Solicitud de código de emparejamiento abortada por cambio de sesión.', userId);
+                  return;
+              }
               try {
                   const code = await sock.requestPairingCode(phoneNumber.replace(/[^0-9]/g, ''));
                   codeCache.set(userId, code);
