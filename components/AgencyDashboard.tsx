@@ -7,7 +7,7 @@ interface AgencyDashboardProps {
   token: string;
   backendUrl: string;
   settings: BotSettings;
-  onUpdateSettings: (newSettings: BotSettings) => void;
+  onUpdateSettings: (newSettings: BotSettings) => void | Promise<void>;
 }
 
 const KpiCard: React.FC<{ 

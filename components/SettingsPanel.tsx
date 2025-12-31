@@ -10,6 +10,7 @@ interface SettingsPanelProps {
   onOpenLegal: (type: 'privacy' | 'terms' | 'manifesto') => void;
 }
 
+// Fixed: Added missing ignoredJids property to match BotSettings interface and resolve type mismatch
 const DEFAULT_SETTINGS: BotSettings = {
     productName: '',
     productDescription: '',
@@ -27,7 +28,8 @@ const DEFAULT_SETTINGS: BotSettings = {
     pushEnabled: false,
     audioEnabled: false,
     ttsEnabled: false,
-    proxyUrl: '' 
+    proxyUrl: '',
+    ignoredJids: []
 };
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUpdateSettings, onOpenLegal }) => {
@@ -121,7 +123,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
             <div className="space-y-10">
                 <section className="bg-brand-surface border border-white/5 rounded-3xl p-8 shadow-2xl relative overflow-hidden">
                     <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
-                        <svg className="w-20 h-20 text-brand-gold" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5-10-5zM2 17l10 5 10-5-10-5-10 5z"/></svg>
+                        <svg className="w-20 h-20 text-brand-gold" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5-10-5-10-5zM2 17l10 5 10-5-10-5-10 5z"/></svg>
                     </div>
                     {layerHeader("01", "La Constitución", "Reglas éticas y comportamiento base de la IA.")}
                     <div className="grid grid-cols-2 gap-3 mb-10">

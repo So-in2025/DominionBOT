@@ -1,18 +1,17 @@
 
-// Shared types between Frontend and Backend - v2.8.0 (Elite Update)
-
 export enum LeadStatus {
   COLD = 'Frío',
   WARM = 'Tibio',
   HOT = 'Caliente',
+  PERSONAL = 'Personal'
 }
 
 export enum View {
-  CHATS = 'SIGNALS', // Renamed to Signals
-  SETTINGS = 'CORE',
-  CONNECTION = 'NODES',
-  SANDBOX = 'SANDBOX',
-  DASHBOARD = 'DASHBOARD',
+  CHATS = 'MENSAJES',
+  DASHBOARD = 'MÉTRICAS',
+  CONNECTION = 'CONEXIÓN',
+  SETTINGS = 'CONFIGURACIÓN',
+  SANDBOX = 'SIMULADOR',
   ADMIN_GLOBAL = 'ADMIN_GLOBAL',
   AUDIT_MODE = 'AUDIT_MODE'
 }
@@ -25,9 +24,12 @@ export enum ConnectionStatus {
 }
 
 export enum PromptArchetype {
-  CONSULTATIVE = 'CONSULTATIVE',
-  DIRECT_CLOSER = 'DIRECT_CLOSER',
-  SUPPORT = 'SUPPORT',
+  CONSULTATIVE = 'VENTA_CONSULTIVA',
+  DIRECT_CLOSER = 'CIERRE_DIRECTO',
+  SUPPORT = 'SOPORTE_TECNICO',
+  EMPATHIC = 'RELACIONAL_EMPATICO',
+  AGRESSIVE = 'CIERRE_AGRESIVO',
+  ACADEMIC = 'INFORMATIVO_DETALLADO',
   CUSTOM = 'CUSTOM'
 }
 
@@ -43,17 +45,6 @@ export type IntendedUse =
   | 'VENTAS_CONSULTIVAS'
   | 'SOPORTE'
   | 'OTRO';
-
-// FASE 1: Blindaje - Contrato de Señal
-export interface Signal {
-  id: string;
-  source: 'WHATSAPP' | 'INSTAGRAM' | 'WEB';
-  senderId: string;
-  senderName?: string;
-  content: string;
-  timestamp: Date;
-  metadata?: any;
-}
 
 export interface Message {
   id: string;
@@ -83,7 +74,6 @@ export interface Conversation {
   isAiSignalsEnabled: boolean;
   firstMessageAt?: Date | string;
   escalatedAt?: Date | string;
-  // FASE 2: Copiloto
   suggestedReplies?: string[]; 
 }
 
@@ -94,7 +84,7 @@ export interface BotSettings {
   freeTrialDays: number;
   ctaLink: string;
   geminiApiKey?: string;
-  proxyUrl?: string; // NUEVO: URL del Proxy Residencial
+  proxyUrl?: string;
   isActive: boolean;
   disabledMessage: string;
   archetype: PromptArchetype;
@@ -106,6 +96,7 @@ export interface BotSettings {
   pushEnabled: boolean;
   audioEnabled: boolean;
   ttsEnabled: boolean;
+  ignoredJids: string[];
 }
 
 export interface User {
@@ -113,8 +104,6 @@ export interface User {
   username: string; 
   password?: string;
   recoveryKey?: string; 
-  loginAttempts?: number; 
-  lockedUntil?: string; 
   role: 'admin' | 'client' | 'super_admin';
   intendedUse: IntendedUse;
   settings: BotSettings;
@@ -122,16 +111,12 @@ export interface User {
   governance: {
     systemState: SystemState;
     riskScore: number;
-    // FASE 3: Control de Calidad Humana
     humanDeviationScore: number; 
     accountFlags: string[];
     updatedAt: string;
     auditLogs: { timestamp: string; adminId: string; action: string }[];
   };
   planType: 'TRIAL' | 'STARTER' | 'ENTERPRISE';
-  isSuspended?: boolean; 
-  lastSeen?: string;
-  internalNotes?: string;
 }
 
 export interface DashboardMetrics {
@@ -144,7 +129,7 @@ export interface DashboardMetrics {
   revenueEstimated: number;
   avgEscalationTimeMinutes: number;
   activeSessions: number;
-  humanDeviationScore: number; // NUEVO CAMPO REAL
+  humanDeviationScore: number;
 }
 
 export interface GlobalMetrics {

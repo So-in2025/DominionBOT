@@ -186,7 +186,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
         <SalesContextSidebar 
           conversation={conversation}
           onUpdateTags={(tags) => onUpdateConversation?.(conversation.id, { tags })}
-          onToggleAiSignals={(enabled) => onUpdateConversation?.(conversation.id, { isAiSignalsEnabled: enabled })}
           onAddNote={(note) => {
             const newNote: InternalNote = {
               id: Date.now().toString(),
@@ -198,6 +197,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
               internalNotes: [...(conversation.internalNotes || []), newNote] 
             });
           }}
+          // Fix: Removed non-existent onToggleAiSignals prop and added missing onUpdateConversation prop to enable sidebar actions (Error in line 189)
+          onUpdateConversation={onUpdateConversation}
         />
       )}
     </div>

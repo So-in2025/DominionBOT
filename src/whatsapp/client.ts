@@ -38,20 +38,21 @@ export function getSessionStatus(userId: string): { status: ConnectionStatus, qr
 }
 
 export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
-  console.log(`[WA-INIT] Nodo ${userId} - Inicio de secuencia.`);
+  console.log(`[WA-STABLE-INIT] Nodo ${userId} - Reiniciando motor.`);
   
-  // Limpieza agresiva previa
   const oldSock = sessions.get(userId);
   if (oldSock) {
-      try { oldSock.ev.removeAllListeners('connection.update'); oldSock.end(undefined); } catch(e) {}
+      try { 
+          oldSock.ev.removeAllListeners('connection.update'); 
+          oldSock.ev.removeAllListeners('messages.upsert');
+          oldSock.end(undefined); 
+      } catch(e) {}
       sessions.delete(userId);
   }
   qrCache.delete(userId);
   codeCache.delete(userId);
 
-  // Si se usa número, purgar la sesión de DB es OBLIGATORIO para evitar "No se pudo vincular"
   if (phoneNumber) {
-      console.log(`[WA-PAIR] Purgando sesión previa para vinculación por código.`);
       await clearBindedSession(userId);
   }
 
@@ -74,63 +75,54 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
         printQRInTerminal: false,
         logger: logger as any,
         agent, 
-        // Cambiamos a Chrome en Windows para máxima compatibilidad con Pairing Code
-        browser: Browsers.windows('Chrome'),
+        browser: Browsers.macOS('Chrome'),
         syncFullHistory: false,
-        connectTimeoutMs: 60000,
-        defaultQueryTimeoutMs: 60000,
+        markOnlineOnConnect: true,
+        connectTimeoutMs: 90000, 
+        defaultQueryTimeoutMs: 90000,
+        keepAliveIntervalMs: 30000,
       });
 
       sessions.set(userId, sock);
       sock.ev.on('creds.update', saveCreds);
 
-      // Manejo de Pairing Code
       if (phoneNumber && !sock.authState.creds.registered) {
           setTimeout(async () => {
               try {
                   if (!sessions.has(userId)) return;
                   const cleanNumber = phoneNumber.replace(/[^0-9]/g, '');
-                  console.log(`[WA-PAIR] Solicitando código para: ${cleanNumber}`);
                   const code = await sock.requestPairingCode(cleanNumber);
                   codeCache.set(userId, code);
                   sseService.sendEvent(userId, 'status_update', { status: ConnectionStatus.AWAITING_SCAN, pairingCode: code });
               } catch (err) {
-                  console.error("[WA-PAIR-ERR]", err);
                   sseService.sendEvent(userId, 'status_update', { status: ConnectionStatus.DISCONNECTED });
               }
-          }, 5000); 
+          }, 4000); 
       }
       
       sock.ev.on('connection.update', async (update) => {
           const { connection, lastDisconnect, qr } = update;
-          
           if (qr && !phoneNumber) {
-            // CONVERSIÓN DE STRING A IMAGEN BASE64
-            const qrImage = await QRCode.toDataURL(qr);
+            const qrImage = await QRCode.toDataURL(qr, { margin: 2, scale: 8 });
             qrCache.set(userId, qrImage);
             sseService.sendEvent(userId, 'status_update', { status: ConnectionStatus.AWAITING_SCAN, qr: qrImage });
           }
-
           if (connection === 'close') {
             const error = (lastDisconnect?.error as Boom)?.output?.statusCode;
-            console.log(`[WA-CLOSE] ${userId} Cerrado. Code: ${error}`);
-
             if (error === DisconnectReason.loggedOut) {
                 await disconnectWhatsApp(userId);
             } else {
-                setTimeout(() => connectToWhatsApp(userId, phoneNumber), 5000);
+                const delay = 5000 + Math.random() * 5000;
+                setTimeout(() => connectToWhatsApp(userId, phoneNumber), delay);
             }
           } else if (connection === 'open') {
-            console.log(`[WA-SUCCESS] Nodo ${userId} conectado.`);
-            qrCache.delete(userId);
-            codeCache.delete(userId);
             sseService.sendEvent(userId, 'status_update', { status: ConnectionStatus.CONNECTED });
           }
       });
 
       sock.ev.on('messages.upsert', async (m) => {
           const msg = m.messages[0];
-          if (!msg.message || msg.key.fromMe || msg.key.remoteJid === 'status@broadcast') return;
+          if (!msg.message || msg.key.fromMe || msg.key.remoteJid === 'status@broadcast' || msg.key.remoteJid?.endsWith('@g.us')) return;
           
           const jid = msg.key.remoteJid!;
           const text = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
@@ -155,10 +147,20 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                 const user = await db.getUser(userId);
                 if(!user || user.governance.systemState !== 'ACTIVE' || !user.settings.isActive) return;
                 
+                // --- ESCUDO DE PRIVACIDAD CRÍTICO ---
+                const cleanJid = jid.split('@')[0];
+                const isIgnored = user.settings.ignoredJids?.some(id => id.includes(cleanJid));
+                if (isIgnored) {
+                    console.log(`[WA-SHIELD] Ignorando contacto personal: ${cleanJid}`);
+                    return;
+                }
+                // ------------------------------------
+
                 const userConvs = await conversationService.getConversations(userId);
                 const conversation = userConvs.find(c => c.id === jid);
                 
-                if (!conversation || conversation.isMuted || !conversation.isBotActive) return;
+                // Si el status es PERSONAL, el bot no responde jamás
+                if (!conversation || conversation.isMuted || !conversation.isBotActive || conversation.status === LeadStatus.PERSONAL) return;
                 
                 await sock.sendPresenceUpdate('composing', jid);
                 const aiResult = await generateBotResponse(conversation.messages, user.settings);
@@ -172,6 +174,8 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                     }
                     
                     conversation.status = aiResult.newStatus;
+                    conversation.tags = [...new Set([...(conversation.tags || []), ...(aiResult.tags || [])])];
+                    
                     if (aiResult.newStatus === LeadStatus.HOT) {
                         conversation.isMuted = true;
                         conversation.suggestedReplies = aiResult.suggestedReplies;
@@ -183,7 +187,6 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
           messageDebounceMap.set(debounceKey, timeout);
       });
   } catch (err) {
-      console.error("[WA-FATAL]", err);
       sseService.sendEvent(userId, 'status_update', { status: ConnectionStatus.DISCONNECTED });
   }
 }

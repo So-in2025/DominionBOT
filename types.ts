@@ -3,6 +3,7 @@ export enum LeadStatus {
   COLD = 'Frío',
   WARM = 'Tibio',
   HOT = 'Caliente',
+  PERSONAL = 'Personal'
 }
 
 export enum View {
@@ -23,9 +24,12 @@ export enum ConnectionStatus {
 }
 
 export enum PromptArchetype {
-  CONSULTATIVE = 'CONSULTATIVE',
-  DIRECT_CLOSER = 'DIRECT_CLOSER',
-  SUPPORT = 'SUPPORT',
+  CONSULTATIVE = 'VENTA_CONSULTIVA',
+  DIRECT_CLOSER = 'CIERRE_DIRECTO',
+  SUPPORT = 'SOPORTE_TECNICO',
+  EMPATHIC = 'RELACIONAL_EMPATICO',
+  AGRESSIVE = 'CIERRE_AGRESIVO',
+  ACADEMIC = 'INFORMATIVO_DETALLADO',
   CUSTOM = 'CUSTOM'
 }
 
@@ -93,6 +97,8 @@ export interface BotSettings {
   pushEnabled: boolean;
   audioEnabled: boolean;
   ttsEnabled: boolean;
+  // Fix: Added ignoredJids to match src/types.ts and resolve type mismatch in App.tsx (Line 273)
+  ignoredJids: string[];
 }
 
 export interface User {

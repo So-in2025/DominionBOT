@@ -31,7 +31,9 @@ const UserSchema = new Schema({
         pwaEnabled: { type: Boolean, default: false },
         pushEnabled: { type: Boolean, default: false },
         audioEnabled: { type: Boolean, default: false },
-        ttsEnabled: { type: Boolean, default: false }
+        ttsEnabled: { type: Boolean, default: false },
+        // Fix: Added ignoredJids to settings schema to match src/types.ts
+        ignoredJids: { type: Array, default: [] }
     },
     conversations: { type: Map, of: Object, default: {} },
     governance: {
@@ -123,7 +125,8 @@ class Database {
             archetype: PromptArchetype.CONSULTATIVE, 
             toneValue: 3, 
             rhythmValue: 3, 
-            intensityValue: 3 
+            intensityValue: 3,
+            ignoredJids: []
         },
         conversations: {},
         governance: { 
