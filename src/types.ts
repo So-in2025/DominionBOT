@@ -21,6 +21,7 @@ export enum ConnectionStatus {
   GENERATING_QR = 'Generando QR',
   AWAITING_SCAN = 'Esperando escaneo',
   CONNECTED = 'Conectado',
+  RESETTING = 'Reseteando',
 }
 
 export enum PromptArchetype {

@@ -7,6 +7,7 @@ interface ConnectionPanelProps {
     pairingCode?: string | null;
     onConnect: (phoneNumber?: string) => Promise<void>; 
     onDisconnect: () => void;
+    onWipe: () => void;
     user: User | null;
 }
 
@@ -16,6 +17,7 @@ const StatusIndicator: React.FC<{ status: ConnectionStatus }> = ({ status }) => 
         [ConnectionStatus.DISCONNECTED]: { text: 'Desconectado', color: 'text-red-400', border: 'border-red-500/50', bg: 'bg-red-500/10' },
         [ConnectionStatus.GENERATING_QR]: { text: 'Estableciendo Túnel...', color: 'text-yellow-400', border: 'border-yellow-500/50', bg: 'bg-yellow-500/10' },
         [ConnectionStatus.AWAITING_SCAN]: { text: 'Pendiente de Enlace', color: 'text-brand-gold', border: 'border-brand-gold/50', bg: 'bg-brand-gold/10' },
+        [ConnectionStatus.RESETTING]: { text: 'Reseteando...', color: 'text-red-400', border: 'border-red-500/50', bg: 'bg-red-500/10' },
     };
     const info = statusInfo[status];
     return (
@@ -25,7 +27,7 @@ const StatusIndicator: React.FC<{ status: ConnectionStatus }> = ({ status }) => 
     );
 };
 
-const ConnectionPanel: React.FC<ConnectionPanelProps> = ({ status, qrCode, pairingCode, onConnect, onDisconnect, user }) => {
+const ConnectionPanel: React.FC<ConnectionPanelProps> = ({ status, qrCode, pairingCode, onConnect, onDisconnect, onWipe, user }) => {
     const [linkMode, setLinkMode] = useState<'QR' | 'NUMBER'>('QR');
     const [phoneNumber, setPhoneNumber] = useState('');
     
@@ -48,12 +50,19 @@ const ConnectionPanel: React.FC<ConnectionPanelProps> = ({ status, qrCode, pairi
 
     const forceWipe = () => {
         if(confirm("¿Deseas resetear el motor de conexión? Esto borrará sesiones corruptas para permitir un nuevo enlace.")) {
-            onDisconnect();
+            onWipe();
         }
     };
 
     const renderContent = () => {
         switch (status) {
+            case ConnectionStatus.RESETTING:
+                return (
+                    <div className="flex flex-col items-center py-10 space-y-4 text-center">
+                        <div className="w-12 h-12 border-2 border-red-500/20 border-t-red-500 rounded-full animate-spin"></div>
+                        <p className="text-red-400 text-[9px] font-black uppercase tracking-[0.3em] animate-pulse">Purgando Sesión...</p>
+                    </div>
+                );
             case ConnectionStatus.DISCONNECTED:
                 return (
                     <div className="text-center animate-fade-in space-y-6">

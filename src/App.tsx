@@ -690,7 +690,7 @@ export default function App() {
     const handleDisconnect = async () => {
         if (!token) return;
         try {
-            await fetch(`${BACKEND_URL}/api/disconnect`, { headers: getAuthHeaders(token) });
+            await fetch(`${BACKEND_URL}/api/disconnect`, { headers: getAuthHeaders(token!) });
             setConnectionStatus(ConnectionStatus.DISCONNECTED);
             setQrCode(null);
             setPairingCode(null);
@@ -700,13 +700,30 @@ export default function App() {
         }
     };
 
+    const handleWipeConnection = async () => {
+        if (!token) return;
+        setConnectionStatus(ConnectionStatus.RESETTING);
+        try {
+            await new Promise(resolve => setTimeout(resolve, 1500)); // Visual feedback
+            await fetch(`${BACKEND_URL}/api/disconnect`, { headers: getAuthHeaders(token!) });
+            setQrCode(null);
+            setPairingCode(null);
+            setIsPollingStatus(false);
+            setConnectionStatus(ConnectionStatus.DISCONNECTED);
+            showToast('La sesión anterior fue purgada.', 'success');
+        } catch(e) {
+            showToast('Error al purgar la sesión.', 'error');
+            setConnectionStatus(ConnectionStatus.DISCONNECTED);
+        }
+    };
+
     switch(currentView) {
         case View.DASHBOARD:
             return <AgencyDashboard token={token!} backendUrl={BACKEND_URL} settings={settings!} onUpdateSettings={handleUpdateSettings} />;
         case View.SETTINGS:
             return <SettingsPanel settings={settings} isLoading={isLoadingSettings} onUpdateSettings={isFunctionalityDisabled ? ()=>{} : handleUpdateSettings} onOpenLegal={setLegalModalType} />;
         case View.CONNECTION:
-            return <ConnectionPanel user={currentUser} status={connectionStatus} qrCode={qrCode} pairingCode={pairingCode} onConnect={isFunctionalityDisabled ? async ()=>{} : handleConnect} onDisconnect={handleDisconnect} />;
+            return <ConnectionPanel user={currentUser} status={connectionStatus} qrCode={qrCode} pairingCode={pairingCode} onConnect={isFunctionalityDisabled ? async ()=>{} : handleConnect} onDisconnect={handleDisconnect} onWipe={handleWipeConnection} />;
         case View.CHATS:
         default:
             return (
