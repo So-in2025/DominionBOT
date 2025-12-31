@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { ConnectionStatus, User } from '../types';
 
@@ -29,7 +28,8 @@ const StatusIndicator: React.FC<{ status: ConnectionStatus }> = ({ status }) => 
 const ConnectionPanel: React.FC<ConnectionPanelProps> = ({ status, qrCode, pairingCode, onConnect, onDisconnect, user }) => {
     const [linkMode, setLinkMode] = useState<'QR' | 'NUMBER'>('QR');
     const [phoneNumber, setPhoneNumber] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
+    
+    const isLoading = status === ConnectionStatus.GENERATING_QR;
 
     useEffect(() => {
         if (user?.whatsapp_number) {
@@ -39,27 +39,18 @@ const ConnectionPanel: React.FC<ConnectionPanelProps> = ({ status, qrCode, pairi
     }, [user]);
 
     const handleStartConnect = async () => {
-        setIsLoading(true);
         try {
             await onConnect(linkMode === 'NUMBER' ? phoneNumber : undefined);
-            setTimeout(() => setIsLoading(false), 10000); 
         } catch (e) {
-            setIsLoading(false);
+            // El error es manejado por el componente padre, que mostrará un toast.
         }
     };
 
     const forceWipe = () => {
         if(confirm("¿Deseas resetear el motor de conexión? Esto borrará sesiones corruptas para permitir un nuevo enlace.")) {
             onDisconnect();
-            setIsLoading(false);
         }
     };
-
-    useEffect(() => {
-        if (status === ConnectionStatus.AWAITING_SCAN || status === ConnectionStatus.CONNECTED) {
-            setIsLoading(false);
-        }
-    }, [status]);
 
     const renderContent = () => {
         switch (status) {

@@ -1,4 +1,3 @@
-
 // 1. CARGA DE ENTORNO CRÍTICA
 import { JWT_SECRET, PORT } from './env.js';
 import express from 'express';
@@ -6,6 +5,7 @@ import cors from 'cors';
 import jwt from 'jsonwebtoken';
 import { db } from './database.js';
 import { authenticateToken } from './middleware/auth.js';
+import { optionalAuthenticateToken } from './middleware/optionalAuth.js';
 import { logService } from './services/logService.js';
 import { ttsService } from './services/ttsService.js'; // Importar el nuevo servicio
 
@@ -27,15 +27,6 @@ app.use(cors({
     credentials: true,
     maxAge: 86400
 }) as any);
-
-app.use((req, res, next) => {
-    const origin = req.headers.origin;
-    if (origin) {
-        res.setHeader('Access-Control-Allow-Origin', origin);
-    }
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-    next();
-});
 
 app.use(express.json({ limit: '10mb' }) as any);
 
@@ -119,12 +110,11 @@ app.get('/api/metrics', authenticateToken, async (req: any, res: any) => {
 });
 
 import { 
-    handleSse, handleConnect, handleDisconnect, handleSendMessage, handleUpdateConversation, handleGetStatus, handleGetConversations, handleGetTestimonials, handlePostTestimonial, handleGetTtsAudio
+    handleConnect, handleDisconnect, handleSendMessage, handleUpdateConversation, handleGetStatus, handleGetConversations, handleGetTestimonials, handlePostTestimonial, handleGetTtsAudio
 } from './controllers/apiController.js';
 import { handleGetAllClients, handleUpdateClient, handleRenewClient, handleGetLogs, handleGetDashboardMetrics, handleActivateClient } from './controllers/adminController.js';
 
-// SSE & Standard Client Routes
-app.get('/api/sse', handleSse);
+// Standard Client Routes
 app.get('/api/status', authenticateToken, handleGetStatus); 
 app.post('/api/connect', authenticateToken, handleConnect);
 app.get('/api/disconnect', authenticateToken, handleDisconnect);
@@ -137,7 +127,7 @@ app.get('/api/testimonials', handleGetTestimonials);
 app.post('/api/testimonials', authenticateToken, handlePostTestimonial);
 
 // TTS Pre-generated Audio Route
-app.get('/api/tts/:eventName', authenticateToken, handleGetTtsAudio);
+app.get('/api/tts/:eventName', optionalAuthenticateToken, handleGetTtsAudio);
 
 // Super Admin Routes
 const adminRouter = express.Router();

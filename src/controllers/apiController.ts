@@ -1,7 +1,6 @@
 import { Request, Response } from 'express';
 // FIX: Import Buffer to resolve 'Cannot find name Buffer' error.
 import { Buffer } from 'buffer';
-import { sseService } from '../services/sseService.js';
 import { connectToWhatsApp, disconnectWhatsApp, sendMessage, getSessionStatus } from '../whatsapp/client.js';
 import { conversationService } from '../services/conversationService.js';
 import { Message } from '../types.js';
@@ -12,26 +11,6 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const getUserId = (req: any) => req.user.id;
-
-export const handleSse = (req: any, res: any) => {
-  const token = req.query.token as string;
-  if (!token) return res.status(401).end();
-
-  try {
-    const base64Url = token.split('.')[1];
-    if (!base64Url) throw new Error('Invalid token format');
-    
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonPayload = Buffer.from(base64, 'base64').toString('utf-8');
-    const payload = JSON.parse(jsonPayload);
-    
-    // Asumimos que el token es válido si llega aquí, ya que SSE no manda headers standard
-    sseService.addClient(payload.id, res);
-  } catch (e) {
-    console.error('[SSE-AUTH-ERROR] Failed to decode token and establish connection:', e);
-    res.status(401).end();
-  }
-};
 
 export const handleGetStatus = (req: any, res: any) => {
     const userId = getUserId(req);
@@ -159,7 +138,8 @@ export const handleGetTtsAudio = async (req: any, res: any) => {
     if (fs.existsSync(audioPath)) {
         return res.sendFile(audioPath);
     } else {
-        logService.warn(`[TTS] Archivo de audio no encontrado para el evento: ${eventName}`, getUserId(req));
+        const userIdForLog = req.user ? req.user.id : 'unauthenticated';
+        logService.warn(`[TTS] Archivo de audio no encontrado para el evento: ${eventName}`, userIdForLog);
         return res.status(404).send('Audio no encontrado.');
     }
 };

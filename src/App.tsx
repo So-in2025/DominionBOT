@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Conversation, BotSettings, Message, View, ConnectionStatus, User, LeadStatus, PromptArchetype, Testimonial } from './types';
 import Header from './components/Header';
@@ -100,7 +99,7 @@ const TestimonialsSection = ({ isLoggedIn, token, showToast }: { isLoggedIn: boo
                     console.warn("BACKEND_URL no está configurada. No se pueden cargar las reseñas.");
                     return;
                 }
-                const res = await fetch(`${BACKEND_URL}/api/testimonials`);
+                const res = await fetch(`${BACKEND_URL}/api/testimonials`, { headers: API_HEADERS });
 
                 if (!res.ok) {
                     console.error(`Fallo al cargar reseñas: El servidor respondió con estado ${res.status}`);
@@ -423,6 +422,7 @@ export default function App() {
   const [isTyping, setIsTyping] = useState(false);
   const [isLoadingSettings, setIsLoadingSettings] = useState(false);
   const [toast, setToast] = useState<ToastData | null>(null);
+  const [isPollingStatus, setIsPollingStatus] = useState(false);
 
   // Simulación de Landing
   const [visibleMessages, setVisibleMessages] = useState<any[]>([]);
@@ -488,6 +488,48 @@ export default function App() {
     }
   }, [currentView, userRole]);
 
+  // Polling effect for connection status
+  useEffect(() => {
+    if (!isPollingStatus || !token) return;
+
+    const pollInterval = setInterval(async () => {
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/status`, { headers: getAuthHeaders(token) });
+            if (res.ok) {
+                const data = await res.json();
+                
+                // Only update and play sound if status has changed
+                if (data.status !== connectionStatus) {
+                    setConnectionStatus(data.status);
+                    switch(data.status) {
+                        case ConnectionStatus.GENERATING_QR: audioService.play('connection_establishing'); break;
+                        case ConnectionStatus.AWAITING_SCAN: audioService.play('connection_pending'); break;
+                        case ConnectionStatus.CONNECTED: audioService.play('connection_success'); break;
+                        case ConnectionStatus.DISCONNECTED: audioService.play('connection_disconnected'); break;
+                    }
+                }
+
+                setQrCode(data.qr || null);
+                setPairingCode(data.pairingCode || null);
+
+                if (data.status === ConnectionStatus.CONNECTED || data.status === ConnectionStatus.DISCONNECTED) {
+                    setIsPollingStatus(false);
+                }
+            } else {
+                // If status poll fails (e.g. server down), stop polling to avoid errors
+                setIsPollingStatus(false);
+                setBackendError("Fallo al sondear estado. Reintentando...");
+            }
+        } catch (e) {
+            console.error("Status poll failed:", e);
+            setBackendError("Fallo de red al sondear estado.");
+            setIsPollingStatus(false);
+        }
+    }, 2000);
+
+    return () => clearInterval(pollInterval);
+  }, [isPollingStatus, token, connectionStatus]);
+
   useEffect(() => {
     if (!token) {
         setCurrentUser(null);
@@ -497,13 +539,14 @@ export default function App() {
     const loadUserData = async () => {
         setIsLoadingSettings(true);
         try {
-            const [userRes, sRes, cRes] = await Promise.all([
+            const [userRes, sRes, cRes, statusRes] = await Promise.all([
                 fetch(`${BACKEND_URL}/api/user/me`, { headers: getAuthHeaders(token) }),
                 fetch(`${BACKEND_URL}/api/settings`, { headers: getAuthHeaders(token) }),
-                fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) })
+                fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) }),
+                fetch(`${BACKEND_URL}/api/status`, { headers: getAuthHeaders(token) })
             ]);
             
-            if ([userRes, sRes, cRes].some(res => res.status === 403)) {
+            if ([userRes, sRes, cRes, statusRes].some(res => res.status === 403)) {
                 handleLogout();
                 return;
             }
@@ -511,6 +554,13 @@ export default function App() {
             if (userRes.ok) setCurrentUser(await userRes.json());
             if (sRes.ok) setSettings(await sRes.json());
             if (cRes.ok) setConversations(await cRes.json());
+            if (statusRes.ok) {
+                const statusData = await statusRes.json();
+                setConnectionStatus(statusData.status);
+                setQrCode(statusData.qr || null);
+                setPairingCode(statusData.pairingCode || null);
+            }
+
             if (backendError) setBackendError(null);
         } catch (e) {
             console.error("DATA ERROR:", e);
@@ -522,23 +572,6 @@ export default function App() {
     };
     loadUserData();
     
-    // Server-Sent Events listener for real-time updates
-    const eventSource = new EventSource(`${BACKEND_URL}/api/sse?token=${token}`);
-    eventSource.addEventListener('status_update', (event) => {
-        const data = JSON.parse(event.data);
-        setConnectionStatus(data.status);
-        if (data.qr) setQrCode(data.qr);
-        if (data.pairingCode) setPairingCode(data.pairingCode);
-
-        // Play audio based on status
-        switch(data.status) {
-            case ConnectionStatus.GENERATING_QR: audioService.play('connection_establishing'); break;
-            case ConnectionStatus.AWAITING_SCAN: audioService.play('connection_pending'); break;
-            case ConnectionStatus.CONNECTED: audioService.play('connection_success'); break;
-            case ConnectionStatus.DISCONNECTED: audioService.play('connection_disconnected'); break;
-        }
-    });
-
     const conversationPoll = setInterval(async () => {
         try {
             const convRes = await fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) });
@@ -547,7 +580,6 @@ export default function App() {
     }, 8000);
 
     return () => {
-        eventSource.close();
         clearInterval(conversationPoll);
     };
   }, [token]);
@@ -594,6 +626,7 @@ export default function App() {
       setQrCode(null);
       setPairingCode(null);
       setConnectionStatus(ConnectionStatus.GENERATING_QR);
+      setIsPollingStatus(true);
       
       try {
           await fetch(`${BACKEND_URL}/api/connect`, {
@@ -604,6 +637,7 @@ export default function App() {
       } catch (e) { 
           setBackendError("Fallo al iniciar conexión.");
           audioService.play('alert_error_connection');
+          setIsPollingStatus(false);
       }
   };
 
@@ -649,13 +683,26 @@ export default function App() {
       return <AdminDashboard token={token!} backendUrl={BACKEND_URL} onAudit={(u) => { setAuditTarget(u); setCurrentView(View.AUDIT_MODE); }} showToast={showToast} onLogout={handleLogout} />;
     }
 
+    const handleDisconnect = async () => {
+        if (!token) return;
+        try {
+            await fetch(`${BACKEND_URL}/api/disconnect`, { headers: getAuthHeaders(token) });
+            setConnectionStatus(ConnectionStatus.DISCONNECTED);
+            setQrCode(null);
+            setPairingCode(null);
+            setIsPollingStatus(false);
+        } catch(e) {
+            showToast('Error al intentar desconectar.', 'error');
+        }
+    };
+
     switch(currentView) {
         case View.DASHBOARD:
             return <AgencyDashboard token={token!} backendUrl={BACKEND_URL} settings={settings!} onUpdateSettings={handleUpdateSettings} />;
         case View.SETTINGS:
             return <SettingsPanel settings={settings} isLoading={isLoadingSettings} onUpdateSettings={isFunctionalityDisabled ? ()=>{} : handleUpdateSettings} onOpenLegal={setLegalModalType} />;
         case View.CONNECTION:
-            return <ConnectionPanel user={currentUser} status={connectionStatus} qrCode={qrCode} pairingCode={pairingCode} onConnect={isFunctionalityDisabled ? async ()=>{} : handleConnect} onDisconnect={() => fetch(`${BACKEND_URL}/api/disconnect`, { headers: getAuthHeaders(token!) })} />;
+            return <ConnectionPanel user={currentUser} status={connectionStatus} qrCode={qrCode} pairingCode={pairingCode} onConnect={isFunctionalityDisabled ? async ()=>{} : handleConnect} onDisconnect={handleDisconnect} />;
         case View.CHATS:
         default:
             return (

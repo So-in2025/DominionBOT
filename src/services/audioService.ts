@@ -1,5 +1,4 @@
-
-import { getAuthHeaders, BACKEND_URL } from '../config.js';
+import { getAuthHeaders, BACKEND_URL, API_HEADERS } from '../config.js';
 import { decodeRawAudioData } from '../utils/audioUtils.js';
 
 class AudioService {
@@ -68,7 +67,7 @@ class AudioService {
                 return;
             }
 
-            const headers = token ? getAuthHeaders(token) : {};
+            const headers = token ? getAuthHeaders(token) : API_HEADERS;
             const response = await fetch(`${BACKEND_URL}/api/tts/${eventName}`, { headers });
             
             console.log(`[AudioService] Fetch response for ${eventName}: Status ${response.status}`);
@@ -78,7 +77,7 @@ class AudioService {
             }
 
             const arrayBuffer = await response.arrayBuffer();
-            if (arrayBuffer.byteLength < 100) {
+            if (arrayBuffer.byteLength < 100 || arrayBuffer.byteLength % 2 !== 0) {
                  console.error(`[AudioService] Received empty or invalid audio buffer for ${eventName}. Length: ${arrayBuffer.byteLength}`);
                  return;
             }

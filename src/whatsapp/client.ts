@@ -8,7 +8,6 @@ import makeWASocket, {
 import { Boom } from '@hapi/boom';
 import pino from 'pino';
 import { HttpsProxyAgent } from 'https-proxy-agent';
-import { sseService } from '../services/sseService.js';
 import { ConnectionStatus, Message, LeadStatus, User } from '../types.js';
 import { conversationService } from '../services/conversationService.js';
 import { db } from '../database.js';
@@ -59,8 +58,6 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
   if (phoneNumber) {
       await clearBindedSession(userId);
   }
-
-  sseService.sendEvent(userId, 'status_update', { status: ConnectionStatus.GENERATING_QR });
   
   // FIX: Declaring user here to make it available in catch blocks and closures.
   let user: User | null = null;
@@ -100,11 +97,11 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
               try {
                   const code = await sock.requestPairingCode(phoneNumber.replace(/[^0-9]/g, ''));
                   codeCache.set(userId, code);
-                  sseService.sendEvent(userId, 'status_update', { status: ConnectionStatus.AWAITING_SCAN, pairingCode: code });
               } catch (err) {
                   // FIX: Added username to the logService.error call to match its signature (fixes error on line 112).
                   logService.error('Error solicitando pairing code', err as Error, userId, user?.username);
-                  sseService.sendEvent(userId, 'status_update', { status: ConnectionStatus.DISCONNECTED });
+                  qrCache.delete(userId);
+                  codeCache.delete(userId);
               }
           }, 4000); 
       }
@@ -114,9 +111,10 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
           if (qr && !phoneNumber) {
             const qrImage = await QRCode.toDataURL(qr);
             qrCache.set(userId, qrImage);
-            sseService.sendEvent(userId, 'status_update', { status: ConnectionStatus.AWAITING_SCAN, qr: qrImage });
           }
           if (connection === 'close') {
+            qrCache.delete(userId);
+            codeCache.delete(userId);
             const error = (lastDisconnect?.error as Boom)?.output?.statusCode;
             if (error === DisconnectReason.loggedOut) {
                 // FIX: The 'audit' log requires a username, which was missing. This caused a type error because the function received 2 arguments instead of the expected 3.
@@ -133,7 +131,8 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
             }
           } else if (connection === 'open') {
             logService.info('Conexión a WhatsApp establecida', userId);
-            sseService.sendEvent(userId, 'status_update', { status: ConnectionStatus.CONNECTED });
+            qrCache.delete(userId);
+            codeCache.delete(userId);
           }
       });
 
@@ -157,7 +156,6 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
 
           const userMessage: Message = { id: msg.key.id!, text, sender: 'user', timestamp: new Date() };
           await conversationService.addMessage(userId, jid, userMessage, msg.pushName);
-          sseService.sendEvent(userId, 'new_message', { from: jid.split('@')[0], text });
 
           const debounceKey = `${userId}_${jid}`;
           if (messageDebounceMap.has(debounceKey)) clearTimeout(messageDebounceMap.get(debounceKey));
@@ -201,7 +199,6 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
   } catch (err) {
       // FIX: Added username to the logService.error call to match its signature.
       logService.error('Fallo crítico en conexión a WhatsApp', err as Error, userId, user?.username);
-      sseService.sendEvent(userId, 'status_update', { status: ConnectionStatus.DISCONNECTED });
   }
 }
 
@@ -218,7 +215,6 @@ export async function disconnectWhatsApp(userId: string) {
     codeCache.delete(userId);
     await clearBindedSession(userId);
     logService.info('Nodo de WhatsApp desconectado', userId);
-    sseService.sendEvent(userId, 'status_update', { status: ConnectionStatus.DISCONNECTED });
 }
 
 export async function sendMessage(userId: string, jid: string, text: string) {
