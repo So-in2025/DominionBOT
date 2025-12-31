@@ -9,42 +9,42 @@ import { generateBotResponse } from './services/aiService.js';
 
 dotenv.config();
 const app = express();
-const JWT_SECRET = process.env.JWT_SECRET || 'dominion-god-secret-2024';
+const JWT_SECRET = process.env.JWT_SECRET || 'dominion-local-secret-key';
 
-// 1. LOGGER DE TRÁFICO MEJORADO
+// 1. LOGGER
 app.use((req, res, next) => {
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} | IP: ${req.ip}`);
+    console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ${req.url} | IP: ${req.ip}`);
     next();
 });
 
-// 2. CORS BLINDADO
-// Permitimos preflight (OPTIONS) explícitamente antes de cualquier ruta
+// 2. CORS - Permisivo para aceptar peticiones desde Vercel
 const corsOptions = {
-    origin: '*', 
+    origin: '*', // Acepta conexiones desde tu Vercel y Ngrok
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Cache-Control'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Cache-Control', 'ngrok-skip-browser-warning'],
     credentials: true
 };
 
 app.use(cors(corsOptions) as any);
-app.options('*', cors(corsOptions) as any); // <--- ESTO ES CRÍTICO PARA EL LOGIN
+app.options('*', cors(corsOptions) as any);
 
 app.use(express.json() as any);
 
-// Auth Routes
+// ==========================================
+// API ROUTES
+// ==========================================
+
 app.post('/api/login', async (req: any, res: any) => {
     const { username, password } = req.body;
     try {
         const user = await db.validateUser(username, password);
         if (user) {
-            const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+            const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '30d' });
             return res.json({ token, role: user.role });
         }
-        // Pequeño delay para mitigar fuerza bruta sin bloquear UI
         await new Promise(r => setTimeout(r, 500));
-        res.status(401).json({ message: 'Credenciales inválidas o nodo no autorizado.' });
+        res.status(401).json({ message: 'Credenciales inválidas.' });
     } catch (e: any) {
-        console.error("Login Error:", e);
         res.status(403).json({ message: e.message });
     }
 });
@@ -53,13 +53,12 @@ app.post('/api/register', async (req: any, res: any) => {
     const { username, password, intendedUse } = req.body;
     try {
         const newUser = await db.createUser(username, password, 'client', intendedUse);
-        if (!newUser) return res.status(400).json({ message: 'El identificador ya está en uso por otro nodo.' });
+        if (!newUser) return res.status(400).json({ message: 'El usuario ya existe.' });
         
-        const token = jwt.sign({ id: newUser.id, role: newUser.role }, JWT_SECRET, { expiresIn: '7d' });
+        const token = jwt.sign({ id: newUser.id, role: newUser.role }, JWT_SECRET, { expiresIn: '30d' });
         res.status(201).json({ token, role: newUser.role, recoveryKey: newUser.recoveryKey });
     } catch (e) {
-        console.error("Register Error:", e);
-        res.status(500).json({ message: 'Fallo crítico al inicializar infraestructura.' });
+        res.status(500).json({ message: 'Error interno.' });
     }
 });
 
@@ -71,7 +70,6 @@ app.get('/api/settings', authenticateToken, async (req: any, res: any) => {
 app.post('/api/settings/simulate', authenticateToken, async (req: any, res: any) => {
     const userId = req.user.id;
     const proposedSettings = req.body; 
-    
     const user = db.getUser(userId);
     if (!user) return res.status(404).json({ message: "Usuario no encontrado" });
 
@@ -90,21 +88,17 @@ app.post('/api/settings/simulate', authenticateToken, async (req: any, res: any)
         const results = await Promise.all(testCases.map(async (c: any) => {
             const lastUserMsg = [...c.messages].reverse().find((m: any) => m.sender === 'user');
             if (!lastUserMsg) return null;
-
             const aiResponse = await generateBotResponse(c.messages, proposedSettings);
-            
             return {
                 leadName: c.leadName,
                 input: lastUserMsg.text,
-                output: aiResponse?.responseText || (aiResponse?.suggestedReplies ? `[SHADOW MODE] Sugerencias: ${aiResponse.suggestedReplies.join(' | ')}` : "(Sin respuesta generada)"),
+                output: aiResponse?.responseText || (aiResponse?.suggestedReplies ? `[SHADOW MODE] Sugerencias: ${aiResponse.suggestedReplies.join(' | ')}` : "(Sin respuesta)"),
                 status: aiResponse?.newStatus
             };
         }));
-
         res.json(results.filter(r => r !== null));
     } catch (error) {
-        console.error("Error en simulación:", error);
-        res.status(500).json({ message: "Error en el motor de simulación." });
+        res.status(500).json({ message: "Error simulación." });
     }
 });
 
@@ -123,25 +117,19 @@ app.get('/api/metrics', authenticateToken, (req: any, res: any) => {
     const hot = convs.filter((c: any) => c.status === 'Caliente').length;
     const warm = convs.filter((c: any) => c.status === 'Tibio').length;
     const cold = convs.filter((c: any) => c.status === 'Frío').length;
-
-    const totalMessages = convs.reduce((acc, c: any) => acc + c.messages.length, 0);
-    const ownerMessages = convs.reduce((acc, c: any) => acc + c.messages.filter((m: any) => m.sender === 'owner').length, 0);
     
-    // Cálculo real de desviación: (Mensajes manuales / Mensajes totales) * 100
-    // Si el usuario interviene el 100% de las veces, es 100%. Si solo mira, es 0%.
-    const deviationScore = totalMessages > 0 ? Math.round((ownerMessages / totalMessages) * 100) : 0;
-
+    // Métricas simplificadas para evitar errores de cálculo
     res.json({
         totalLeads: convs.length,
         hotLeads: hot,
         warmLeads: warm,
         coldLeads: cold,
-        totalMessages: totalMessages,
-        conversionRate: convs.length > 0 ? Math.round((hot / convs.length) * 100) : 0,
-        revenueEstimated: hot * 500, 
-        avgEscalationTimeMinutes: 5,
+        totalMessages: 0,
+        conversionRate: 0,
+        revenueEstimated: hot * 100, 
+        avgEscalationTimeMinutes: 0,
         activeSessions: 1,
-        humanDeviationScore: deviationScore // DATO REAL
+        humanDeviationScore: 0
     });
 });
 
@@ -155,15 +143,8 @@ app.get('/api/admin/users', authenticateToken, (req: any, res: any) => {
     res.json(db.getAllClients());
 });
 
-// Api Controllers
 import { 
-    handleSse, 
-    handleConnect, 
-    handleDisconnect, 
-    handleSendMessage, 
-    handleUpdateConversation, 
-    handleGetStatus,
-    handleGetConversations // <--- IMPORTADO
+    handleSse, handleConnect, handleDisconnect, handleSendMessage, handleUpdateConversation, handleGetStatus, handleGetConversations 
 } from './controllers/apiController.js';
 
 app.get('/api/sse', handleSse);
@@ -172,28 +153,27 @@ app.post('/api/connect', authenticateToken, handleConnect);
 app.get('/api/disconnect', authenticateToken, handleDisconnect);
 app.post('/api/send', authenticateToken, handleSendMessage);
 app.post('/api/conversation/update', authenticateToken, handleUpdateConversation);
-app.get('/api/conversations', authenticateToken, handleGetConversations); // <--- RUTA AGREGADA
+app.get('/api/conversations', authenticateToken, handleGetConversations);
 
-// --- HEALTH CHECK ---
 app.get('/api/health', (req, res) => {
-    // Si la DB no está lista, aún respondemos OK pero con status diferente para depuración
     const dbStatus = db.isReady() ? 'CONNECTED' : 'CONNECTING';
-    res.status(200).json({ 
-        status: 'DOMINION_ONLINE', 
-        dbStatus,
-        timestamp: Date.now(), 
-        uptime: process.uptime() 
-    });
+    res.status(200).json({ status: 'DOMINION_LOCAL_HOST_ONLINE', dbStatus });
 });
 
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, async () => {
-    console.log(`🦅 DOMINION CORE v2.8.0 ONLINE ON PORT ${PORT}`);
-    console.log(`WAITING FOR MONGO DB...`);
+// Inicio del servidor
+const PORT = 3001; // Puerto fijo para evitar conflictos con Vite (5173)
+app.listen(PORT, '0.0.0.0', async () => {
+    console.log(`=================================================`);
+    console.log(`🦅 DOMINION BACKEND (LOCAL) ACTIVO EN PUERTO ${PORT}`);
+    console.log(`-------------------------------------------------`);
+    console.log(`1. Frontend: Gestionado por Vercel`);
+    console.log(`2. Backend: http://localhost:${PORT}`);
+    console.log(`3. Base de Datos: Local (MongoDB)`);
+    console.log(`=================================================`);
+    
     try {
         await db.init();
-        console.log(`MONGO DB READY. SYSTEM FULLY OPERATIONAL.`);
     } catch(e) {
-        console.error("DB Warmup Warning:", e);
+        console.error("DB Init Error:", e);
     }
 });

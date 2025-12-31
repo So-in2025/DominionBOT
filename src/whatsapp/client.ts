@@ -6,6 +6,7 @@ import makeWASocket, {
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import pino from 'pino';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 import { sseService } from '../services/sseService.js';
 import { ConnectionStatus, Message, LeadStatus, InternalNote, Signal } from '../types.js';
 import { conversationService } from '../services/conversationService.js';
@@ -20,7 +21,6 @@ const codeCache = new Map<string, string>();
 const messageDebounceMap = new Map<string, ReturnType<typeof setTimeout>>();
 const DEBOUNCE_TIME_MS = 6000; 
 
-// CAMBIO: Logger visible para ver qué pasa internamente
 const logger = pino({ level: 'info' }); 
 
 export function getSessionStatus(userId: string): { status: ConnectionStatus, qr?: string, pairingCode?: string } {
@@ -41,7 +41,6 @@ export function getSessionStatus(userId: string): { status: ConnectionStatus, qr
 export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
   console.log(`[WA-INIT] Iniciando secuencia de conexión para ${userId}`);
   
-  // 1. Limpieza preventiva
   const existingSock = sessions.get(userId);
   if (existingSock) {
       console.log(`[WA-INIT] Cerrando sesión anterior en memoria para ${userId}`);
@@ -49,21 +48,40 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
       sessions.delete(userId);
   }
 
-  // Notificar UI
   sseService.sendEvent(userId, 'status_update', { status: ConnectionStatus.GENERATING_QR });
   
   try {
+      // 1. Cargar Configuración del Usuario (Proxy)
+      const user = db.getUser(userId);
+      const proxyUrl = user?.settings?.proxyUrl;
+      let agent = undefined;
+
+      if (proxyUrl && proxyUrl.trim().length > 0) {
+          console.log(`[WA-PROXY] Configurando agente proxy para ${userId}`);
+          try {
+            agent = new HttpsProxyAgent(proxyUrl);
+          } catch(e) {
+            console.error(`[WA-PROXY-ERR] Proxy inválido para ${userId}:`, e);
+          }
+      } else {
+          console.warn(`[WA-WARN] ${userId} intentando conectar SIN PROXY. Riesgo de bloqueo alto.`);
+      }
+
+      // 2. Cargar Credenciales
       const { state, saveCreds } = await useMongoDBAuthState(userId);
       console.log(`[WA-AUTH] Credenciales cargadas desde Mongo para ${userId}`);
 
+      // 3. Crear Socket con Agente
       const sock = makeWASocket({
         auth: {
           creds: state.creds,
           keys: makeCacheableSignalKeyStore(state.keys, logger),
         },
         printQRInTerminal: false,
-        logger, // Logger activado
-        // CONFIGURACIÓN DE SEGURIDAD ESTÁNDAR
+        logger,
+        // INYECCIÓN DE AGENTE PROXY
+        agent, 
+        // FIRMA DE NAVEGADOR ESTÁNDAR (UBUNTU/CHROME)
         browser: ['Ubuntu', 'Chrome', '20.0.04'], 
         syncFullHistory: false, 
         generateHighQualityLinkPreview: true,
@@ -71,7 +89,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
         defaultQueryTimeoutMs: 60000, 
         keepAliveIntervalMs: 30000,
         emitOwnEvents: false,
-        retryRequestDelayMs: 2000,
+        retryRequestDelayMs: 5000, // Aumentado para evitar rate limits
       });
 
       sessions.set(userId, sock);
@@ -93,7 +111,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                   console.error("[WA-PAIR] Error solicitando código:", err);
                   sseService.sendEvent(userId, 'status_update', { status: ConnectionStatus.DISCONNECTED });
               }
-          }, 4000); 
+          }, 5000); 
       }
       
       sock.ev.on('connection.update', async (update) => {
@@ -111,26 +129,19 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
             const reason = (lastDisconnect?.error as Boom)?.output?.payload?.message || (lastDisconnect?.error as any)?.message;
             console.log(`[WA-CLOSE] Conexión cerrada ${userId}. Code: ${error}, Reason: ${reason}`);
             
-            // Limpiamos caché visual
             qrCache.delete(userId);
             codeCache.delete(userId);
 
-            // LOGICA DE RECONEXIÓN INTELIGENTE
-            // 401: Unauthorized (Logged out)
-            // 403: Forbidden (Banned/Geo-blocked)
-            // 405: Method Not Allowed (Browser signature rejected)
-            // 428: Precondition Required (Rate limited)
-            // 515: Stream Errored (Restart required)
-
+            // LOGICA DE RECONEXIÓN
             if (error === DisconnectReason.loggedOut || error === 401 || error === 403 || error === 405) {
-                console.log(`[WA-CRITICAL] Error fatal (${error}). Purgando sesión y deteniendo.`);
-                await disconnectWhatsApp(userId); // Borra DB y Memoria
+                console.log(`[WA-CRITICAL] Error fatal (${error}). Purgando sesión.`);
+                // Si es 405/403, es probable que la IP/Proxy haya sido baneada
+                await disconnectWhatsApp(userId); 
                 sseService.sendEvent(userId, 'status_update', { status: ConnectionStatus.DISCONNECTED });
             } else if (error === 428) {
-                console.log(`[WA-WARN] Rate Limit detectado. Esperando 10s antes de reintentar.`);
+                console.log(`[WA-WARN] Rate Limit. Esperando 10s.`);
                 setTimeout(() => connectToWhatsApp(userId, phoneNumber), 10000);
             } else {
-                // Errores temporales (515, timeouts), reintentar rápido
                 console.log(`[WA-RETRY] Reconectando socket...`);
                 connectToWhatsApp(userId, phoneNumber);
             }
@@ -143,7 +154,6 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
       });
 
       sock.ev.on('messages.upsert', async (m) => {
-          // (Lógica de mensajes sin cambios, abreviada para claridad del patch)
           const msg = m.messages[0];
           if (!msg.message || msg.key.fromMe || msg.key.remoteJid === 'status@broadcast') return;
           
@@ -170,7 +180,6 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
           conversationService.addMessage(userId, jid, userMessage, signal.senderName);
           sseService.sendEvent(userId, 'new_message', { from: jid.split('@')[0], name: signal.senderName || jid.split('@')[0], text: signal.content });
 
-          // Procesamiento IA (Simplificado para este archivo)
           const debounceKey = `${userId}_${jid}`;
           if (messageDebounceMap.has(debounceKey)) clearTimeout(messageDebounceMap.get(debounceKey));
 
@@ -194,7 +203,21 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                             conversationService.addMessage(userId, jid, botMessage);
                             sseService.sendEvent(userId, 'new_message', { from: jid.split('@')[0], name: 'Dominion Bot', text: aiResult.responseText });
                         }
-                        // ... resto de lógica de estado ...
+                        
+                        if (aiResult.newStatus === LeadStatus.HOT) {
+                            conversation.isMuted = true;
+                            conversation.escalatedAt = new Date();
+                            if (aiResult.suggestedReplies && aiResult.suggestedReplies.length > 0) {
+                                conversation.suggestedReplies = aiResult.suggestedReplies;
+                            }
+                            const hotNote: InternalNote = {
+                              id: uuidv4(),
+                              author: 'AI',
+                              timestamp: new Date(),
+                              note: `🔥 SHADOW MODE ACTIVADO\n- Acción Sugerida: ${aiResult.recommendedAction || 'Cierre manual requerido.'}`
+                            };
+                            conversation.internalNotes = [...(conversation.internalNotes || []), hotNote];
+                        }
                         db.saveUserConversation(userId, conversation);
                     }
                 }
@@ -222,7 +245,6 @@ export async function disconnectWhatsApp(userId: string) {
     qrCache.delete(userId);
     codeCache.delete(userId);
 
-    // LIMPIEZA NUCLEAR DE DB PARA EVITAR SESIONES ZOMBIES
     await clearBindedSession(userId);
 
     sseService.sendEvent(userId, 'status_update', { status: ConnectionStatus.DISCONNECTED });

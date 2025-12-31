@@ -11,7 +11,7 @@ import AuditView from './components/Admin/AuditView.js';
 import AuthModal from './components/AuthModal.js';
 import LegalModal from './components/LegalModal.js'; 
 import AgencyDashboard from './components/AgencyDashboard.js';
-import { BACKEND_URL } from './config.js'; 
+import { BACKEND_URL } from './config.js';
 
 const SIMULATION_SCRIPT = [
     { id: 1, type: 'user', text: "Hola, vi el anuncio. ¿Cómo funciona el bot?", delayBefore: 1000 },
@@ -61,7 +61,7 @@ export default function App() {
       const checkServer = async () => {
           try {
               const controller = new AbortController();
-              const timeoutId = setTimeout(() => controller.abort(), 5000);
+              const timeoutId = setTimeout(() => controller.abort(), 2000); // Rapido en local
               
               const res = await fetch(`${BACKEND_URL}/api/health`, { 
                   method: 'GET',
@@ -78,10 +78,10 @@ export default function App() {
                   throw new Error("Server not ready");
               }
           } catch (e) {
-              console.log(`🦅 Dominion Core: Waking up... Attempt ${serverCheckAttempts + 1}`);
+              console.log(`🦅 Dominion Core: Buscando servidor... (${BACKEND_URL}) Intento ${serverCheckAttempts + 1}`);
               if (isMounted) {
                   setServerCheckAttempts(prev => prev + 1);
-                  setTimeout(checkServer, 2500); 
+                  setTimeout(checkServer, 2000); 
               }
           }
       };
@@ -275,13 +275,13 @@ export default function App() {
                 <div className="w-20 h-20 border-4 border-brand-gold/20 border-t-brand-gold rounded-full animate-spin mb-8 shadow-[0_0_50px_rgba(212,175,55,0.2)]"></div>
                 <h1 className="text-2xl font-black uppercase tracking-widest text-white mb-2 animate-pulse">Iniciando Sistemas Neurales</h1>
                 <p className="text-[10px] text-brand-gold font-bold uppercase tracking-[0.3em]">
-                    Despertando Servidor Central (Intento {serverCheckAttempts})
+                    Buscando Nodo Local o Nube (Intento {serverCheckAttempts})
                 </p>
                 <div className="mt-8 max-w-md text-center">
                     <p className="text-[10px] text-gray-500 leading-relaxed">
-                        Estás operando en la infraestructura gratuita. El nodo puede tardar hasta 60 segundos en salir del modo hibernación (Cold Start).
+                        Si estás corriendo en tu PC, asegúrate que la terminal diga "DOMINION CORE ONLINE".
                     </p>
-                    <p className="text-[9px] text-gray-600 mt-2 font-mono">{BACKEND_URL}</p>
+                    <p className="text-[9px] text-gray-600 mt-2 font-mono">Target: {BACKEND_URL}</p>
                 </div>
             </div>
         </div>

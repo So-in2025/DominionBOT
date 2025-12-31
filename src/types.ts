@@ -94,6 +94,7 @@ export interface BotSettings {
   freeTrialDays: number;
   ctaLink: string;
   geminiApiKey?: string;
+  proxyUrl?: string; // NUEVO: URL del Proxy Residencial
   isActive: boolean;
   disabledMessage: string;
   archetype: PromptArchetype;
