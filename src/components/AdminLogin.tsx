@@ -91,7 +91,7 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin }) => {
                 setError(data.message || 'Credenciales no válidas. Prueba master / dominion2024');
             }
         } catch (err) {
-            setError('Error de enlace con el servidor Render. Verifique conexión.');
+            setError('Error de enlace con el servidor central. Verifique conexión.');
         } finally {
             setLoading(false);
         }

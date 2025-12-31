@@ -60,32 +60,38 @@ export default function App() {
   useEffect(() => {
       let isMounted = true;
       const checkServer = async () => {
-          if (!BACKEND_URL) return;
+          // VALIDACIÓN ESTRICTA: Si no hay URL configurada, no intentamos nada.
+          if (!BACKEND_URL || BACKEND_URL.trim() === '') {
+              console.error("⛔ ERROR: VITE_BACKEND_URL no configurada en Vercel. Deteniendo intentos.");
+              return;
+          }
 
           try {
               const controller = new AbortController();
-              const timeoutId = setTimeout(() => controller.abort(), 5000); 
+              const timeoutId = setTimeout(() => controller.abort(), 8000); 
               
               const res = await fetch(`${BACKEND_URL}/api/health`, { 
                   method: 'GET',
-                  headers: API_HEADERS, // IMPORTANTE: Header anti-403
+                  headers: API_HEADERS, 
                   signal: controller.signal
               });
               clearTimeout(timeoutId);
 
-              if (res.ok) {
+              // Validación extra: Asegurar que la respuesta es válida y no un index.html de Vercel
+              const contentType = res.headers.get("content-type");
+              if (res.ok && contentType && contentType.includes("application/json")) {
                   if (isMounted) {
                       setIsServerReady(true);
                       console.log("🦅 Dominion Core: Online & Ready");
                   }
               } else {
-                  throw new Error("Server not ready");
+                  throw new Error("Respuesta inválida del servidor (posible error 404/SPA fallback)");
               }
           } catch (e) {
               console.log(`🦅 Dominion Core: Buscando túnel... Intento ${serverCheckAttempts + 1}`);
               if (isMounted) {
                   setServerCheckAttempts(prev => prev + 1);
-                  setTimeout(checkServer, 3000); 
+                  setTimeout(checkServer, 4000); 
               }
           }
       };
