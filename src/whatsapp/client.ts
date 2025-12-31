@@ -117,7 +117,23 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
             }
 
             if (connection === 'close') {
-                const shouldReconnect = (lastDisconnect?.error as Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
+                const disconnectError = lastDisconnect?.error as Boom;
+                const statusCode = disconnectError?.output?.statusCode;
+                
+                // CRITICAL: Handle Stream Errored (conflict) specifically
+                if (disconnectError?.message === 'Stream Errored' && disconnectError?.data === 'conflict') {
+                    logService.error(`[WA-CLIENT] CONFLICTO DE SESIÓN DETECTADO para user ${userId}. Posiblemente WhatsApp Web abierto en otro lugar o sesión corrupta.`, disconnectError, userId);
+                    // Do NOT attempt to reconnect automatically in a conflict. User intervention (clear session) is required.
+                    await db.updateUser(userId, { whatsapp_number: '' });
+                    await db.updateUserSettings(userId, { isActive: false });
+                    await clearBindedSession(userId); // Clear session data from DB
+                    sessions.delete(userId);
+                    qrCache.delete(userId);
+                    codeCache.delete(userId);
+                    return; // EXIT here, no further reconnection attempts from this error.
+                }
+
+                const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
                 logService.warn(`[WA-CLIENT] Connection closed for user ${userId}. Reason: ${lastDisconnect?.error?.message}. Reconnecting: ${shouldReconnect}`, userId);
                 
                 qrCache.delete(userId);

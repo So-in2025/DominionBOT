@@ -50,8 +50,9 @@ class TtsService {
         const apiKey = process.env.API_KEY;
         if (!apiKey) {
             // CRÍTICO: El usuario debe configurar API_KEY en su archivo .env o .env.local
-            logService.warn('[TTS] API_KEY de Gemini no encontrada en las variables de entorno. No se pueden generar audios TTS.');
-            logService.warn('[TTS] Por favor, asegúrate de añadir API_KEY=TU_CLAVE_DE_GEMINI_AQUI en tu archivo .env o .env.local');
+            // Esta advertencia es apropiada si los audios no están generados aún.
+            logService.warn('[TTS] API_KEY de Gemini no encontrada en las variables de entorno para pre-generación de audios. Los audios no se generarán si no existen.');
+            logService.warn('[TTS] Si necesitas generar nuevos audios TTS, añade API_KEY=TU_CLAVE_DE_GEMINI_AQUI en tu archivo .env o .env.local y reinicia el backend.');
             return;
         }
 

@@ -22,10 +22,8 @@ if (fs.existsSync(envPath)) {
 export const JWT_SECRET = process.env.JWT_SECRET || 'dominion-local-secret-key';
 export const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://admin:C3WcIkonjZ4tnYUN@cluster0.rxgrwk7.mongodb.net/dominion_local?retryWrites=true&w=majority&appName=Cluster0';
 export const PORT = process.env.PORT || 3001;
-// Export Gemini API key. CRÍTICO: Asegúrate de que esta variable esté definida en tu archivo .env o .env.local
-// Ejemplo: API_KEY=TU_CLAVE_DE_GEMINI_AQUI
-// Esta clave es usada por el servidor para pre-generar audios TTS y como fallback si el cliente no configura su propia API Key de Gemini.
-export const API_KEY = process.env.API_KEY || ''; 
+// NOTA: La API_KEY de Gemini para el servicio TTS es leída directamente por ttsService
+// La API_KEY de Gemini para el aiService (generación de respuestas) se toma de la configuración del usuario (BYOK).
 
 // Debug de seguridad (solo muestra los últimos 4 caracteres)
 const secretDisplay = JWT_SECRET === 'dominion-local-secret-key' ? 'DEFAULT_DEV_KEY' : `...${JWT_SECRET.slice(-4)}`;

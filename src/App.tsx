@@ -518,7 +518,6 @@ export default function App() {
       // Clear polling intervals on logout
       if (statusPollingIntervalRef.current) {
           clearInterval(statusPollingIntervalRef.current);
-          // FIX: Changed 'pollingIntervalRef' to 'statusPollingIntervalRef'
           statusPollingIntervalRef.current = null;
       }
       if (convoPollingIntervalRef.current) {
@@ -741,9 +740,9 @@ export default function App() {
   const handleConnect = async (phoneNumber?: string) => {
       if (!BACKEND_URL) {
           setBackendError("ERROR CRÍTICO: La URL del backend no está configurada. Verifica VITE_BACKEND_URL en Vercel o tu archivo .env.local si estás en desarrollo.");
-          return;
+          return { ok: false, error: "Backend URL not configured." };
       }
-      if (!token) return;
+      if (!token) return { ok: false, error: "No authentication token." };
       setQrCode(null);
       setPairingCode(null);
       setConnectionStatus(ConnectionStatus.GENERATING_QR); // Set status immediately
@@ -755,12 +754,14 @@ export default function App() {
               body: JSON.stringify({ phoneNumber }) 
           });
           if (res.ok) {
-              // Immediately trigger a status fetch after backend confirms initiation
               await fetchStatus(); 
+              return { ok: true };
           } else {
-              // Revert status on error, handled in outer catch as well
               setConnectionStatus(ConnectionStatus.DISCONNECTED); 
               audioService.play('alert_error_connection');
+              const errorText = await res.text();
+              setBackendError(`Fallo al iniciar conexión (${res.status}). ${errorText.substring(0, 50)}`);
+              return { ok: false, error: `Failed to initiate connection: ${res.status}` };
           }
       } catch (e: any) { 
           console.error("Fallo de conexión en handleConnect:", e);
@@ -770,7 +771,8 @@ export default function App() {
               setBackendError("Fallo al iniciar conexión.");
           }
           audioService.play('alert_error_connection');
-          setConnectionStatus(ConnectionStatus.DISCONNECTED); // Revert status on error
+          setConnectionStatus(ConnectionStatus.DISCONNECTED); 
+          return { ok: false, error: e.message };
       }
   };
 
@@ -828,26 +830,36 @@ export default function App() {
     if (!token || isRequestingHistory) return;
 
     setIsRequestingHistory(true);
-    showToast('Solicitando historial de mensajes. Esto reiniciará su conexión temporalmente.', 'info'); // 'info' type is new, just visually distinct
-    audioService.play('connection_establishing'); // Use existing audio for connection process
+    showToast('Solicitando historial de mensajes. Esto reiniciará su conexión temporalmente.', 'info'); 
+    audioService.play('connection_establishing'); 
 
     try {
         // Disconnect first
+        console.log("[handleRequestHistory] Disconnecting existing session...");
         await fetch(`${BACKEND_URL}/api/disconnect`, { headers: getAuthHeaders(token!) });
         setConnectionStatus(ConnectionStatus.RESETTING);
         setQrCode(null);
         setPairingCode(null);
-        await new Promise(resolve => setTimeout(resolve, 2000)); // Visual pause
+        await new Promise(resolve => setTimeout(resolve, 3000)); // Pause to allow backend to process disconnect
 
         // Then connect again, which should trigger full history sync
-        await handleConnect(); // This will internally call fetchStatus
-        
-        // After re-connect is initiated, force fetch conversations
-        await new Promise(resolve => setTimeout(resolve, 3000)); // Give time for Baileys to start sending history
-        await fetchConversations();
+        console.log("[handleRequestHistory] Reconnecting to trigger full history sync...");
+        const connectResult = await handleConnect(); // Use handleConnect, which returns a promise with {ok: boolean}
 
-        showToast('Historial solicitado y conexión restablecida.', 'success');
-        audioService.play('action_success');
+        if (connectResult.ok) {
+            showToast('Conexión restablecida. Sincronizando historial...', 'info');
+            // Give Baileys more time to sync history before fetching conversations
+            await new Promise(resolve => setTimeout(resolve, 8000)); 
+            
+            console.log("[handleRequestHistory] Fetching conversations after reconnect and sync delay...");
+            await fetchConversations();
+
+            showToast('Historial solicitado y conexión restablecida.', 'success');
+            audioService.play('action_success');
+        } else {
+            showToast('Error al restablecer la conexión después de desconectar. Intente de nuevo.', 'error');
+            audioService.play('alert_error_generic');
+        }
 
     } catch (e: any) {
         console.error("Error requesting history:", e);

@@ -1,7 +1,7 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { Message, LeadStatus, User, PromptArchetype } from '../types.js';
 import { planService } from './planService.js';
+import { logService } from './logService.js'; // Import logService
 
 const MODEL_PRIORITY = ["gemini-3-flash-preview", "gemini-flash-lite-latest"];
 
@@ -16,6 +16,13 @@ export const generateBotResponse = async (
           return { responseText: "Disculpa la demora, en breve te atenderemos.", newStatus: LeadStatus.COLD, tags: [] };
       }
       return null;
+  }
+
+  // CRITICAL: Ensure user has provided their Gemini API Key
+  if (!user.settings.geminiApiKey || user.settings.geminiApiKey.trim() === '') {
+      logService.error(`[AI-SERVICE] Usuario ${user.username} (ID: ${user.id}) intentó generar respuesta AI sin API Key de Gemini configurada.`, null, user.id, user.username);
+      // For trial/expired, we already return a polite message. For active with no API key, we return nothing.
+      return null; 
   }
   
   const features = planService.getClientFeatures(user);
@@ -89,7 +96,8 @@ Analiza el historial y determina el estado del lead (Frío, Tibio, Caliente).
 ${JSON.stringify(Object.keys(responseSchema.properties))}
 `;
   
-  const ai = new GoogleGenAI({ apiKey: settings.geminiApiKey || process.env.API_KEY });
+  // CRITICAL: Use only the user's Gemini API key from settings.
+  const ai = new GoogleGenAI({ apiKey: settings.geminiApiKey });
 
   for (const modelName of MODEL_PRIORITY) {
     try {
@@ -113,7 +121,7 @@ ${JSON.stringify(Object.keys(responseSchema.properties))}
 
       return result;
     } catch (err) { 
-        console.warn(`[AI FAILOVER] Fallo con ${modelName}, intentando siguiente...`); 
+        logService.warn(`[AI FAILOVER] Fallo con ${modelName}, intentando siguiente...`, user.id, user.username, { error: err.message }); 
     }
   }
   
