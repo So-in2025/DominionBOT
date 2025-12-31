@@ -21,6 +21,7 @@ const sessions = new Map<string, WASocket>();
 const qrCache = new Map<string, string>(); 
 const codeCache = new Map<string, string>(); 
 const messageDebounceMap = new Map<string, ReturnType<typeof setTimeout>>();
+const connectionAttempts = new Map<string, boolean>();
 const DEBOUNCE_TIME_MS = 6000; 
 
 const logger = pino({ level: 'silent' }); 
@@ -38,6 +39,7 @@ export function getSessionStatus(userId: string): { status: ConnectionStatus, qr
 }
 
 export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
+  connectionAttempts.set(userId, true);
   logService.info('Iniciando conexión a WhatsApp', userId);
   
   const oldSock = sessions.get(userId);
@@ -115,9 +117,13 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                 logService.audit('Sesión de WhatsApp cerrada por el usuario', userId, user?.username || 'unknown');
                 await disconnectWhatsApp(userId);
             } else {
-                // FIX: Pass arguments to setTimeout directly to satisfy strict linter rule.
-                // FIX: Wrapped in an anonymous function to resolve argument count mismatch error.
-                setTimeout(() => connectToWhatsApp(userId, phoneNumber), 5000);
+                if (connectionAttempts.get(userId)) {
+                    logService.warn(`Conexión cerrada inesperadamente, reintentando en 5s...`, userId);
+                    // FIX: Wrapped in an anonymous function to resolve argument count mismatch error.
+                    setTimeout(() => connectToWhatsApp(userId, phoneNumber), 5000);
+                } else {
+                    logService.info(`Conexión cerrada, no se reintentará.`, userId);
+                }
             }
           } else if (connection === 'open') {
             logService.info('Conexión a WhatsApp establecida', userId);
@@ -194,6 +200,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
 }
 
 export async function disconnectWhatsApp(userId: string) {
+    connectionAttempts.set(userId, false);
     const sock = sessions.get(userId);
     if (sock) {
         // FIX: The error "Expected 1 arguments, but got 0" likely has the counts reversed. Calling end() with no arguments. This change mirrors the one in connectToWhatsApp.

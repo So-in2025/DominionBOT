@@ -85,340 +85,6 @@ const TrialBanner: React.FC<{ user: User | null }> = ({ user }) => {
     return null;
 };
 
-export default function App() {
-  const [token, setToken] = useState<string | null>(localStorage.getItem('saas_token'));
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [userRole, setUserRole] = useState<string | null>(localStorage.getItem('saas_role'));
-  const [authModal, setAuthModal] = useState<{ isOpen: boolean; mode: 'login' | 'register' }>({ isOpen: false, mode: 'login' });
-  const [legalModalType, setLegalModalType] = useState<'privacy' | 'terms' | 'manifesto' | null>(null); 
-  const [currentView, setCurrentView] = useState<View>(() => {
-    const role = localStorage.getItem('saas_role');
-    return role === 'super_admin' ? View.ADMIN_GLOBAL : View.CHATS;
-  });
-  const [showLanding, setShowLanding] = useState(false);
-  const [isBotGloballyActive, setIsBotGloballyActive] = useState(true);
-  const [auditTarget, setAuditTarget] = useState<User | null>(null);
-  
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
-  const [settings, setSettings] = useState<BotSettings | null>(null);
-  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(ConnectionStatus.DISCONNECTED);
-  const [qrCode, setQrCode] = useState<string | null>(null);
-  const [pairingCode, setPairingCode] = useState<string | null>(null);
-  const [backendError, setBackendError] = useState<string | null>(null);
-  const [isTyping, setIsTyping] = useState(false);
-  const [isLoadingSettings, setIsLoadingSettings] = useState(false);
-  const [toast, setToast] = useState<ToastData | null>(null);
-
-  // Simulación de Landing
-  const [visibleMessages, setVisibleMessages] = useState<any[]>([]);
-  const [isSimTyping, setIsSimTyping] = useState(false);
-  const simScrollRef = useRef<HTMLDivElement>(null);
-
-  // Efecto para inicializar el AudioContext en la primera interacción del usuario
-  useEffect(() => {
-      const initAudio = () => {
-          console.log("User interaction detected, attempting to initialize AudioContext.");
-          audioService.initContext();
-      };
-      
-      // El listener se elimina automáticamente después de ejecutarse una vez
-      document.addEventListener('click', initAudio, { once: true, capture: true });
-      document.addEventListener('keydown', initAudio, { once: true, capture: true });
-
-      return () => {
-          document.removeEventListener('click', initAudio, true);
-          document.removeEventListener('keydown', initAudio, true);
-      };
-  }, []);
-
-  const showToast = (message: string, type: 'success' | 'error') => {
-    if (type === 'error') audioService.play('alert_error_generic');
-    setToast({ message, type });
-  };
-  
-  const handleNavigate = (view: View) => {
-      if (view === View.CHATS && (window as any).IS_LANDING_VIEW) {
-          setShowLanding(true);
-      } else {
-          setShowLanding(false);
-          setCurrentView(view);
-      }
-      (window as any).IS_LANDING_VIEW = view === View.CHATS && showLanding;
-  };
-
-  const handleLogout = () => {
-      localStorage.removeItem('saas_token');
-      localStorage.removeItem('saas_role');
-      sessionStorage.removeItem('trial_ended_alert_played');
-      setToken(null);
-      setUserRole(null);
-      setCurrentUser(null);
-      setShowLanding(false);
-      setCurrentView(View.CHATS);
-      setAuditTarget(null);
-  };
-
-  useEffect(() => {
-    if (userRole === 'super_admin' && ![View.ADMIN_GLOBAL, View.AUDIT_MODE].includes(currentView)) {
-        setCurrentView(View.ADMIN_GLOBAL);
-    }
-  }, [currentView, userRole]);
-
-  useEffect(() => {
-    if (!token) {
-        setCurrentUser(null);
-        return;
-    };
-
-    const loadUserData = async () => {
-        setIsLoadingSettings(true);
-        try {
-            const [userRes, sRes, cRes] = await Promise.all([
-                fetch(`${BACKEND_URL}/api/user/me`, { headers: getAuthHeaders(token) }),
-                fetch(`${BACKEND_URL}/api/settings`, { headers: getAuthHeaders(token) }),
-                fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) })
-            ]);
-            
-            if ([userRes, sRes, cRes].some(res => res.status === 403)) {
-                handleLogout();
-                return;
-            }
-
-            if (userRes.ok) setCurrentUser(await userRes.json());
-            if (sRes.ok) setSettings(await sRes.json());
-            if (cRes.ok) setConversations(await cRes.json());
-            if (backendError) setBackendError(null);
-        } catch (e) {
-            console.error("DATA ERROR:", e);
-            setBackendError("Alerta: Fallo de conexión con el nodo central.");
-            audioService.play('alert_error_connection');
-        } finally {
-            setIsLoadingSettings(false);
-        }
-    };
-    loadUserData();
-    
-    // Server-Sent Events listener for real-time updates
-    const eventSource = new EventSource(`${BACKEND_URL}/api/sse?token=${token}`);
-    eventSource.addEventListener('status_update', (event) => {
-        const data = JSON.parse(event.data);
-        setConnectionStatus(data.status);
-        if (data.qr) setQrCode(data.qr);
-        if (data.pairingCode) setPairingCode(data.pairingCode);
-
-        // Play audio based on status
-        switch(data.status) {
-            case ConnectionStatus.GENERATING_QR: audioService.play('connection_establishing'); break;
-            case ConnectionStatus.AWAITING_SCAN: audioService.play('connection_pending'); break;
-            case ConnectionStatus.CONNECTED: audioService.play('connection_success'); break;
-            case ConnectionStatus.DISCONNECTED: audioService.play('connection_disconnected'); break;
-        }
-    });
-
-    const conversationPoll = setInterval(async () => {
-        try {
-            const convRes = await fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) });
-            if(convRes.ok) setConversations(await convRes.json());
-        } catch (e) { /* Silencioso para polling */ }
-    }, 8000);
-
-    return () => {
-        eventSource.close();
-        clearInterval(conversationPoll);
-    };
-  }, [token]);
-  
-  // Landing page scroll audio effect
-  useEffect(() => {
-    if (token) return; // Only for logged-out users
-
-    const handleScroll = () => {
-        if (window.scrollY > 150 && !sessionStorage.getItem('landing_intro_played')) {
-            audioService.play('landing_intro');
-            sessionStorage.setItem('landing_intro_played', 'true');
-            window.removeEventListener('scroll', handleScroll);
-        }
-    };
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, [token]);
-
-  useEffect(() => {
-    if (token) return; 
-    let timeoutId: any;
-    let currentIndex = 0;
-    const runStep = () => {
-        if (currentIndex >= SIMULATION_SCRIPT.length) {
-            timeoutId = setTimeout(() => { setVisibleMessages([]); currentIndex = 0; runStep(); }, 8000); 
-            return;
-        }
-        const step = SIMULATION_SCRIPT[currentIndex];
-        setIsSimTyping(true);
-        timeoutId = setTimeout(() => {
-            setIsSimTyping(false);
-            setVisibleMessages(prev => [...prev, step]);
-            currentIndex++;
-            runStep();
-        }, step.delayBefore);
-    };
-    runStep();
-    return () => clearTimeout(timeoutId);
-  }, [token]);
-
-  useEffect(() => {
-      if (simScrollRef.current) simScrollRef.current.scrollTop = simScrollRef.current.scrollHeight;
-  }, [visibleMessages, isSimTyping]);
-
-  const handleLoginSuccess = (t: string, r: string) => {
-      localStorage.setItem('saas_token', t);
-      localStorage.setItem('saas_role', r);
-      setToken(t);
-      setUserRole(r);
-      setShowLanding(false);
-      setCurrentView(r === 'super_admin' ? View.ADMIN_GLOBAL : View.CHATS);
-      setAuthModal({ ...authModal, isOpen: false });
-      audioService.play('login_welcome');
-  };
-
-  const handleConnect = async (phoneNumber?: string) => {
-      if (!token) return;
-      setQrCode(null);
-      setPairingCode(null);
-      setConnectionStatus(ConnectionStatus.GENERATING_QR);
-      
-      try {
-          await fetch(`${BACKEND_URL}/api/connect`, {
-              method: 'POST',
-              headers: getAuthHeaders(token),
-              body: JSON.stringify({ phoneNumber }) 
-          });
-      } catch (e) { 
-          setBackendError("Fallo al iniciar conexión.");
-          audioService.play('alert_error_connection');
-      }
-  };
-
-  const handleSendMessage = async (text: string) => {
-      if (!selectedConversationId || !token) return;
-      try {
-          await fetch(`${BACKEND_URL}/api/send`, {
-              method: 'POST',
-              headers: getAuthHeaders(token),
-              body: JSON.stringify({ to: selectedConversationId, text })
-          });
-      } catch (e) { console.error(e); }
-  };
-
-  const handleUpdateSettings = async (newSettings: BotSettings) => {
-      if (!token) return;
-      try {
-          const res = await fetch(`${BACKEND_URL}/api/settings`, {
-              method: 'POST',
-              headers: getAuthHeaders(token),
-              body: JSON.stringify(newSettings)
-          });
-          if (res.ok) {
-              setSettings(newSettings);
-              audioService.play('action_success');
-          } else {
-              audioService.play('alert_error_generic');
-          }
-      } catch (e) { 
-          console.error(e); 
-          audioService.play('alert_error_connection');
-      }
-  };
-
-  const selectedConversation = conversations.find(c => c.id === selectedConversationId) || null;
-  const isFunctionalityDisabled = currentUser?.plan_status === 'expired' || (currentUser?.plan_status === 'trial' && new Date() > new Date(currentUser.billing_end_date));
-
-  const renderClientView = () => {
-    if (userRole === 'super_admin') {
-      if (currentView === View.AUDIT_MODE && auditTarget) {
-        return <AuditView user={auditTarget} onClose={() => setCurrentView(View.ADMIN_GLOBAL)} onUpdate={(user) => setAuditTarget(user)} showToast={showToast} />;
-      }
-      return <AdminDashboard token={token!} backendUrl={BACKEND_URL} onAudit={(u) => { setAuditTarget(u); setCurrentView(View.AUDIT_MODE); }} showToast={showToast} onLogout={handleLogout} />;
-    }
-
-    switch(currentView) {
-        case View.DASHBOARD:
-            return <AgencyDashboard token={token!} backendUrl={BACKEND_URL} settings={settings!} onUpdateSettings={handleUpdateSettings} />;
-        case View.SETTINGS:
-            return <SettingsPanel settings={settings} isLoading={isLoadingSettings} onUpdateSettings={isFunctionalityDisabled ? ()=>{} : handleUpdateSettings} onOpenLegal={setLegalModalType} />;
-        case View.CONNECTION:
-            return <ConnectionPanel user={currentUser} status={connectionStatus} qrCode={qrCode} pairingCode={pairingCode} onConnect={isFunctionalityDisabled ? async ()=>{} : handleConnect} onDisconnect={() => fetch(`${BACKEND_URL}/api/disconnect`, { headers: getAuthHeaders(token!) })} />;
-        case View.CHATS:
-        default:
-            return (
-                <div className="flex-1 flex overflow-hidden relative">
-                    <div className={`${selectedConversationId ? 'hidden md:flex' : 'flex'} w-full md:w-auto h-full`}>
-                        <ConversationList conversations={conversations} selectedConversationId={selectedConversationId} onSelectConversation={setSelectedConversationId} backendError={backendError} />
-                    </div>
-                    <div className={`${!selectedConversationId ? 'hidden md:flex' : 'flex'} flex-1 h-full`}>
-                        <ChatWindow conversation={selectedConversation} onSendMessage={isFunctionalityDisabled ? ()=>{} : handleSendMessage} onToggleBot={(id) => fetch(`${BACKEND_URL}/api/conversation/update`, { method: 'POST', headers: getAuthHeaders(token!), body: JSON.stringify({ id, updates: { isBotActive: !selectedConversation?.isBotActive } }) })} isTyping={isTyping} isBotGloballyActive={isBotGloballyActive} isMobile={true} onBack={() => setSelectedConversationId(null)} onUpdateConversation={(id, updates) => { setConversations(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c)); fetch(`${BACKEND_URL}/api/conversation/update`, { method: 'POST', headers: getAuthHeaders(token!), body: JSON.stringify({ id, updates }) }); }} />
-                    </div>
-                </div>
-            );
-    }
-  }
-
-  const isAppView = !!token && !showLanding;
-
-  return (
-    <div className={`flex flex-col bg-brand-black text-white font-sans ${isAppView ? 'h-screen overflow-hidden' : 'min-h-screen'}`}>
-      <Toast toast={toast} onClose={() => setToast(null)} />
-      <AuthModal 
-        isOpen={authModal.isOpen} 
-        initialMode={authModal.mode} 
-        onClose={() => setAuthModal({ ...authModal, isOpen: false })} 
-        onSuccess={handleLoginSuccess} 
-        onOpenLegal={setLegalModalType} 
-      />
-      <LegalModal type={legalModalType} onClose={() => setLegalModalType(null)} />
-      
-      <Header 
-        isLoggedIn={!!token} 
-        userRole={userRole} 
-        onLoginClick={() => setAuthModal({ isOpen: true, mode: 'login' })} 
-        onRegisterClick={() => setAuthModal({ isOpen: true, mode: 'register' })} 
-        onLogoutClick={handleLogout} 
-        isBotGloballyActive={isBotGloballyActive} 
-        onToggleBot={() => setIsBotGloballyActive(!isBotGloballyActive)} 
-        currentView={currentView} 
-        onNavigate={handleNavigate} 
-        connectionStatus={connectionStatus}
-      />
-      {isAppView && <TrialBanner user={currentUser} />}
-
-      <main className={`flex-1 flex relative ${isAppView ? 'overflow-hidden' : ''}`}>
-        {backendError && (
-            <div className="absolute top-0 left-0 right-0 bg-red-600/95 text-white text-[10px] font-black p-2 text-center z-[200] shadow-xl animate-pulse">
-                ⚠️ {backendError}
-            </div>
-        )}
-
-        {(!token || showLanding) ? (
-            <LandingPage 
-                onAuth={() => setAuthModal({ isOpen: true, mode: 'login' })} 
-                onRegister={() => setAuthModal({ isOpen: true, mode: 'register' })}
-                visibleMessages={visibleMessages}
-                isSimTyping={isSimTyping}
-                simScrollRef={simScrollRef}
-                onOpenLegal={setLegalModalType}
-                isServerReady={true}
-                isLoggedIn={!!token}
-                token={token}
-                showToast={showToast}
-            />
-        ) : (
-            renderClientView()
-        )}
-      </main>
-    </div>
-  );
-}
-
 // --- START: Landing Page Strategic Sections ---
 
 const TestimonialsSection = ({ isLoggedIn, token, showToast }: { isLoggedIn: boolean, token: string | null, showToast: (message: string, type: 'success' | 'error') => void }) => {
@@ -605,7 +271,7 @@ const FaqSection = () => {
     const [openFaq, setOpenFaq] = useState<number | null>(0);
     const faqs = [
         { q: "¿En qué se diferencia de otros bots de WhatsApp?", a: "Dominion no es un bot de flujos; es una infraestructura de calificación. Usamos IA avanzada (Google Gemini) para entender la intención real de compra, no solo para seguir un script predefinido." },
-        { q: "¿Es seguro para mi número? ¿Hay riesgo de bloqueo?", a: "Utilizamos el protocolo más seguro disponible (Baileys) que emula la web de WhatsApp. El riesgo de bloqueo es mínimo y está asociado a prácticas de spam, para las cuales la plataforma no está diseñada ni recomendada." },
+        { q: "¿Es seguro para mi número? ¿Hay riesgo de bloqueo?", a: "Totalmente seguro. Nuestra arquitectura está diseñada para la seguridad y la sostenibilidad, emulando el comportamiento humano normal para ser indetectable. El sistema opera dentro de los límites de uso razonable de WhatsApp. El único riesgo de bloqueo está asociado a prácticas de spam (envíos masivos no solicitados), algo para lo que Dominion no está diseñado ni permite. Usándolo para ventas consultivas, tu número está protegido." },
         { q: "¿Necesito conocimientos técnicos para usarlo?", a: "No. La configuración inicial es un proceso guiado paso a paso. Una vez que el 'Cerebro Neural' está configurado y el nodo está conectado, el sistema funciona de forma 100% autónoma." },
         { q: "¿Qué significa 'BYOK' (Bring Your Own Key)?", a: "Significa que tú tienes el control total. Conectas tu propia clave de la API de Google Gemini, lo que asegura que tus datos, tus conversaciones y tus costos de IA son tuyos y de nadie más. Soberanía total." },
         { q: "¿Qué pasa cuando mi plan expira?", a: "Tu bot no se apaga. Para evitar que pierdas leads, el sistema revierte a las funcionalidades básicas de respuesta (Plan Starter), dándote tiempo para renovar sin interrumpir el servicio." }
@@ -637,8 +303,6 @@ const FaqSection = () => {
         </section>
     );
 };
-
-// --- END: Landing Page Strategic Sections ---
 
 function LandingPage({ onAuth, onRegister, visibleMessages, isSimTyping, simScrollRef, onOpenLegal, isServerReady, isLoggedIn, token, showToast }: any) {
     return (
@@ -731,4 +395,334 @@ function LandingPage({ onAuth, onRegister, visibleMessages, isSimTyping, simScro
             </footer>
         </div>
     );
+}
+
+// --- END: Landing Page Strategic Sections ---
+
+export default function App() {
+  const [token, setToken] = useState<string | null>(localStorage.getItem('saas_token'));
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [userRole, setUserRole] = useState<string | null>(localStorage.getItem('saas_role'));
+  const [authModal, setAuthModal] = useState<{ isOpen: boolean; mode: 'login' | 'register' }>({ isOpen: false, mode: 'login' });
+  const [legalModalType, setLegalModalType] = useState<'privacy' | 'terms' | 'manifesto' | null>(null); 
+  const [currentView, setCurrentView] = useState<View>(() => {
+    const role = localStorage.getItem('saas_role');
+    return role === 'super_admin' ? View.ADMIN_GLOBAL : View.CHATS;
+  });
+  const [showLanding, setShowLanding] = useState(false);
+  const [isBotGloballyActive, setIsBotGloballyActive] = useState(true);
+  const [auditTarget, setAuditTarget] = useState<User | null>(null);
+  
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+  const [settings, setSettings] = useState<BotSettings | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(ConnectionStatus.DISCONNECTED);
+  const [qrCode, setQrCode] = useState<string | null>(null);
+  const [pairingCode, setPairingCode] = useState<string | null>(null);
+  const [backendError, setBackendError] = useState<string | null>(null);
+  const [isTyping, setIsTyping] = useState(false);
+  const [isLoadingSettings, setIsLoadingSettings] = useState(false);
+  const [toast, setToast] = useState<ToastData | null>(null);
+
+  // Simulación de Landing
+  const [visibleMessages, setVisibleMessages] = useState<any[]>([]);
+  const [isSimTyping, setIsSimTyping] = useState(false);
+  const simScrollRef = useRef<HTMLDivElement>(null);
+
+  // Efecto para inicializar el AudioContext y reproducir el sonido de intro en la primera interacción.
+  useEffect(() => {
+      const initAudioAndPlayIntro = () => {
+          console.log("User interaction detected, initializing AudioContext.");
+          audioService.initContext();
+          
+          // Si estamos en la landing page, reproducir el sonido de intro en la primera interacción.
+          const isLanding = !localStorage.getItem('saas_token');
+          if (isLanding && !sessionStorage.getItem('landing_intro_played')) {
+              audioService.play('landing_intro');
+              sessionStorage.setItem('landing_intro_played', 'true');
+          }
+      };
+      
+      // Estos listeners se activan una vez en la primera interacción y luego se eliminan.
+      document.addEventListener('click', initAudioAndPlayIntro, { once: true, capture: true });
+      document.addEventListener('keydown', initAudioAndPlayIntro, { once: true, capture: true });
+      document.addEventListener('touchstart', initAudioAndPlayIntro, { once: true, capture: true });
+
+      return () => {
+          document.removeEventListener('click', initAudioAndPlayIntro, true);
+          document.removeEventListener('keydown', initAudioAndPlayIntro, true);
+          document.removeEventListener('touchstart', initAudioAndPlayIntro, true);
+      };
+  }, []); // El array vacío asegura que este efecto se ejecute solo una vez.
+
+  const showToast = (message: string, type: 'success' | 'error') => {
+    if (type === 'error') audioService.play('alert_error_generic');
+    setToast({ message, type });
+  };
+  
+  const handleNavigate = (view: View) => {
+      if (view === View.CHATS && (window as any).IS_LANDING_VIEW) {
+          setShowLanding(true);
+      } else {
+          setShowLanding(false);
+          setCurrentView(view);
+      }
+      (window as any).IS_LANDING_VIEW = view === View.CHATS && showLanding;
+  };
+
+  const handleLogout = () => {
+      localStorage.removeItem('saas_token');
+      localStorage.removeItem('saas_role');
+      sessionStorage.removeItem('trial_ended_alert_played');
+      setToken(null);
+      setUserRole(null);
+      setCurrentUser(null);
+      setShowLanding(false);
+      setCurrentView(View.CHATS);
+      setAuditTarget(null);
+  };
+
+  useEffect(() => {
+    if (userRole === 'super_admin' && ![View.ADMIN_GLOBAL, View.AUDIT_MODE].includes(currentView)) {
+        setCurrentView(View.ADMIN_GLOBAL);
+    }
+  }, [currentView, userRole]);
+
+  useEffect(() => {
+    if (!token) {
+        setCurrentUser(null);
+        return;
+    };
+
+    const loadUserData = async () => {
+        setIsLoadingSettings(true);
+        try {
+            const [userRes, sRes, cRes] = await Promise.all([
+                fetch(`${BACKEND_URL}/api/user/me`, { headers: getAuthHeaders(token) }),
+                fetch(`${BACKEND_URL}/api/settings`, { headers: getAuthHeaders(token) }),
+                fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) })
+            ]);
+            
+            if ([userRes, sRes, cRes].some(res => res.status === 403)) {
+                handleLogout();
+                return;
+            }
+
+            if (userRes.ok) setCurrentUser(await userRes.json());
+            if (sRes.ok) setSettings(await sRes.json());
+            if (cRes.ok) setConversations(await cRes.json());
+            if (backendError) setBackendError(null);
+        } catch (e) {
+            console.error("DATA ERROR:", e);
+            setBackendError("Alerta: Fallo de conexión con el nodo central.");
+            audioService.play('alert_error_connection');
+        } finally {
+            setIsLoadingSettings(false);
+        }
+    };
+    loadUserData();
+    
+    // Server-Sent Events listener for real-time updates
+    const eventSource = new EventSource(`${BACKEND_URL}/api/sse?token=${token}`);
+    eventSource.addEventListener('status_update', (event) => {
+        const data = JSON.parse(event.data);
+        setConnectionStatus(data.status);
+        if (data.qr) setQrCode(data.qr);
+        if (data.pairingCode) setPairingCode(data.pairingCode);
+
+        // Play audio based on status
+        switch(data.status) {
+            case ConnectionStatus.GENERATING_QR: audioService.play('connection_establishing'); break;
+            case ConnectionStatus.AWAITING_SCAN: audioService.play('connection_pending'); break;
+            case ConnectionStatus.CONNECTED: audioService.play('connection_success'); break;
+            case ConnectionStatus.DISCONNECTED: audioService.play('connection_disconnected'); break;
+        }
+    });
+
+    const conversationPoll = setInterval(async () => {
+        try {
+            const convRes = await fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) });
+            if(convRes.ok) setConversations(await convRes.json());
+        } catch (e) { /* Silencioso para polling */ }
+    }, 8000);
+
+    return () => {
+        eventSource.close();
+        clearInterval(conversationPoll);
+    };
+  }, [token]);
+  
+  useEffect(() => {
+    if (token) return; 
+    let timeoutId: any;
+    let currentIndex = 0;
+    const runStep = () => {
+        if (currentIndex >= SIMULATION_SCRIPT.length) {
+            timeoutId = setTimeout(() => { setVisibleMessages([]); currentIndex = 0; runStep(); }, 8000); 
+            return;
+        }
+        const step = SIMULATION_SCRIPT[currentIndex];
+        setIsSimTyping(true);
+        timeoutId = setTimeout(() => {
+            setIsSimTyping(false);
+            setVisibleMessages(prev => [...prev, step]);
+            currentIndex++;
+            runStep();
+        }, step.delayBefore);
+    };
+    runStep();
+    return () => clearTimeout(timeoutId);
+  }, [token]);
+
+  useEffect(() => {
+      if (simScrollRef.current) simScrollRef.current.scrollTop = simScrollRef.current.scrollHeight;
+  }, [visibleMessages, isSimTyping]);
+
+  const handleLoginSuccess = (t: string, r: string) => {
+      localStorage.setItem('saas_token', t);
+      localStorage.setItem('saas_role', r);
+      setToken(t);
+      setUserRole(r);
+      setShowLanding(false);
+      setCurrentView(r === 'super_admin' ? View.ADMIN_GLOBAL : View.CHATS);
+      setAuthModal({ ...authModal, isOpen: false });
+      audioService.play('login_welcome');
+  };
+
+  const handleConnect = async (phoneNumber?: string) => {
+      if (!token) return;
+      setQrCode(null);
+      setPairingCode(null);
+      setConnectionStatus(ConnectionStatus.GENERATING_QR);
+      
+      try {
+          await fetch(`${BACKEND_URL}/api/connect`, {
+              method: 'POST',
+              headers: getAuthHeaders(token),
+              body: JSON.stringify({ phoneNumber }) 
+          });
+      } catch (e) { 
+          setBackendError("Fallo al iniciar conexión.");
+          audioService.play('alert_error_connection');
+      }
+  };
+
+  const handleSendMessage = async (text: string) => {
+      if (!selectedConversationId || !token) return;
+      try {
+          await fetch(`${BACKEND_URL}/api/send`, {
+              method: 'POST',
+              headers: getAuthHeaders(token),
+              body: JSON.stringify({ to: selectedConversationId, text })
+          });
+      } catch (e) { console.error(e); }
+  };
+
+  const handleUpdateSettings = async (newSettings: BotSettings) => {
+      if (!token) return;
+      try {
+          const res = await fetch(`${BACKEND_URL}/api/settings`, {
+              method: 'POST',
+              headers: getAuthHeaders(token),
+              body: JSON.stringify(newSettings)
+          });
+          if (res.ok) {
+              setSettings(newSettings);
+              audioService.play('action_success');
+          } else {
+              audioService.play('alert_error_generic');
+          }
+      } catch (e) { 
+          console.error(e); 
+          audioService.play('alert_error_connection');
+      }
+  };
+
+  const selectedConversation = conversations.find(c => c.id === selectedConversationId) || null;
+  const isFunctionalityDisabled = currentUser?.plan_status === 'expired' || (currentUser?.plan_status === 'trial' && new Date() > new Date(currentUser.billing_end_date));
+
+  const renderClientView = () => {
+    if (userRole === 'super_admin') {
+      if (currentView === View.AUDIT_MODE && auditTarget) {
+        return <AuditView user={auditTarget} onClose={() => setCurrentView(View.ADMIN_GLOBAL)} onUpdate={(user) => setAuditTarget(user)} showToast={showToast} />;
+      }
+      return <AdminDashboard token={token!} backendUrl={BACKEND_URL} onAudit={(u) => { setAuditTarget(u); setCurrentView(View.AUDIT_MODE); }} showToast={showToast} onLogout={handleLogout} />;
+    }
+
+    switch(currentView) {
+        case View.DASHBOARD:
+            return <AgencyDashboard token={token!} backendUrl={BACKEND_URL} settings={settings!} onUpdateSettings={handleUpdateSettings} />;
+        case View.SETTINGS:
+            return <SettingsPanel settings={settings} isLoading={isLoadingSettings} onUpdateSettings={isFunctionalityDisabled ? ()=>{} : handleUpdateSettings} onOpenLegal={setLegalModalType} />;
+        case View.CONNECTION:
+            return <ConnectionPanel user={currentUser} status={connectionStatus} qrCode={qrCode} pairingCode={pairingCode} onConnect={isFunctionalityDisabled ? async ()=>{} : handleConnect} onDisconnect={() => fetch(`${BACKEND_URL}/api/disconnect`, { headers: getAuthHeaders(token!) })} />;
+        case View.CHATS:
+        default:
+            return (
+                <div className="flex-1 flex overflow-hidden relative">
+                    <div className={`${selectedConversationId ? 'hidden md:flex' : 'flex'} w-full md:w-auto h-full`}>
+                        <ConversationList conversations={conversations} selectedConversationId={selectedConversationId} onSelectConversation={setSelectedConversationId} backendError={backendError} />
+                    </div>
+                    <div className={`${!selectedConversationId ? 'hidden md:flex' : 'flex'} flex-1 h-full`}>
+                        <ChatWindow conversation={selectedConversation} onSendMessage={isFunctionalityDisabled ? ()=>{} : handleSendMessage} onToggleBot={(id) => fetch(`${BACKEND_URL}/api/conversation/update`, { method: 'POST', headers: getAuthHeaders(token!), body: JSON.stringify({ id, updates: { isBotActive: !selectedConversation?.isBotActive } }) })} isTyping={isTyping} isBotGloballyActive={isBotGloballyActive} isMobile={true} onBack={() => setSelectedConversationId(null)} onUpdateConversation={(id, updates) => { setConversations(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c)); fetch(`${BACKEND_URL}/api/conversation/update`, { method: 'POST', headers: getAuthHeaders(token!), body: JSON.stringify({ id, updates }) }); }} />
+                    </div>
+                </div>
+            );
+    }
+  }
+
+  const isAppView = !!token && !showLanding;
+
+  return (
+    <div className={`flex flex-col bg-brand-black text-white font-sans ${isAppView ? 'h-screen overflow-hidden' : 'min-h-screen'}`}>
+      <Toast toast={toast} onClose={() => setToast(null)} />
+      <AuthModal 
+        isOpen={authModal.isOpen} 
+        initialMode={authModal.mode} 
+        onClose={() => setAuthModal({ ...authModal, isOpen: false })} 
+        onSuccess={handleLoginSuccess} 
+        onOpenLegal={setLegalModalType} 
+      />
+      <LegalModal type={legalModalType} onClose={() => setLegalModalType(null)} />
+      
+      <Header 
+        isLoggedIn={!!token} 
+        userRole={userRole} 
+        onLoginClick={() => setAuthModal({ isOpen: true, mode: 'login' })} 
+        onRegisterClick={() => setAuthModal({ isOpen: true, mode: 'register' })} 
+        onLogoutClick={handleLogout} 
+        isBotGloballyActive={isBotGloballyActive} 
+        onToggleBot={() => setIsBotGloballyActive(!isBotGloballyActive)} 
+        currentView={currentView} 
+        onNavigate={handleNavigate} 
+        connectionStatus={connectionStatus}
+      />
+      {isAppView && <TrialBanner user={currentUser} />}
+
+      <main className={`flex-1 flex relative ${isAppView ? 'overflow-hidden' : ''}`}>
+        {backendError && (
+            <div className="absolute top-0 left-0 right-0 bg-red-600/95 text-white text-[10px] font-black p-2 text-center z-[200] shadow-xl animate-pulse">
+                ⚠️ {backendError}
+            </div>
+        )}
+
+        {(!token || showLanding) ? (
+            <LandingPage 
+                onAuth={() => setAuthModal({ isOpen: true, mode: 'login' })} 
+                onRegister={() => setAuthModal({ isOpen: true, mode: 'register' })}
+                visibleMessages={visibleMessages}
+                isSimTyping={isSimTyping}
+                simScrollRef={simScrollRef}
+                onOpenLegal={setLegalModalType}
+                isServerReady={true}
+                isLoggedIn={!!token}
+                token={token}
+                showToast={showToast}
+            />
+        ) : (
+            renderClientView()
+        )}
+      </main>
+    </div>
+  );
 }

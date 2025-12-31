@@ -1,4 +1,3 @@
-
 import { Request, Response } from 'express';
 // FIX: Import Buffer to resolve 'Cannot find name Buffer' error.
 import { Buffer } from 'buffer';
@@ -16,16 +15,21 @@ const getUserId = (req: any) => req.user.id;
 
 export const handleSse = (req: any, res: any) => {
   const token = req.query.token as string;
-  if(!token) return res.status(401).end();
-  
+  if (!token) return res.status(401).end();
+
   try {
-      const base64Url = token.split('.')[1];
-      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-      const payload = JSON.parse(atob(base64));
-      // Asumimos que el token es válido si llega aquí, ya que SSE no manda headers standard
-      sseService.addClient(payload.id, res);
-  } catch(e) {
-      res.status(401).end();
+    const base64Url = token.split('.')[1];
+    if (!base64Url) throw new Error('Invalid token format');
+    
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = Buffer.from(base64, 'base64').toString('utf-8');
+    const payload = JSON.parse(jsonPayload);
+    
+    // Asumimos que el token es válido si llega aquí, ya que SSE no manda headers standard
+    sseService.addClient(payload.id, res);
+  } catch (e) {
+    console.error('[SSE-AUTH-ERROR] Failed to decode token and establish connection:', e);
+    res.status(401).end();
   }
 };
 
