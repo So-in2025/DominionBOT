@@ -59,16 +59,17 @@ const TrialBanner: React.FC<{ user: User | null }> = ({ user }) => {
     const endDate = new Date(user.billing_end_date);
     const now = new Date();
     const daysRemaining = Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    const qualifiedLeads = user.trial_qualified_leads_count || 0;
 
-    if (user.plan_status === 'trial' && daysRemaining > 0) {
+    if (user.plan_status === 'trial' && daysRemaining > 0 && qualifiedLeads < 10) {
         return (
             <div className="bg-gradient-to-r from-brand-gold-dark via-brand-gold to-brand-gold-dark text-black text-center py-2 px-4 text-xs font-bold shadow-lg">
-                Estás en un período de prueba PRO. Quedan {daysRemaining} {daysRemaining > 1 ? 'días' : 'día'}.
+                Estás en un período de prueba PRO. Finaliza en {daysRemaining} {daysRemaining > 1 ? 'días' : 'día'} o al calificar tus primeros {10 - qualifiedLeads} leads.
             </div>
         );
     }
 
-    if (user.plan_status === 'expired' || (user.plan_status === 'trial' && daysRemaining <= 0)) {
+    if (user.plan_status === 'expired' || (user.plan_status === 'trial' && (daysRemaining <= 0 || qualifiedLeads >= 10))) {
         if (!sessionStorage.getItem('trial_ended_alert_played')) {
             audioService.play('alert_warning_trial_ended');
             sessionStorage.setItem('trial_ended_alert_played', 'true');
@@ -270,7 +271,7 @@ const FaqSection = () => {
     const [openFaq, setOpenFaq] = useState<number | null>(0);
     const faqs = [
         { q: "¿En qué se diferencia de otros bots de WhatsApp?", a: "Dominion no es un bot de flujos; es una infraestructura de calificación. Usamos IA avanzada (Google Gemini) para entender la intención real de compra, no solo para seguir un script predefinido." },
-        { q: "¿Es seguro para mi número? ¿Hay riesgo de bloqueo?", a: "Totalmente seguro. Nuestra arquitectura está diseñada para la seguridad y la sostenibilidad, emulando el comportamiento humano normal para ser indetectable. El sistema opera dentro de los límites de uso razonable de WhatsApp. El único riesgo de bloqueo está asociado a prácticas de spam (envíos masivos no solicitados), algo para lo que Dominion no está diseñado ni permite. Usándolo para ventas consultivas, tu número está protegido." },
+        { q: "¿Es seguro para mi número? ¿Hay riesgo de bloqueo?", a: "Nuestra arquitectura está diseñada para mitigar activamente los riesgos emulando un comportamiento humano y profesional. No permitimos envíos masivos (spam), que es la principal causa de bloqueo. Si bien ningún sistema no oficial puede eliminar el riesgo al 100%, Dominion está construido para un uso seguro en ventas consultivas." },
         { q: "¿Necesito conocimientos técnicos para usarlo?", a: "No. La configuración inicial es un proceso guiado paso a paso. Una vez que el 'Cerebro Neural' está configurado y el nodo está conectado, el sistema funciona de forma 100% autónoma." },
         { q: "¿Qué significa 'BYOK' (Bring Your Own Key)?", a: "Significa que tú tienes el control total. Conectas tu propia clave de la API de Google Gemini, lo que asegura que tus datos, tus conversaciones y tus costos de IA son tuyos y de nadie más. Soberanía total." },
         { q: "¿Qué pasa cuando mi plan expira?", a: "Tu bot no se apaga. Para evitar que pierdas leads, el sistema revierte a las funcionalidades básicas de respuesta (Plan Starter), dándote tiempo para renovar sin interrumpir el servicio." }
@@ -326,7 +327,7 @@ function LandingPage({ onAuth, onRegister, visibleMessages, isSimTyping, simScro
                             <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-gold via-brand-gold-light to-brand-gold-dark">Piloto Automático</span>
                         </h1>
                         <p className="text-xl md:text-2xl text-gray-400 leading-relaxed border-l-4 border-brand-gold/40 pl-8 mx-auto lg:mx-0 max-w-2xl font-medium">
-                            La infraestructura neural diseñada para escalar negocios de todos los rubros. Dominion filtra curiosos y califica a tus leads en tiempo real.
+                           Dominion es la herramienta de IA que responde y califica a tus clientes en WhatsApp 24/7, para que vos o tu equipo solo se dedique a cerrar las ventas que importan.
                         </p>
                         
                         <div className="flex flex-col sm:flex-row gap-6 justify-center lg:justify-start pt-6">
@@ -426,12 +427,15 @@ export default function App() {
   const [isTyping, setIsTyping] = useState(false);
   const [isLoadingSettings, setIsLoadingSettings] = useState(false);
   const [toast, setToast] = useState<ToastData | null>(null);
-  const [isPollingStatus, setIsPollingStatus] = useState(false);
+  // Removed isPollingStatus as SSE replaces polling
 
   // Simulación de Landing
   const [visibleMessages, setVisibleMessages] = useState<any[]>([]);
   const [isSimTyping, setIsSimTyping] = useState(false);
   const simScrollRef = useRef<HTMLDivElement>(null);
+  
+  // SSE EventSource reference
+  const eventSourceRef = useRef<EventSource | null>(null);
 
   // Efecto para inicializar el AudioContext y reproducir el sonido de intro en la primera interacción.
   useEffect(() => {
@@ -484,6 +488,13 @@ export default function App() {
       setShowLanding(false);
       setCurrentView(View.CHATS);
       setAuditTarget(null);
+      
+      // Close SSE connection on logout
+      if (eventSourceRef.current) {
+          eventSourceRef.current.close();
+          eventSourceRef.current = null;
+          console.log("SSE: Connection closed on logout.");
+      }
   };
 
   useEffect(() => {
@@ -492,47 +503,86 @@ export default function App() {
     }
   }, [currentView, userRole]);
 
-  // Polling effect for connection status
+  // SSE Connection and Event Handling (Replaces Polling)
   useEffect(() => {
-    if (!isPollingStatus || !token) return;
-
-    const pollInterval = setInterval(async () => {
-        try {
-            const res = await fetch(`${BACKEND_URL}/api/status`, { headers: getAuthHeaders(token) });
-            if (res.ok) {
-                const data = await res.json();
-                
-                // Only update and play sound if status has changed
-                if (data.status !== connectionStatus) {
-                    setConnectionStatus(data.status);
-                    switch(data.status) {
-                        case ConnectionStatus.GENERATING_QR: audioService.play('connection_establishing'); break;
-                        case ConnectionStatus.AWAITING_SCAN: audioService.play('connection_pending'); break;
-                        case ConnectionStatus.CONNECTED: audioService.play('connection_success'); break;
-                        case ConnectionStatus.DISCONNECTED: audioService.play('connection_disconnected'); break;
-                    }
-                }
-
-                setQrCode(data.qr || null);
-                setPairingCode(data.pairingCode || null);
-
-                if (data.status === ConnectionStatus.CONNECTED || data.status === ConnectionStatus.DISCONNECTED) {
-                    setIsPollingStatus(false);
-                }
-            } else {
-                // If status poll fails (e.g. server down), stop polling to avoid errors
-                setIsPollingStatus(false);
-                setBackendError("Fallo al sondear estado. Reintentando...");
-            }
-        } catch (e) {
-            console.error("Status poll failed:", e);
-            setBackendError("Fallo de red al sondear estado.");
-            setIsPollingStatus(false);
+    if (!token || userRole === 'super_admin') { // Super admin does not need real-time chat events
+        if (eventSourceRef.current) {
+            eventSourceRef.current.close();
+            eventSourceRef.current = null;
         }
-    }, 2000);
+        return;
+    }
 
-    return () => clearInterval(pollInterval);
-  }, [isPollingStatus, token, connectionStatus]);
+    if (eventSourceRef.current) {
+        eventSourceRef.current.close(); // Close existing connection if token changes or component re-renders
+    }
+    
+    // Establish new SSE connection
+    const headers = getAuthHeaders(token);
+    const eventSource = new EventSource(`${BACKEND_URL}/api/events?token=${token}`, { withCredentials: false });
+    eventSourceRef.current = eventSource;
+
+    eventSource.onopen = () => {
+        console.log("SSE: Connection opened.");
+        setBackendError(null); // Clear backend error on successful SSE connection
+    };
+
+    eventSource.onmessage = (event) => {
+        // Generic message for debugging, usually specific events are preferred
+        console.log("SSE: Generic message received", event.data);
+    };
+
+    eventSource.addEventListener('conversation_update', (event) => {
+        const updatedConversation: Conversation = JSON.parse(event.data);
+        console.log("SSE: Conversation update received", updatedConversation);
+        setConversations(prevConversations => {
+            const existingIndex = prevConversations.findIndex(c => c.id === updatedConversation.id);
+            let newConversations;
+            if (existingIndex > -1) {
+                newConversations = prevConversations.map(c => c.id === updatedConversation.id ? updatedConversation : c);
+            } else {
+                newConversations = [...prevConversations, updatedConversation];
+            }
+            // Sort by last activity to show most recent first
+            return newConversations.sort((a, b) => {
+                const dateA = new Date(a.lastActivity || a.firstMessageAt || 0);
+                const dateB = new Date(b.lastActivity || b.firstMessageAt || 0);
+                return dateB.getTime() - dateA.getTime();
+            });
+        });
+    });
+
+    eventSource.addEventListener('connection_status', (event) => {
+        const statusData = JSON.parse(event.data);
+        console.log("SSE: Connection status update received", statusData);
+        if (statusData.status !== connectionStatus) {
+            setConnectionStatus(statusData.status);
+            switch(statusData.status) {
+                case ConnectionStatus.GENERATING_QR: audioService.play('connection_establishing'); break;
+                case ConnectionStatus.AWAITING_SCAN: audioService.play('connection_pending'); break;
+                case ConnectionStatus.CONNECTED: audioService.play('connection_success'); break;
+                case ConnectionStatus.DISCONNECTED: audioService.play('connection_disconnected'); break;
+            }
+        }
+        setQrCode(statusData.qr || null);
+        setPairingCode(statusData.pairingCode || null);
+    });
+
+    eventSource.onerror = (error) => {
+        console.error("SSE: EventSource failed:", error);
+        setBackendError("Alerta: Fallo de conexión en tiempo real. Reintentando...");
+        audioService.play('alert_error_connection');
+        // EventSource automatically tries to reconnect, so no need for manual retry here.
+    };
+
+    return () => {
+        if (eventSourceRef.current) {
+            console.log("SSE: Closing connection on component unmount/token change.");
+            eventSourceRef.current.close();
+            eventSourceRef.current = null;
+        }
+    };
+  }, [token, userRole, connectionStatus]); // Rerun if token or userRole changes
 
   useEffect(() => {
     if (!token) {
@@ -540,9 +590,10 @@ export default function App() {
         return;
     };
 
-    const loadUserData = async () => {
+    const loadInitialUserData = async () => {
         setIsLoadingSettings(true);
         try {
+            // Fetch initial data once
             const [userRes, sRes, cRes, statusRes] = await Promise.all([
                 fetch(`${BACKEND_URL}/api/user/me`, { headers: getAuthHeaders(token) }),
                 fetch(`${BACKEND_URL}/api/settings`, { headers: getAuthHeaders(token) }),
@@ -557,7 +608,15 @@ export default function App() {
 
             if (userRes.ok) setCurrentUser(await userRes.json());
             if (sRes.ok) setSettings(await sRes.json());
-            if (cRes.ok) setConversations(await cRes.json());
+            if (cRes.ok) {
+                const initialConversations = await cRes.json();
+                // Sort initial conversations by last activity
+                setConversations(initialConversations.sort((a: Conversation, b: Conversation) => {
+                    const dateA = new Date(a.lastActivity || a.firstMessageAt || 0);
+                    const dateB = new Date(b.lastActivity || b.firstMessageAt || 0);
+                    return dateB.getTime() - dateA.getTime();
+                }));
+            }
             if (statusRes.ok) {
                 const statusData = await statusRes.json();
                 setConnectionStatus(statusData.status);
@@ -574,17 +633,11 @@ export default function App() {
             setIsLoadingSettings(false);
         }
     };
-    loadUserData();
+    loadInitialUserData();
     
-    const conversationPoll = setInterval(async () => {
-        try {
-            const convRes = await fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) });
-            if(convRes.ok) setConversations(await convRes.json());
-        } catch (e) { /* Silencioso para polling */ }
-    }, 8000);
-
+    // Removed conversationPoll interval as SSE replaces it
     return () => {
-        clearInterval(conversationPoll);
+        // No cleanup for polling needed here
     };
   }, [token]);
   
@@ -630,7 +683,7 @@ export default function App() {
       setQrCode(null);
       setPairingCode(null);
       setConnectionStatus(ConnectionStatus.GENERATING_QR);
-      setIsPollingStatus(true);
+      // Removed setIsPollingStatus(true) as SSE handles status updates
       
       try {
           await fetch(`${BACKEND_URL}/api/connect`, {
@@ -641,7 +694,7 @@ export default function App() {
       } catch (e) { 
           setBackendError("Fallo al iniciar conexión.");
           audioService.play('alert_error_connection');
-          setIsPollingStatus(false);
+          // No need to setIsPollingStatus(false) here, SSE onerror will handle it
       }
   };
 
@@ -694,7 +747,7 @@ export default function App() {
             setConnectionStatus(ConnectionStatus.DISCONNECTED);
             setQrCode(null);
             setPairingCode(null);
-            setIsPollingStatus(false);
+            // No need to setIsPollingStatus(false), SSE listener will update status
         } catch(e) {
             showToast('Error al intentar desconectar.', 'error');
         }
@@ -708,7 +761,7 @@ export default function App() {
             await fetch(`${BACKEND_URL}/api/disconnect`, { headers: getAuthHeaders(token!) });
             setQrCode(null);
             setPairingCode(null);
-            setIsPollingStatus(false);
+            // No need to setIsPollingStatus(false), SSE listener will update status
             setConnectionStatus(ConnectionStatus.DISCONNECTED);
             showToast('La sesión anterior fue purgada.', 'success');
         } catch(e) {
@@ -732,7 +785,7 @@ export default function App() {
                         <ConversationList conversations={conversations} selectedConversationId={selectedConversationId} onSelectConversation={setSelectedConversationId} backendError={backendError} />
                     </div>
                     <div className={`${!selectedConversationId ? 'hidden md:flex' : 'flex'} flex-1 h-full`}>
-                        <ChatWindow conversation={selectedConversation} onSendMessage={isFunctionalityDisabled ? ()=>{} : handleSendMessage} onToggleBot={(id) => fetch(`${BACKEND_URL}/api/conversation/update`, { method: 'POST', headers: getAuthHeaders(token!), body: JSON.stringify({ id, updates: { isBotActive: !selectedConversation?.isBotActive } }) })} isTyping={isTyping} isBotGloballyActive={isBotGloballyActive} isMobile={true} onBack={() => setSelectedConversationId(null)} onUpdateConversation={(id, updates) => { setConversations(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c)); fetch(`${BACKEND_URL}/api/conversation/update`, { method: 'POST', headers: getAuthHeaders(token!), body: JSON.stringify({ id, updates }) }); }} />
+                        <ChatWindow conversation={selectedConversation} onSendMessage={isFunctionalityDisabled ? ()=>{} : handleSendMessage} onToggleBot={(id) => fetch(`${BACKEND_URL}/api/conversation/update`, { method: 'POST', headers: getAuthHeaders(token!), body: JSON.stringify({ id, updates: { isBotActive: !selectedConversation?.isBotActive } }) })} isTyping={isTyping} isBotGloballyActive={isBotGloballyActive} isMobile={true} onBack={() => setSelectedConversationId(null)} onUpdateConversation={(id, updates) => { setConversations(prev => { const updated = prev.map(c => c.id === id ? { ...c, ...updates } : c); return updated.sort((a, b) => { const dateA = new Date(a.lastActivity || a.firstMessageAt || 0); const dateB = new Date(b.lastActivity || b.firstMessageAt || 0); return dateB.getTime() - dateA.getTime(); }); }); fetch(`${BACKEND_URL}/api/conversation/update`, { method: 'POST', headers: getAuthHeaders(token!), body: JSON.stringify({ id, updates }) }); }} />
                     </div>
                 </div>
             );

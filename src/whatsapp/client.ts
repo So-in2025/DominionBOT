@@ -15,6 +15,7 @@ import { generateBotResponse } from '../services/aiService.js';
 import { useMongoDBAuthState, clearBindedSession } from './mongoAuth.js';
 import { logService } from '../services/logService.js';
 import * as QRCode from 'qrcode';
+import { sseService } from '../services/sseService.js';
 
 const sessions = new Map<string, WASocket>();
 const qrCache = new Map<string, string>(); 
@@ -33,6 +34,7 @@ export function getSessionStatus(userId: string): { status: ConnectionStatus, qr
     if (sock?.user) return { status: ConnectionStatus.CONNECTED };
     if (code) return { status: ConnectionStatus.AWAITING_SCAN, pairingCode: code };
     if (qr) return { status: ConnectionStatus.AWAITING_SCAN, qr };
+    if (connectionAttempts.get(userId)) return { status: ConnectionStatus.GENERATING_QR };
 
     return { status: ConnectionStatus.DISCONNECTED };
 }
@@ -97,6 +99,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
               try {
                   const code = await sock.requestPairingCode(phoneNumber.replace(/[^0-9]/g, ''));
                   codeCache.set(userId, code);
+                  sseService.sendEvent(userId, 'connection_status', getSessionStatus(userId));
               } catch (err) {
                   // FIX: Added username to the logService.error call to match its signature (fixes error on line 112).
                   logService.error('Error solicitando pairing code', err as Error, userId, user?.username);
@@ -134,6 +137,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
             qrCache.delete(userId);
             codeCache.delete(userId);
           }
+          sseService.sendEvent(userId, 'connection_status', getSessionStatus(userId));
       });
 
       sock.ev.on('messages.upsert', async (m) => {
@@ -182,12 +186,25 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                 }
                 
                 if (aiResult) {
+                    const previousStatus = conversation.status;
                     conversation.status = aiResult.newStatus;
                     conversation.tags = [...new Set([...(conversation.tags || []), ...(aiResult.tags || [])])];
                     if (aiResult.newStatus === LeadStatus.HOT) {
                         conversation.isMuted = true;
                         conversation.suggestedReplies = aiResult.suggestedReplies;
                     }
+
+                    // PHASE 2 LOGIC: Trial by result
+                    if (user.plan_status === 'trial' && aiResult.newStatus === LeadStatus.HOT && previousStatus !== LeadStatus.HOT) {
+                        const currentCount = (user.trial_qualified_leads_count || 0) + 1;
+                        if (currentCount >= 10) {
+                            await db.updateUser(userId, { plan_status: 'expired', trial_qualified_leads_count: currentCount });
+                            logService.audit(`Prueba finalizada por alcanzar 10 leads calificados`, userId, user.username);
+                        } else {
+                            await db.updateUser(userId, { trial_qualified_leads_count: currentCount });
+                        }
+                    }
+                    
                     await db.saveUserConversation(userId, conversation);
                 }
               } catch (err) { 
@@ -215,6 +232,7 @@ export async function disconnectWhatsApp(userId: string) {
     codeCache.delete(userId);
     await clearBindedSession(userId);
     logService.info('Nodo de WhatsApp desconectado', userId);
+    sseService.sendEvent(userId, 'connection_status', getSessionStatus(userId));
 }
 
 export async function sendMessage(userId: string, jid: string, text: string) {

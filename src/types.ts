@@ -131,6 +131,7 @@ export interface User {
     humanDeviationScore: number;
   };
   
+  trial_qualified_leads_count?: number;
   isSuspended?: boolean; 
   last_activity_at?: string;
   created_at: string;

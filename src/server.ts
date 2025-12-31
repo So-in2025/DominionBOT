@@ -8,6 +8,7 @@ import { authenticateToken } from './middleware/auth.js';
 import { optionalAuthenticateToken } from './middleware/optionalAuth.js';
 import { logService } from './services/logService.js';
 import { ttsService } from './services/ttsService.js'; // Importar el nuevo servicio
+import { sseService } from './services/sseService.js';
 
 const app = express();
 
@@ -121,6 +122,12 @@ app.get('/api/disconnect', authenticateToken, handleDisconnect);
 app.post('/api/send', authenticateToken, handleSendMessage);
 app.post('/api/conversation/update', authenticateToken, handleUpdateConversation);
 app.get('/api/conversations', authenticateToken, handleGetConversations);
+
+// SSE Endpoint for real-time updates (Phase 3)
+app.get('/api/events', authenticateToken, (req: any, res: any) => {
+    sseService.addClient(req.user.id, res);
+});
+
 
 // Testimonial Routes
 app.get('/api/testimonials', handleGetTestimonials);

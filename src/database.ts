@@ -1,9 +1,11 @@
 
+
 import bcrypt from 'bcrypt';
 import mongoose, { Schema, Model } from 'mongoose';
 import { User, BotSettings, PromptArchetype, GlobalMetrics, GlobalTelemetry, Conversation, IntendedUse, LogEntry, Testimonial } from './types.js';
 import { v4 as uuidv4 } from 'uuid';
 import { MONGO_URI } from './env.js';
+import { sseService } from './services/sseService.js';
 
 const LogSchema = new Schema({
     timestamp: { type: String, required: true, index: true },
@@ -34,6 +36,7 @@ const UserSchema = new Schema({
     plan_status: { type: String, enum: ['active', 'expired', 'suspended', 'trial'], default: 'active' },
     billing_start_date: { type: String, default: () => new Date().toISOString() },
     billing_end_date: { type: String, default: () => new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() },
+    trial_qualified_leads_count: { type: Number, default: 0 },
     
     created_at: { type: String, default: () => new Date().toISOString() },
     last_activity_at: { type: String },
@@ -122,7 +125,8 @@ class Database {
         plan_type: 'pro', // Start with PRO features
         plan_status: 'trial', // But in a trial state
         billing_start_date: new Date().toISOString(),
-        billing_end_date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(), // 3-day trial
+        billing_end_date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(), // 14-day trial
+        trial_qualified_leads_count: 0,
         created_at: new Date().toISOString(),
         settings: { 
             productName: businessName,
@@ -211,6 +215,7 @@ class Database {
   async saveUserConversation(userId: string, conversation: Conversation) {
       const updateKey = `conversations.${conversation.id}`;
       await UserModel.updateOne({ id: userId }, { $set: { [updateKey]: conversation, last_activity_at: new Date().toISOString() } });
+      sseService.sendEvent(userId, 'conversation_update', conversation);
   }
 
   async updateUserSettings(userId: string, settings: Partial<BotSettings>) {

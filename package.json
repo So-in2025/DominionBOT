@@ -1,8 +1,9 @@
 
+
 {
   "name": "dominion-bot-saas",
-  "version": "2.7.6",
-  "description": "SaaS Platform for WhatsApp Automation - Elite Edition",
+  "version": "2.8.0",
+  "description": "La herramienta de IA para no perder ventas en WhatsApp. Responde, califica y te notifica 24/7.",
   "type": "module",
   "main": "dist/server.js",
   "scripts": {

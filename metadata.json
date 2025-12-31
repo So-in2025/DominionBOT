@@ -1,6 +1,6 @@
 {
-  "name": "Dominion Bot v2.7.6 Elite",
-  "version": "2.7.6",
-  "description": "Infraestructura neural para automatizar WhatsApp en todos los rubros comerciales. Calificación de leads y venta en piloto automático 24/7.",
+  "name": "Dominion Bot v2.8.0",
+  "version": "2.8.0",
+  "description": "Responde, califica y te notifica. La herramienta de IA para no perder ventas en WhatsApp.",
   "requestFramePermissions": []
 }

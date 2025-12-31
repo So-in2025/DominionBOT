@@ -11,8 +11,8 @@ export const handleGetDashboardMetrics = async (req: any, res: any) => {
     try {
         const clients = await db.getAllClients();
         
-        const proPrice = 100; // Asumir precio para cálculo de MRR
-        const starterPrice = 40;
+        const proPrice = 29; // Nuevo precio del plan Pro
+        const starterPrice = 0; // El plan Starter no genera MRR
 
         const mrr = clients.reduce((acc, client) => {
             if (client.plan_status === 'active') {
