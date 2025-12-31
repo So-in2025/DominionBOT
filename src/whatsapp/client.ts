@@ -119,18 +119,26 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
             if (connection === 'close') {
                 const disconnectError = lastDisconnect?.error as Boom;
                 const statusCode = disconnectError?.output?.statusCode;
+                const errorPayload = disconnectError?.output?.payload;
                 
-                // CRITICAL: Handle Stream Errored (conflict) specifically
-                if (disconnectError?.message === 'Stream Errored' && disconnectError?.data === 'conflict') {
-                    logService.error(`[WA-CLIENT] CONFLICTO DE SESIÓN DETECTADO para user ${userId}. Posiblemente WhatsApp Web abierto en otro lugar o sesión corrupta.`, disconnectError, userId);
-                    // Do NOT attempt to reconnect automatically in a conflict. User intervention (clear session) is required.
+                // CRITICAL FIX: Handle '428 Precondition Required' (Corruption) AND 'Stream Errored (conflict)'
+                // This prevents infinite crash loops by nuking the bad session immediately.
+                const isConflict = disconnectError?.message === 'Stream Errored' && disconnectError?.data === 'conflict';
+                const isCorruptSession = statusCode === 428 || (errorPayload && errorPayload.statusCode === 428);
+
+                if (isConflict || isCorruptSession) {
+                    const reason = isConflict ? 'CONFLICTO (Otra sesión abierta)' : 'CORRUPCIÓN DE SESIÓN (428)';
+                    logService.error(`[WA-CLIENT] 🚨 ${reason} DETECTADO para user ${userId}. Purgando sesión para permitir reconexión limpia.`, disconnectError, userId);
+                    
+                    // Do NOT attempt to reconnect automatically. Wipe everything.
                     await db.updateUser(userId, { whatsapp_number: '' });
                     await db.updateUserSettings(userId, { isActive: false });
-                    await clearBindedSession(userId); // Clear session data from DB
+                    await clearBindedSession(userId); // Nuke DB session
+                    
                     sessions.delete(userId);
                     qrCache.delete(userId);
                     codeCache.delete(userId);
-                    return; // EXIT here, no further reconnection attempts from this error.
+                    return; // EXIT loop - DO NOT RECONNECT
                 }
 
                 const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
@@ -140,15 +148,14 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                 codeCache.delete(userId);
 
                 if (shouldReconnect) {
-                    await connectToWhatsApp(userId, phoneNumber); // Attempt to reconnect
+                    // Exponential backoff or simple retry
+                    setTimeout(() => connectToWhatsApp(userId, phoneNumber), 2000); 
                 } else {
                     logService.info(`[WA-CLIENT] User ${userId} logged out. Clearing session.`, userId);
-                    // FIX: Updated `db.updateUser` and `db.updateUserSettings` to correctly handle updates
-                    // for both top-level and nested user properties.
                     await db.updateUser(userId, { whatsapp_number: '' });
                     await db.updateUserSettings(userId, { isActive: false });
-                    await clearBindedSession(userId); // Clear session data from DB
-                    sessions.delete(userId); // Remove from active sessions
+                    await clearBindedSession(userId); 
+                    sessions.delete(userId); 
                 }
             } else if (connection === 'open') {
                 logService.info(`[WA-CLIENT] Connection opened for user ${userId}.`, userId);
