@@ -1,5 +1,4 @@
 
-
 import makeWASocket, {
   DisconnectReason,
   makeCacheableSignalKeyStore,
@@ -110,7 +109,10 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                     await connectToWhatsApp(userId, phoneNumber); // Attempt to reconnect
                 } else {
                     logService.info(`[WA-CLIENT] User ${userId} logged out. Clearing session.`, userId);
-                    await db.updateUser(userId, { whatsapp_number: '', 'settings.isActive': false });
+                    // FIX: Updated `db.updateUser` and `db.updateUserSettings` to correctly handle updates
+                    // for both top-level and nested user properties.
+                    await db.updateUser(userId, { whatsapp_number: '' });
+                    await db.updateUserSettings(userId, { isActive: false });
                     await clearBindedSession(userId); // Clear session data from DB
                     sessions.delete(userId); // Remove from active sessions
                 }
@@ -185,7 +187,10 @@ export async function disconnectWhatsApp(userId: string) {
     }
     qrCache.delete(userId);
     codeCache.delete(userId);
-    await db.updateUser(userId, { whatsapp_number: '', 'settings.isActive': false });
+    // FIX: Updated `db.updateUser` and `db.updateUserSettings` to correctly handle updates
+    // for both top-level and nested user properties.
+    await db.updateUser(userId, { whatsapp_number: '' });
+    await db.updateUserSettings(userId, { isActive: false });
     await clearBindedSession(userId); // Ensure session data is cleared from DB
     logService.info(`[WA-CLIENT] WhatsApp disconnected for user: ${userId}`, userId);
 }
@@ -201,66 +206,13 @@ export async function sendMessage(userId: string, jid: string, text: string) {
 }
 
 /**
- * Procesa un mensaje entrante (ya añadido a la conversación) y genera una respuesta de IA.
- * Esta función es llamada por el listener de `messages.upsert` (después de un debounce)
- * y también puede ser llamada directamente por el Admin Panel para mensajes de prueba.
+ * Helper function for the common AI response generation and conversation update.
+ * Extracted to ensure consistent logic after various checks and bypasses.
  */
-export async function processAiResponseForJid(userId: string, jid: string) {
-    const user = await db.getUser(userId);
-    if (!user) {
-        logService.warn(`[WA-CLIENT] User ${userId} not found when processing AI response for JID ${jid}.`, userId);
-        return;
-    }
-
-    // Global checks apply to all JIDs, including the test bot
-    if (!user.settings.isActive || user.plan_status === 'suspended') {
-        // If the user's bot is globally inactive or plan is suspended, we skip AI processing for *any* JID.
-        logService.info(`[WA-CLIENT] AI processing skipped for JID ${jid} (bot inactive or plan suspended globally for user ${userId}).`, userId);
-        
-        // Special handling for expired/suspended for REAL conversations, not test bot.
-        if (user.plan_status === 'expired' && jid !== ELITE_BOT_JID) {
-            const conversations = await conversationService.getConversations(userId);
-            const conversation = conversations.find(c => c.id === jid);
-            if (conversation && !conversation.isMuted) {
-                const sock = sessions.get(userId);
-                if (sock) {
-                    const expiredMessage = "Disculpa la demora, en breve te atenderemos.";
-                    await sock.sendMessage(jid, { text: expiredMessage });
-                    const botMessage: Message = { id: `bot-${Date.now()}-expired`, text: expiredMessage, sender: 'bot', timestamp: new Date() };
-                    await conversationService.addMessage(userId, jid, botMessage);
-                }
-            }
-        }
-        return;
-    }
-
-    // --- ELITE BOT SPECIFIC BYPASS ---
-    if (jid === ELITE_BOT_JID) {
-        // For the ELITE_BOT_JID, if it passed the global checks, it should *always* proceed to AI generation.
-        // We explicitly skip `isIgnored`, `isMuted`, `isBotActive`, `status === LeadStatus.PERSONAL` checks.
-        logService.info(`[WA-CLIENT] ELITE_BOT_JID ${jid} bypassed conversation-specific checks and proceeding to AI generation.`, userId);
-        // Continue directly to common AI processing logic below.
-    } else { 
-        // --- REGULAR CONVERSATIONS: APPLY ALL STANDARD CHECKS ---
-        const isIgnored = user.settings.ignoredJids?.some(id => id.includes(jid.split('@')[0]));
-        if (isIgnored) {
-            logService.info(`[WA-CLIENT] JID ${jid} ignored for user ${userId}.`, userId);
-            return;
-        }
-
-        const convs = await conversationService.getConversations(userId);
-        const conversation = convs.find(c => c.id === jid);
-
-        if (!conversation || conversation.isMuted || !conversation.isBotActive || conversation.status === LeadStatus.PERSONAL) {
-            logService.info(`[WA-CLIENT] AI processing skipped for JID ${jid} (muted, inactive, or personal).`, userId);
-            return;
-        }
-    }
-
-    // --- COMMON AI PROCESSING LOGIC (for ELITE_BOT_JID and regular JIDs that passed all checks) ---
+async function _commonAiProcessingLogic(userId: string, jid: string, user: User, logPrefix: string = '[WA-CLIENT]') {
     const sock = sessions.get(userId);
     if (!sock) {
-        logService.warn(`[WA-CLIENT] Socket not found for user ${userId}, cannot send response to JID ${jid}.`, userId);
+        logService.warn(`${logPrefix} Socket not found for user ${userId}, cannot send response to JID ${jid}.`, userId);
         return;
     }
 
@@ -269,7 +221,7 @@ export async function processAiResponseForJid(userId: string, jid: string) {
     const latestConversation = latestUser?.conversations?.[jid];
 
     if (!latestConversation) {
-        logService.error(`[WA-CLIENT] Latest conversation for JID ${jid} not found after message processing for user ${userId}.`, null, userId);
+        logService.error(`${logPrefix} Latest conversation for JID ${jid} not found after message processing for user ${userId}.`, null, userId);
         return;
     }
 
@@ -297,7 +249,7 @@ export async function processAiResponseForJid(userId: string, jid: string) {
         // --- TRIAL LEAD COUNTING EXCLUSION FOR TEST BOT ---
         if (user.plan_status === 'trial' && aiResult.newStatus === LeadStatus.HOT && previousStatus !== LeadStatus.HOT) {
             if (jid === ELITE_BOT_JID) {
-                logService.info(`[WA-CLIENT] Lead calificado por bot élite no cuenta para el trial de ${userId}.`, userId);
+                logService.info(`${logPrefix} Lead calificado por bot élite no cuenta para el trial de ${userId}.`, userId);
             } else {
                 const currentCount = (user.trial_qualified_leads_count || 0) + 1;
                 const maxLeads = 3; 
@@ -312,4 +264,66 @@ export async function processAiResponseForJid(userId: string, jid: string) {
         
         await db.saveUserConversation(userId, { ...latestConversation, ...updates });
     }
+}
+
+
+/**
+ * Procesa un mensaje entrante (ya añadido a la conversación) y genera una respuesta de IA.
+ * Esta función es llamada por el listener de `messages.upsert` (después de un debounce)
+ * y también puede ser llamada directamente por el Admin Panel para mensajes de prueba.
+ */
+export async function processAiResponseForJid(userId: string, jid: string) {
+    const user = await db.getUser(userId);
+    if (!user) {
+        logService.warn(`[WA-CLIENT] User ${userId} not found when processing AI response for JID ${jid}.`, userId);
+        return;
+    }
+
+    // --- GLOBAL CHECKS (Apply to ALL JIDs, including test bot) ---
+    // If the user's bot is globally inactive or plan is suspended, we skip AI processing for *any* JID.
+    if (!user.settings.isActive || user.plan_status === 'suspended') {
+        logService.info(`[WA-CLIENT] AI processing skipped for JID ${jid} (bot inactive or plan suspended globally for user ${userId}).`, userId);
+        
+        // Special handling for expired/suspended for REAL conversations, not test bot.
+        if (user.plan_status === 'expired' && jid !== ELITE_BOT_JID) {
+            const conversations = await conversationService.getConversations(userId);
+            const conversation = conversations.find(c => c.id === jid);
+            if (conversation && !conversation.isMuted) {
+                const sock = sessions.get(userId);
+                if (sock) {
+                    const expiredMessage = "Disculpa la demora, en breve te atenderemos.";
+                    await sock.sendMessage(jid, { text: expiredMessage });
+                    const botMessage: Message = { id: `bot-${Date.now()}-expired`, text: expiredMessage, sender: 'bot', timestamp: new Date() };
+                    await conversationService.addMessage(userId, jid, botMessage);
+                }
+            }
+        }
+        return; // IMPORTANT: Return here if global checks fail
+    }
+
+    // --- ELITE BOT SPECIFIC BYPASS ---
+    // If it's the ELITE_BOT_JID, and it passed the global checks above,
+    // then we should *always* proceed to AI generation, bypassing conversation-specific rules.
+    if (jid === ELITE_BOT_JID) {
+        logService.info(`[WA-CLIENT] ELITE_BOT_JID ${jid} detected and global checks passed. Proceeding directly to AI generation.`, userId);
+        return _commonAiProcessingLogic(userId, jid, user, '[WA-CLIENT-ELITE-TEST]'); // Call common logic and return
+    }
+    
+    // --- REGULAR CONVERSATIONS: Apply standard conversation-specific checks. ---
+    const isIgnored = user.settings.ignoredJids?.some(id => id.includes(jid.split('@')[0]));
+    if (isIgnored) {
+        logService.info(`[WA-CLIENT] JID ${jid} ignored for user ${userId}.`, userId);
+        return;
+    }
+
+    const convs = await conversationService.getConversations(userId);
+    const conversation = convs.find(c => c.id === jid);
+
+    if (!conversation || conversation.isMuted || !conversation.isBotActive || conversation.status === LeadStatus.PERSONAL) {
+        logService.info(`[WA-CLIENT] AI processing skipped for JID ${jid} (muted, inactive, or personal).`, userId);
+        return;
+    }
+
+    // --- Fall through for regular JIDs that passed all checks ---
+    return _commonAiProcessingLogic(userId, jid, user);
 }
