@@ -75,7 +75,8 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
         logService.info(`[WA-CLIENT] Initiating WhatsApp connection for user: ${userId}`, userId);
         const { state, saveCreds } = await useMongoDBAuthState(userId);
         
-        const { version, is = "" } = await fetchLatestBaileysVersion();
+        // FIX: Removed 'is' from destructuring, as it does not exist on fetchLatestBaileysVersion type.
+        const { version } = await fetchLatestBaileysVersion();
         logService.info(`[WA-CLIENT] Baileys version: ${version}`, userId);
 
         const user = await db.getUser(userId); // Fetch user to get proxy settings if any
@@ -91,7 +92,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
             browser: Browsers.macOS('Chrome'), // Simulate a desktop browser
             agent: user?.settings?.proxyUrl ? new HttpsProxyAgent(user.settings.proxyUrl) : undefined,
             generateHighQualityLinkPreview: true,
-            pairingCode: phoneNumber ? true : false, // Request pairing code if phone number is provided
+            // FIX: Removed `pairingCode: phoneNumber ? true : false,` as it's not a direct config option for makeWASocket
             shouldIgnoreJid: jid => jid?.endsWith('@broadcast'), // Ignore broadcast messages
             syncFullHistory: true, // EXPLICITLY REQUEST HISTORY
         });
@@ -100,7 +101,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
 
         sock.ev.on('creds.update', saveCreds);
 
-        sock.ev.on('connection.update', async (update) => {
+        sock.ev.on('connection.update', async (update: any) => { // FIX: Cast update to any for pairingCode destructuring
             const { connection, lastDisconnect, qr, isNewLogin, pairingCode: newPairingCode } = update;
 
             if (qr) {
@@ -146,6 +147,23 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                 // sseService.sendEvent(userId, 'status_update', { status: ConnectionStatus.CONNECTED }); // Re-enable if SSE is used
             }
         });
+
+        // FIX: Add logic to request pairing code if phoneNumber is provided, after sock is created.
+        if (phoneNumber) {
+            logService.info(`[WA-CLIENT] Requesting pairing code for user ${userId} with phone number.`, userId);
+            try {
+                const code = await sock.requestPairingCode(phoneNumber);
+                if (code) {
+                    codeCache.set(userId, code);
+                    logService.info(`[WA-CLIENT] Pairing code ${code} obtained for user ${userId}.`, userId);
+                    // sseService.sendEvent(userId, 'pairing_code', { pairingCode: code }); // Re-enable if SSE is used
+                } else {
+                    logService.error(`[WA-CLIENT] Failed to obtain pairing code for user ${userId}.`, null, userId);
+                }
+            } catch (pairingCodeError) {
+                logService.error(`[WA-CLIENT] Error requesting pairing code for user ${userId}.`, pairingCodeError, userId);
+            }
+        }
 
         sock.ev.on('messages.upsert', async ({ messages, type }) => {
             // Process ALL messages. 'type' can be 'notify' (new message) or 'append' (history).

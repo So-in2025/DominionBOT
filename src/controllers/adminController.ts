@@ -54,8 +54,8 @@ export const handleGetDashboardMetrics = async (req: any, res: any) => {
             // FIX: Removed `as any` cast. `getSessionStatus` returns a type with a `status` property.
             onlineNodes: clients.filter(c => getSessionStatus(c.id).status === ConnectionStatus.CONNECTED).length,
             globalLeads: allConversations.length,
-            // FIX: Removed `as any` cast for conversation `c` and used `LeadStatus.HOT` enum.
-            hotLeads: allConversations.filter(c => c.status === LeadStatus.HOT).length,
+            // FIX: Explicitly cast `c` to `Conversation` to resolve TypeScript error.
+            hotLeads: allConversations.filter((c: Conversation) => c.status === LeadStatus.HOT).length,
             atRiskAccounts: clients.filter(c => c.plan_status !== 'active').length,
             planDistribution,
             expiringSoon,
