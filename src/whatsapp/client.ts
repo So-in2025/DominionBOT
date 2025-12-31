@@ -1,4 +1,5 @@
 
+
 import makeWASocket, {
   DisconnectReason,
   makeCacheableSignalKeyStore,
@@ -44,6 +45,161 @@ export function getSessionStatus(userId: string): { status: ConnectionStatus, qr
     return { status: ConnectionStatus.DISCONNECTED };
 }
 
+// FIX: Export the connectToWhatsApp function and implement its logic
+export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
+    // Prevent multiple connection attempts simultaneously
+    if (connectionAttempts.get(userId)) {
+        logService.warn(`[WA-CLIENT] Connection already in progress for user ${userId}.`, userId);
+        return;
+    }
+    connectionAttempts.set(userId, true);
+    qrCache.delete(userId);
+    codeCache.delete(userId);
+
+    try {
+        logService.info(`[WA-CLIENT] Initiating WhatsApp connection for user: ${userId}`, userId);
+        const { state, saveCreds } = await useMongoDBAuthState(userId);
+        
+        const { version, is = "" } = await fetchLatestBaileysVersion();
+        logService.info(`[WA-CLIENT] Baileys version: ${version}`, userId);
+
+        const user = await db.getUser(userId); // Fetch user to get proxy settings if any
+
+        const sock = makeWASocket({
+            version,
+            logger,
+            printQRInTerminal: false,
+            auth: {
+                creds: state.creds,
+                keys: makeCacheableSignalKeyStore(state.keys, logger),
+            },
+            browser: Browsers.macOS('Chrome'), // Simulate a desktop browser
+            agent: user?.settings?.proxyUrl ? new HttpsProxyAgent(user.settings.proxyUrl) : undefined,
+            generateHighQualityLinkPreview: true,
+            pairingCode: phoneNumber ? true : false, // Request pairing code if phone number is provided
+            shouldIgnoreJid: jid => jid?.endsWith('@broadcast'), // Ignore broadcast messages
+        });
+
+        sessions.set(userId, sock);
+
+        sock.ev.on('creds.update', saveCreds);
+
+        sock.ev.on('connection.update', async (update) => {
+            const { connection, lastDisconnect, qr, isNewLogin, pairingCode: newPairingCode } = update;
+
+            if (qr) {
+                logService.info(`[WA-CLIENT] QR generated for user ${userId}`, userId);
+                qrCache.set(userId, await QRCode.toDataURL(qr));
+                // sseService.sendEvent(userId, 'qr_code', { qrCode: qrCache.get(userId) }); // Re-enable if SSE is used
+            }
+
+            if (newPairingCode) {
+                logService.info(`[WA-CLIENT] Pairing code generated for user ${userId}`, userId);
+                codeCache.set(userId, newPairingCode);
+                // sseService.sendEvent(userId, 'pairing_code', { pairingCode: newPairingCode }); // Re-enable if SSE is used
+            }
+
+            if (connection === 'close') {
+                const shouldReconnect = (lastDisconnect?.error as Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
+                logService.warn(`[WA-CLIENT] Connection closed for user ${userId}. Reason: ${lastDisconnect?.error?.message}. Reconnecting: ${shouldReconnect}`, userId);
+                
+                qrCache.delete(userId);
+                codeCache.delete(userId);
+
+                if (shouldReconnect) {
+                    await connectToWhatsApp(userId, phoneNumber); // Attempt to reconnect
+                } else {
+                    logService.info(`[WA-CLIENT] User ${userId} logged out. Clearing session.`, userId);
+                    await db.updateUser(userId, { whatsapp_number: '', 'settings.isActive': false });
+                    await clearBindedSession(userId); // Clear session data from DB
+                    sessions.delete(userId); // Remove from active sessions
+                }
+            } else if (connection === 'open') {
+                logService.info(`[WA-CLIENT] Connection opened for user ${userId}.`, userId);
+                qrCache.delete(userId); // Clear QR/pairing code once connected
+                codeCache.delete(userId);
+                if (isNewLogin) {
+                    const user = await db.getUser(userId);
+                    if (user && !user.whatsapp_number) {
+                        await db.updateUser(userId, { whatsapp_number: sock.user?.id?.split('@')[0] });
+                    }
+                }
+                // sseService.sendEvent(userId, 'status_update', { status: ConnectionStatus.CONNECTED }); // Re-enable if SSE is used
+            }
+        });
+
+        sock.ev.on('messages.upsert', async ({ messages, type }) => {
+            if (type === 'notify') {
+                for (const msg of messages) {
+                    // Ignore status messages and messages from self
+                    if (!msg.message || msg.key.fromMe || msg.key.remoteJid === 'status@broadcast') continue;
+
+                    const jid = msg.key.remoteJid;
+                    const contactName = msg.pushName || jid?.split('@')[0];
+                    const messageText = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
+
+                    if (!jid || !messageText) continue;
+
+                    logService.info(`[WA-CLIENT] Message from ${contactName} (${jid}): ${messageText}`, userId);
+
+                    const userMessage: Message = {
+                        id: msg.key.id || Date.now().toString(),
+                        text: messageText,
+                        sender: 'user',
+                        timestamp: new Date(msg.messageTimestamp! * 1000)
+                    };
+                    await conversationService.addMessage(userId, jid, userMessage, contactName);
+
+                    // Debounce AI response
+                    if (messageDebounceMap.has(jid)) {
+                        clearTimeout(messageDebounceMap.get(jid)!);
+                    }
+                    messageDebounceMap.set(jid, setTimeout(() => {
+                        processAiResponseForJid(userId, jid).catch(err => {
+                            logService.error(`[WA-CLIENT] Error processing AI response for JID ${jid}`, err, userId);
+                        });
+                        messageDebounceMap.delete(jid);
+                    }, DEBOUNCE_TIME_MS));
+                }
+            }
+        });
+
+    } catch (error) {
+        logService.error(`[WA-CLIENT] Critical error during WhatsApp connection for user ${userId}`, error, userId);
+        qrCache.delete(userId);
+        codeCache.delete(userId);
+        sessions.delete(userId);
+        throw error;
+    } finally {
+        connectionAttempts.delete(userId);
+    }
+}
+
+// FIX: Export the disconnectWhatsApp function and implement its logic
+export async function disconnectWhatsApp(userId: string) {
+    logService.info(`[WA-CLIENT] Disconnecting WhatsApp for user: ${userId}`, userId);
+    const sock = sessions.get(userId);
+    if (sock) {
+        await sock.logout(); // End the session cleanly
+        sessions.delete(userId);
+    }
+    qrCache.delete(userId);
+    codeCache.delete(userId);
+    await db.updateUser(userId, { whatsapp_number: '', 'settings.isActive': false });
+    await clearBindedSession(userId); // Ensure session data is cleared from DB
+    logService.info(`[WA-CLIENT] WhatsApp disconnected for user: ${userId}`, userId);
+}
+
+// FIX: Export the sendMessage function and implement its logic
+export async function sendMessage(userId: string, jid: string, text: string) {
+    const sock = sessions.get(userId);
+    if (!sock) {
+        throw new Error(`WhatsApp session not found for user ${userId}.`);
+    }
+    await sock.sendMessage(jid, { text });
+    logService.info(`[WA-CLIENT] Message sent to ${jid} by user ${userId}: ${text}`, userId);
+}
+
 /**
  * Procesa un mensaje entrante (ya añadido a la conversación) y genera una respuesta de IA.
  * Esta función es llamada por el listener de `messages.upsert` (después de un debounce)
@@ -56,32 +212,36 @@ export async function processAiResponseForJid(userId: string, jid: string) {
         return;
     }
 
-    // Bypass specific conversation checks for the ELITE_BOT_JID to ensure test bot always gets AI response
-    if (jid === ELITE_BOT_JID) {
-        if (!user.settings.isActive || user.plan_status === 'suspended') {
-            logService.info(`[WA-CLIENT] Test bot AI processing skipped for ${userId} (bot inactive or plan suspended).`, userId);
-            // Even for test bot, if the user's overall bot is off or plan is suspended, we respect that.
-            return;
-        }
-        // No further conversation-specific checks needed for ELITE_BOT_JID, just proceed to AI generation.
-    } else { // For regular conversations, apply all standard checks
-        if (!user.settings.isActive || user.plan_status === 'suspended') {
-            logService.info(`[WA-CLIENT] AI processing skipped for ${userId} (bot inactive or plan suspended).`, userId);
-            // Special handling for expired/suspended: send generic message if not already muted.
+    // Global checks apply to all JIDs, including the test bot
+    if (!user.settings.isActive || user.plan_status === 'suspended') {
+        // If the user's bot is globally inactive or plan is suspended, we skip AI processing for *any* JID.
+        logService.info(`[WA-CLIENT] AI processing skipped for JID ${jid} (bot inactive or plan suspended globally for user ${userId}).`, userId);
+        
+        // Special handling for expired/suspended for REAL conversations, not test bot.
+        if (user.plan_status === 'expired' && jid !== ELITE_BOT_JID) {
             const conversations = await conversationService.getConversations(userId);
             const conversation = conversations.find(c => c.id === jid);
-            if (user.plan_status === 'expired' && conversation && !conversation.isMuted) {
-                 const sock = sessions.get(userId);
-                 if (sock) {
-                    const expiredMessage = "Disculpa la demora, en breve te atenderemos."; // Default fallback message
+            if (conversation && !conversation.isMuted) {
+                const sock = sessions.get(userId);
+                if (sock) {
+                    const expiredMessage = "Disculpa la demora, en breve te atenderemos.";
                     await sock.sendMessage(jid, { text: expiredMessage });
                     const botMessage: Message = { id: `bot-${Date.now()}-expired`, text: expiredMessage, sender: 'bot', timestamp: new Date() };
                     await conversationService.addMessage(userId, jid, botMessage);
-                 }
+                }
             }
-            return;
         }
+        return;
+    }
 
+    // --- ELITE BOT SPECIFIC BYPASS ---
+    if (jid === ELITE_BOT_JID) {
+        // For the ELITE_BOT_JID, if it passed the global checks, it should *always* proceed to AI generation.
+        // We explicitly skip `isIgnored`, `isMuted`, `isBotActive`, `status === LeadStatus.PERSONAL` checks.
+        logService.info(`[WA-CLIENT] ELITE_BOT_JID ${jid} bypassed conversation-specific checks and proceeding to AI generation.`, userId);
+        // Continue directly to common AI processing logic below.
+    } else { 
+        // --- REGULAR CONVERSATIONS: APPLY ALL STANDARD CHECKS ---
         const isIgnored = user.settings.ignoredJids?.some(id => id.includes(jid.split('@')[0]));
         if (isIgnored) {
             logService.info(`[WA-CLIENT] JID ${jid} ignored for user ${userId}.`, userId);
@@ -97,7 +257,7 @@ export async function processAiResponseForJid(userId: string, jid: string) {
         }
     }
 
-    // The rest of the AI processing logic is common for both test bot and regular JIDs.
+    // --- COMMON AI PROCESSING LOGIC (for ELITE_BOT_JID and regular JIDs that passed all checks) ---
     const sock = sessions.get(userId);
     if (!sock) {
         logService.warn(`[WA-CLIENT] Socket not found for user ${userId}, cannot send response to JID ${jid}.`, userId);
@@ -105,8 +265,7 @@ export async function processAiResponseForJid(userId: string, jid: string) {
     }
 
     await sock.sendPresenceUpdate('composing', jid);
-    // Fetch latest messages from DB before generating response to ensure freshness.
-    const latestUser = await db.getUser(userId);
+    const latestUser = await db.getUser(userId); // Re-fetch to get latest state
     const latestConversation = latestUser?.conversations?.[jid];
 
     if (!latestConversation) {
@@ -114,7 +273,7 @@ export async function processAiResponseForJid(userId: string, jid: string) {
         return;
     }
 
-    const aiResult = await generateBotResponse(latestConversation.messages, user); // Use latest messages for AI
+    const aiResult = await generateBotResponse(latestConversation.messages, user);
 
     if (aiResult?.responseText) {
         await sock.sendMessage(jid, { text: aiResult.responseText });
@@ -123,11 +282,11 @@ export async function processAiResponseForJid(userId: string, jid: string) {
     }
     
     if (aiResult) {
-        const previousStatus = latestConversation.status; // Use latestConversation's status, not the potentially stale `conversation` variable
+        const previousStatus = latestConversation.status;
         const updates: Partial<Conversation> = {
             status: aiResult.newStatus,
             tags: [...new Set([...(latestConversation.tags || []), ...(aiResult.tags || [])])],
-            suggestedReplies: undefined // Clear suggestions unless AI explicitly provides new ones
+            suggestedReplies: undefined 
         };
 
         if (aiResult.newStatus === LeadStatus.HOT) {
@@ -135,7 +294,7 @@ export async function processAiResponseForJid(userId: string, jid: string) {
             updates.suggestedReplies = aiResult.suggestedReplies;
         }
 
-        // --- MODIFICACIÓN: EXCLUIR AL BOT DE PRUEBAS DEL CONTEO DE LEADS DEL TRIAL ---
+        // --- TRIAL LEAD COUNTING EXCLUSION FOR TEST BOT ---
         if (user.plan_status === 'trial' && aiResult.newStatus === LeadStatus.HOT && previousStatus !== LeadStatus.HOT) {
             if (jid === ELITE_BOT_JID) {
                 logService.info(`[WA-CLIENT] Lead calificado por bot élite no cuenta para el trial de ${userId}.`, userId);
@@ -153,162 +312,4 @@ export async function processAiResponseForJid(userId: string, jid: string) {
         
         await db.saveUserConversation(userId, { ...latestConversation, ...updates });
     }
-}
-
-export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
-  connectionAttempts.set(userId, true);
-  logService.info('Iniciando conexión a WhatsApp', userId);
-  console.log(`[WA-CLIENT-DEBUG] Connect initiated for user ${userId}. Phone number provided: ${!!phoneNumber}`);
-  
-  const oldSock = sessions.get(userId);
-  if (oldSock) {
-      logService.warn(`[WA-CLIENT-DEBUG] Existing session found for ${userId}. Attempting to clear.`, userId);
-      try { 
-          oldSock.ev.removeAllListeners(undefined); 
-          oldSock.end(undefined); 
-      } catch(e) {
-          console.error(`[WA-CLIENT-DEBUG] Error clearing old socket for ${userId}:`, e);
-      }
-      sessions.delete(userId);
-  }
-  qrCache.delete(userId);
-  codeCache.delete(userId);
-  // sseService.sendEvent(userId, 'connection_status', getSessionStatus(userId)); // Removed SSE event: Notify immediately of state change
-
-  if (phoneNumber) {
-      logService.info(`[WA-CLIENT-DEBUG] Phone number ${phoneNumber} provided. Clearing binded session.`, userId);
-      await clearBindedSession(userId);
-  }
-  
-  let user: User | null = null;
-  try {
-      const { version } = await fetchLatestBaileysVersion();
-      user = await db.getUser(userId);
-      const proxyUrl = user?.settings?.proxyUrl;
-      let agent = proxyUrl ? new HttpsProxyAgent(proxyUrl) : undefined;
-
-      const { state, saveCreds } = await useMongoDBAuthState(userId);
-
-      const sock = makeWASocket({
-        version,
-        auth: {
-          creds: state.creds,
-          keys: makeCacheableSignalKeyStore(state.keys, logger as any),
-        },
-        printQRInTerminal: false,
-        logger: logger as any,
-        agent, 
-        browser: Browsers.macOS('Chrome'),
-        syncFullHistory: false,
-        markOnlineOnConnect: true,
-      });
-
-      sessions.set(userId, sock);
-      sock.ev.on('creds.update', saveCreds);
-
-      // CRITICAL FIX: Request pairing code immediately if phone number is provided, without setTimeout.
-      if (phoneNumber && !sock.authState.creds.registered) {
-          logService.info(`[WA-CLIENT-DEBUG] Requesting pairing code for ${phoneNumber}...`, userId);
-          try {
-              const code = await sock.requestPairingCode(phoneNumber.replace(/[^0-9]/g, ''));
-              codeCache.set(userId, code);
-              logService.info(`[WA-CLIENT-DEBUG] Pairing code generated for ${userId}: ${code}`, userId);
-              // sseService.sendEvent(userId, 'connection_status', getSessionStatus(userId)); // Removed SSE event
-          } catch (err) {
-              logService.error('Error solicitando pairing code', err as Error, userId, user?.username);
-              qrCache.delete(userId);
-              codeCache.delete(userId);
-              // sseService.sendEvent(userId, 'connection_status', getSessionStatus(userId)); // Removed SSE event
-          }
-      }
-      
-      sock.ev.on('connection.update', async (update) => {
-          const { connection, lastDisconnect, qr } = update;
-          // FIX: Safely access statusCode only if lastDisconnect.error is a Boom object.
-          const disconnectError = lastDisconnect?.error;
-          const error = disconnectError instanceof Boom ? disconnectError.output?.statusCode : undefined;
-          console.log(`[WA-CLIENT-DEBUG] Connection update for ${userId}: connection=${connection}, qr=${!!qr}, lastDisconnect=${error}`);
-          
-          if (qr && !phoneNumber) { // Only set QR if not using pairing code method
-            const qrImage = await QRCode.toDataURL(qr);
-            qrCache.set(userId, qrImage);
-            logService.info(`[WA-CLIENT-DEBUG] QR code generated for ${userId}.`, userId);
-            // sseService.sendEvent(userId, 'connection_status', getSessionStatus(userId)); // Removed SSE event: Notify frontend of QR
-          }
-          if (connection === 'close') {
-            qrCache.delete(userId);
-            codeCache.delete(userId);
-            // Re-using the 'error' variable which already holds the safely extracted status code.
-
-            if (error === DisconnectReason.loggedOut) {
-                logService.audit('Sesión de WhatsApp cerrada por el usuario', userId, user?.username || 'unknown');
-                await disconnectWhatsApp(userId); // Use existing disconnect logic
-            } else {
-                if (connectionAttempts.get(userId)) {
-                    logService.warn(`Conexión cerrada inesperadamente, reintentando en 5s...`, userId);
-                    setTimeout(() => connectToWhatsApp(userId, phoneNumber), 5000);
-                } else {
-                    logService.info(`Conexión cerrada, no se reintentará.`, userId);
-                }
-            }
-            // sseService.sendEvent(userId, 'connection_status', getSessionStatus(userId)); // Removed SSE event: Notify frontend of disconnection
-          } else if (connection === 'open') {
-            logService.info('Conexión a WhatsApp establecida', userId);
-            qrCache.delete(userId);
-            codeCache.delete(userId);
-            // sseService.sendEvent(userId, 'connection_status', getSessionStatus(userId)); // Removed SSE event: Notify frontend of successful connection
-          }
-      });
-
-      sock.ev.on('messages.upsert', async (m) => {
-          const msg = m.messages[0];
-          // Ignorar mensajes sin contenido, mensajes propios o de grupos
-          if (!msg.message || msg.key.fromMe || msg.key.remoteJid?.endsWith('@g.us')) return;
-          
-          const jid = msg.key.remoteJid!;
-          const text = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
-          if (!text) return;
-
-          // Añadir el mensaje de usuario a la conversación inmediatamente
-          const userMessage: Message = { id: msg.key.id!, text, sender: 'user', timestamp: new Date() };
-          await conversationService.addMessage(userId, jid, userMessage, msg.pushName);
-
-          const debounceKey = `${userId}_${jid}`;
-          // Limpiar cualquier debounce anterior para este JID para evitar respuestas dobles
-          if (messageDebounceMap.has(debounceKey)) clearTimeout(messageDebounceMap.get(debounceKey));
-
-          // Retrasar el procesamiento de la IA para simular un comportamiento humano y evitar saturación
-          const timeout = setTimeout(async () => {
-              messageDebounceMap.delete(debounceKey); 
-              await processAiResponseForJid(userId, jid);
-          }, DEBOUNCE_TIME_MS);
-          messageDebounceMap.set(debounceKey, timeout);
-      });
-  } catch (err) {
-      logService.error('Fallo crítico en conexión a WhatsApp', err as Error, userId, user?.username);
-      // sseService.sendEvent(userId, 'connection_status', getSessionStatus(userId)); // Removed SSE event: Ensure SSE event is sent even on critical failure
-  }
-}
-
-export async function disconnectWhatsApp(userId: string) {
-    connectionAttempts.set(userId, false);
-    const sock = sessions.get(userId);
-    if (sock) {
-        logService.info(`[WA-CLIENT-DEBUG] Disconnecting socket for user ${userId}.`, userId);
-        try { sock.end(undefined); } catch(e) {
-            console.error(`[WA-CLIENT-DEBUG] Error ending socket for ${userId} during disconnect:`, e);
-        }
-    }
-    sessions.delete(userId);
-    qrCache.delete(userId);
-    codeCache.delete(userId);
-    await clearBindedSession(userId);
-    logService.info('Nodo de WhatsApp desconectado', userId);
-    // sseService.sendEvent(userId, 'connection_status', getSessionStatus(userId)); // Removed SSE event
-}
-
-export async function sendMessage(userId: string, jid: string, text: string) {
-  const sock = sessions.get(userId);
-  if (!sock) throw new Error('Nodo no activo.');
-  await sock.sendMessage(jid, { text });
 }

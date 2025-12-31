@@ -1,7 +1,9 @@
 
+
 import { Request, Response } from 'express';
 // FIX: Import Buffer to resolve 'Cannot find name Buffer' error.
 import { Buffer } from 'buffer';
+// FIX: Import connectToWhatsApp, disconnectWhatsApp, sendMessage as they are now exported.
 import { connectToWhatsApp, disconnectWhatsApp, sendMessage, getSessionStatus, processAiResponseForJid } from '../whatsapp/client.js'; // Import processAiResponseForJid
 import { conversationService } from '../services/conversationService.js';
 import { Message, LeadStatus, User } from '../types.js';
