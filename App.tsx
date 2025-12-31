@@ -51,12 +51,16 @@ export default function App() {
   const [isSimTyping, setIsSimTyping] = useState(false);
   const simScrollRef = useRef<HTMLDivElement>(null);
 
+  // Soft Logout: No page reload, just clear state
   const handleLogout = () => {
       localStorage.removeItem('saas_token');
       localStorage.removeItem('saas_role');
       setToken(null);
       setUserRole(null);
-      window.location.reload();
+      // Reset critical state
+      setConversations([]);
+      setSettings(null);
+      setCurrentView(View.CHATS);
   };
 
   // HEALTH CHECK
@@ -93,8 +97,8 @@ export default function App() {
                 fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) })
             ]);
             
-            if (sRes.status === 403 || cRes.status === 403) {
-                console.warn("Token expired or invalid signature. Logging out.");
+            if (sRes.status === 403 || cRes.status === 403 || sRes.status === 401 || cRes.status === 401) {
+                console.warn("Token expired or invalid signature. Performing soft logout.");
                 handleLogout();
                 return;
             }
@@ -104,7 +108,7 @@ export default function App() {
             setBackendError(null);
         } catch (e) {
             console.error("DATA ERROR:", e);
-            setBackendError("Error cargando datos.");
+            setBackendError("Error cargando datos. Revisa tu conexión.");
         } finally {
             setIsLoadingSettings(false);
         }
@@ -114,8 +118,10 @@ export default function App() {
     const intervalId = setInterval(async () => {
         try {
             const res = await fetch(`${BACKEND_URL}/api/status`, { headers: getAuthHeaders(token) });
-            if (res.status === 403) {
-                // Silently failing for status check to avoid aggressive logout loop on intermittent network issues
+            if (res.status === 403 || res.status === 401) {
+                // We don't logout immediately on polling failure to avoid UX jitter, 
+                // but if persistent, the user will eventually notice.
+                // Optionally: setConnectionStatus(ConnectionStatus.DISCONNECTED);
                 return;
             }
 
@@ -129,7 +135,7 @@ export default function App() {
                 if(convRes.ok) setConversations(await convRes.json());
             }
         } catch (e) {
-            // Silencioso
+            // Silent catch for polling
         }
     }, 4000);
 
@@ -242,7 +248,7 @@ export default function App() {
 
       <main className="flex-1 overflow-hidden flex relative">
         {backendError && (
-            <div className="absolute top-0 left-0 right-0 bg-red-600/90 text-white text-[10px] font-bold p-2 text-center z-50">
+            <div className="absolute top-0 left-0 right-0 bg-red-600/90 text-white text-[10px] font-bold p-2 text-center z-50 animate-pulse">
                 ⚠️ ERROR DE RED: {backendError}
             </div>
         )}

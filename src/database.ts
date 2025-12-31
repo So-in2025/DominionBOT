@@ -102,6 +102,8 @@ class Database {
     const id = uuidv4();
     const recoveryKey = Math.random().toString(36).substring(2, 10).toUpperCase();
     
+    console.log(`[DB] Creating user ${username} with ID ${id}`);
+
     const newUser: any = {
         id, username, password: hashedPassword, recoveryKey, role, intendedUse,
         settings: { 
@@ -130,7 +132,7 @@ class Database {
     this.cache[id] = newUser;
     try {
         await (UserModel as any).create(newUser);
-        console.log(`✅ Usuario creado: ${username}`);
+        console.log(`✅ Usuario guardado en MongoDB: ${username}`);
     } catch (err) {
         console.error("Error guardando usuario:", err);
     }

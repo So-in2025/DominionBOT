@@ -1,15 +1,15 @@
 
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import jwt from 'jsonwebtoken';
 import { db } from './database.js';
 import { authenticateToken } from './middleware/auth.js';
 import { generateBotResponse } from './services/aiService.js'; 
+import { JWT_SECRET, PORT } from './env.js'; // Import centralized config
 
-dotenv.config();
 const app = express();
-const JWT_SECRET = process.env.JWT_SECRET || 'dominion-local-secret-key';
+
+console.log(`[BOOT] JWT_SECRET Source: ${JWT_SECRET === 'dominion-local-secret-key' ? 'DEFAULT' : 'ENV'}`);
 
 // 1. LOGGER
 app.use((req, res, next) => {
@@ -39,11 +39,11 @@ app.post('/api/login', async (req: any, res: any) => {
     try {
         const user = await db.validateUser(username, password);
         if (user) {
+            // Use centralized JWT_SECRET
             const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '30d' });
             console.log(`[AUTH-SUCCESS] Token generado para: ${username}`);
             return res.json({ token, role: user.role });
         }
-        // Pequeño delay para mitigar fuerza bruta
         await new Promise(r => setTimeout(r, 500));
         res.status(401).json({ message: 'Credenciales inválidas.' });
     } catch (e: any) {
@@ -58,7 +58,9 @@ app.post('/api/register', async (req: any, res: any) => {
         const newUser = await db.createUser(username, password, 'client', intendedUse);
         if (!newUser) return res.status(400).json({ message: 'El usuario ya existe.' });
         
+        // Use centralized JWT_SECRET
         const token = jwt.sign({ id: newUser.id, role: newUser.role }, JWT_SECRET, { expiresIn: '30d' });
+        console.log(`[REGISTER] New user ${username} created. Token issued.`);
         res.status(201).json({ token, role: newUser.role, recoveryKey: newUser.recoveryKey });
     } catch (e) {
         res.status(500).json({ message: 'Error interno.' });
@@ -164,8 +166,7 @@ app.get('/api/health', (req, res) => {
 });
 
 // Inicio del servidor
-const PORT = 3001; 
-app.listen(PORT, '0.0.0.0', async () => {
+app.listen(Number(PORT), '0.0.0.0', async () => {
     console.log(`=================================================`);
     console.log(`🦅 DOMINION BACKEND (LOCAL) ACTIVO EN PUERTO ${PORT}`);
     console.log(`-------------------------------------------------`);
