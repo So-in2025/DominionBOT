@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { IntendedUse } from '../types';
-import { BACKEND_URL } from '../config.js'; // Configuración centralizada
+import { BACKEND_URL } from '../config.js';
 
 interface AuthModalProps {
     isOpen: boolean;

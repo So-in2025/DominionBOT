@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { BotSettings, PromptArchetype } from '../types';
+import { BACKEND_URL } from '../config.js';
 
 interface SettingsPanelProps {
   settings: BotSettings | null;
@@ -15,8 +16,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
   const [isSimulating, setIsSimulating] = useState(false);
   const [simResults, setSimResults] = useState<any[]>([]);
 
-  // @ts-ignore
-  const BACKEND_URL = (import.meta.env?.VITE_BACKEND_URL) || 'https://dominion-backend-ahsh.onrender.com';
   const token = localStorage.getItem('saas_token');
 
   useEffect(() => {
