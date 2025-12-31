@@ -1,4 +1,5 @@
 
+
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Message, LeadStatus, Conversation } from '../../types';
 import { getAuthHeaders } from '../../config';
@@ -44,25 +45,14 @@ const TestBotSimulator: React.FC<TestBotSimulatorProps> = ({ token, backendUrl, 
         const conversations: Conversation[] = await res.json();
         const testConversation = conversations.find(c => c.id === ELITE_BOT_JID);
         if (testConversation) {
-          // Map backend messages to frontend simulated messages, enriching with status/tags from the last bot message
           const simulatedHistory: SimulatedMessage[] = testConversation.messages.map(msg => {
-              if (msg.sender === 'bot' && (msg as any)._status && (msg as any)._tags) { // Assuming backend could send these temporarily for simulation feedback
-                  return { ...msg, status: (msg as any)._status, tags: (msg as any)._tags };
-              }
               // Adjust sender for display: elite_bot messages should appear as 'user' to the client
               return { ...msg, sender: msg.sender === 'elite_bot' ? 'user' : msg.sender };
           });
           setMessages(simulatedHistory);
-          // Update overall status/tags from the latest bot response in the simulation
-          const latestBotResponse = testConversation.messages.reverse().find(m => m.sender === 'bot');
-          if (latestBotResponse && (latestBotResponse as any)._status) {
-              setCurrentLeadStatus((latestBotResponse as any)._status);
-              setCurrentTags((latestBotResponse as any)._tags || []);
-          } else {
-              setCurrentLeadStatus(testConversation.status); // Fallback to actual conversation status
-              setCurrentTags(testConversation.tags);
-          }
-
+          // Always update current status and tags from the conversation object directly
+          setCurrentLeadStatus(testConversation.status); 
+          setCurrentTags(testConversation.tags || []);
         } else {
           setMessages([]);
           setCurrentLeadStatus(null);
@@ -71,9 +61,12 @@ const TestBotSimulator: React.FC<TestBotSimulatorProps> = ({ token, backendUrl, 
       }
     } catch (error) {
       console.error("Error fetching test conversation:", error);
-      showToast('Error al cargar la conversación de prueba.', 'error');
+      // Only show toast if actually simulating, otherwise it's just polling for a non-existent convo
+      if (isSimulating) { // Check isSimulating state here
+        showToast('Error al cargar la conversación de prueba.', 'error');
+      }
     }
-  }, [backendUrl, token, showToast]);
+  }, [backendUrl, token, showToast, isSimulating]); // Add isSimulating to dependencies
 
   useEffect(() => {
     fetchConversation();
@@ -184,7 +177,7 @@ const TestBotSimulator: React.FC<TestBotSimulatorProps> = ({ token, backendUrl, 
             <div className="flex-1 overflow-y-auto custom-scrollbar space-y-4" ref={scrollRef}>
                 {messages.length === 0 && !isSimulating ? (
                     <div className="h-full flex flex-col items-center justify-center text-center text-gray-500">
-                        <svg className="w-12 h-12 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
+                        <svg className="w-12 h-12 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
                         <p className="text-xs font-bold uppercase tracking-widest">Aún no hay interacciones de prueba</p>
                         <p className="text-[10px] mt-1">Inicia la simulación para ver tu bot en acción.</p>
                     </div>
@@ -192,13 +185,13 @@ const TestBotSimulator: React.FC<TestBotSimulatorProps> = ({ token, backendUrl, 
                     messages.map((msg, index) => (
                         <div key={index}>
                             <MessageBubble message={{ ...msg, sender: msg.sender === 'elite_bot' ? 'user' : msg.sender as 'bot' | 'user' | 'owner' }} />
-                            {/* Display status and tags for bot's responses */}
-                            {msg.sender === 'bot' && (msg.status || msg.tags?.length > 0) && (
-                                <div className="mt-2 ml-auto w-fit flex items-center gap-2">
-                                    {getStatusBadge(msg.status || null)}
-                                    {msg.tags && msg.tags.length > 0 && (
+                            {/* Display status and tags for bot's responses IF it's the latest message and it's a bot message */}
+                            {index === messages.length - 1 && msg.sender === 'bot' && (currentLeadStatus || currentTags.length > 0) && (
+                                <div className="mt-2 ml-auto w-fit flex items-center gap-2 animate-fade-in">
+                                    {getStatusBadge(currentLeadStatus)}
+                                    {currentTags && currentTags.length > 0 && (
                                         <div className="flex flex-wrap gap-1">
-                                            {msg.tags.map(tag => (
+                                            {currentTags.map(tag => (
                                                 <span key={tag} className="px-1.5 py-0.5 rounded bg-brand-gold/5 border border-brand-gold/20 text-brand-gold text-[8px] font-black uppercase tracking-tighter">
                                                     {tag}
                                                 </span>

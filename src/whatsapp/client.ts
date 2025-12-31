@@ -56,37 +56,48 @@ export async function processAiResponseForJid(userId: string, jid: string) {
         return;
     }
 
-    if (!user.settings.isActive || user.plan_status === 'suspended') {
-        logService.info(`[WA-CLIENT] AI processing skipped for ${userId} (bot inactive or plan suspended).`, userId);
-        // Special handling for expired/suspended: send generic message if not already muted.
-        const conversations = await conversationService.getConversations(userId);
-        const conversation = conversations.find(c => c.id === jid);
-        if (user.plan_status === 'expired' && conversation && !conversation.isMuted) {
-             const sock = sessions.get(userId);
-             if (sock) {
-                const expiredMessage = "Disculpa la demora, en breve te atenderemos."; // Default fallback message
-                await sock.sendMessage(jid, { text: expiredMessage });
-                const botMessage: Message = { id: `bot-${Date.now()}-expired`, text: expiredMessage, sender: 'bot', timestamp: new Date() };
-                await conversationService.addMessage(userId, jid, botMessage);
-             }
+    // Bypass specific conversation checks for the ELITE_BOT_JID to ensure test bot always gets AI response
+    if (jid === ELITE_BOT_JID) {
+        if (!user.settings.isActive || user.plan_status === 'suspended') {
+            logService.info(`[WA-CLIENT] Test bot AI processing skipped for ${userId} (bot inactive or plan suspended).`, userId);
+            // Even for test bot, if the user's overall bot is off or plan is suspended, we respect that.
+            return;
         }
-        return;
+        // No further conversation-specific checks needed for ELITE_BOT_JID, just proceed to AI generation.
+    } else { // For regular conversations, apply all standard checks
+        if (!user.settings.isActive || user.plan_status === 'suspended') {
+            logService.info(`[WA-CLIENT] AI processing skipped for ${userId} (bot inactive or plan suspended).`, userId);
+            // Special handling for expired/suspended: send generic message if not already muted.
+            const conversations = await conversationService.getConversations(userId);
+            const conversation = conversations.find(c => c.id === jid);
+            if (user.plan_status === 'expired' && conversation && !conversation.isMuted) {
+                 const sock = sessions.get(userId);
+                 if (sock) {
+                    const expiredMessage = "Disculpa la demora, en breve te atenderemos."; // Default fallback message
+                    await sock.sendMessage(jid, { text: expiredMessage });
+                    const botMessage: Message = { id: `bot-${Date.now()}-expired`, text: expiredMessage, sender: 'bot', timestamp: new Date() };
+                    await conversationService.addMessage(userId, jid, botMessage);
+                 }
+            }
+            return;
+        }
+
+        const isIgnored = user.settings.ignoredJids?.some(id => id.includes(jid.split('@')[0]));
+        if (isIgnored) {
+            logService.info(`[WA-CLIENT] JID ${jid} ignored for user ${userId}.`, userId);
+            return;
+        }
+
+        const convs = await conversationService.getConversations(userId);
+        const conversation = convs.find(c => c.id === jid);
+
+        if (!conversation || conversation.isMuted || !conversation.isBotActive || conversation.status === LeadStatus.PERSONAL) {
+            logService.info(`[WA-CLIENT] AI processing skipped for JID ${jid} (muted, inactive, or personal).`, userId);
+            return;
+        }
     }
 
-    const isIgnored = user.settings.ignoredJids?.some(id => id.includes(jid.split('@')[0]));
-    if (isIgnored) {
-        logService.info(`[WA-CLIENT] JID ${jid} ignored for user ${userId}.`, userId);
-        return;
-    }
-
-    const convs = await conversationService.getConversations(userId);
-    const conversation = convs.find(c => c.id === jid);
-
-    if (!conversation || conversation.isMuted || !conversation.isBotActive || conversation.status === LeadStatus.PERSONAL) {
-        logService.info(`[WA-CLIENT] AI processing skipped for JID ${jid} (muted, inactive, or personal).`, userId);
-        return;
-    }
-
+    // The rest of the AI processing logic is common for both test bot and regular JIDs.
     const sock = sessions.get(userId);
     if (!sock) {
         logService.warn(`[WA-CLIENT] Socket not found for user ${userId}, cannot send response to JID ${jid}.`, userId);
@@ -112,10 +123,10 @@ export async function processAiResponseForJid(userId: string, jid: string) {
     }
     
     if (aiResult) {
-        const previousStatus = conversation.status;
+        const previousStatus = latestConversation.status; // Use latestConversation's status, not the potentially stale `conversation` variable
         const updates: Partial<Conversation> = {
             status: aiResult.newStatus,
-            tags: [...new Set([...(conversation.tags || []), ...(aiResult.tags || [])])],
+            tags: [...new Set([...(latestConversation.tags || []), ...(aiResult.tags || [])])],
             suggestedReplies: undefined // Clear suggestions unless AI explicitly provides new ones
         };
 
@@ -140,7 +151,7 @@ export async function processAiResponseForJid(userId: string, jid: string) {
             }
         }
         
-        await db.saveUserConversation(userId, { ...conversation, ...updates });
+        await db.saveUserConversation(userId, { ...latestConversation, ...updates });
     }
 }
 
