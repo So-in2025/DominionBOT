@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { IntendedUse } from '../types';
-import { API_HEADERS } from '../src/config.js';
+import { BACKEND_URL, API_HEADERS } from '../src/config.js';
 
 interface AuthModalProps {
     isOpen: boolean;
@@ -85,9 +85,10 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-            const res = await fetch(`${backendUrl}${endpoint}`, {
+            // FIX: Inyección de headers Ngrok desde config.ts
+            const res = await fetch(`${backendUrl || BACKEND_URL}${endpoint}`, {
                 method: 'POST',
-                headers: { ...API_HEADERS },
+                headers: { ...API_HEADERS }, 
                 body: JSON.stringify(payload),
                 signal: controller.signal
             });
@@ -110,8 +111,8 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
                 setError(data.message || 'Error en la operación. Verifique sus datos.');
             }
         } catch (err: any) {
-            console.error("Auth Error:", err);
-            setError(`Fallo de conexión con el nodo central (${backendUrl}).`);
+            console.error("Auth Fail", err);
+            setError(`Fallo de conexión con ${backendUrl || BACKEND_URL}. ¿Backend Activo?`);
         } finally {
             setLoading(false);
         }

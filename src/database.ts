@@ -4,7 +4,7 @@ import mongoose, { Schema, Model } from 'mongoose';
 import { User, BotSettings, LeadStatus, PromptArchetype, GlobalMetrics, GlobalTelemetry, Conversation, IntendedUse } from './types.js';
 import { v4 as uuidv4 } from 'uuid';
 
-// Credencial de Respaldo (Extraída de tu configuración) para modo híbrido
+// Credencial de Respaldo
 const CLOUD_BACKUP_URI = "mongodb+srv://admin:C3WcIkonjZ4tnYUN@cluster0.rxgrwk7.mongodb.net/dominion_saas?retryWrites=true&w=majority&appName=Cluster0";
 
 const UserSchema = new Schema({
@@ -50,6 +50,10 @@ class Database {
       return this.isInitialized;
   }
 
+  getCacheSize() {
+      return Object.keys(this.cache).length;
+  }
+
   async init() {
       if (this.isInitialized) return;
       
@@ -57,13 +61,11 @@ class Database {
 
       try {
           console.log("⏳ Intentando conectar a MongoDB Local...");
-          // Timeout corto (5s) para no hacer esperar si no está instalado
           await mongoose.connect(localUri, { serverSelectionTimeoutMS: 5000 });
           console.log("✅ Conectado a MongoDB Local.");
       } catch (e) {
           console.warn("⚠️ No se detectó MongoDB Local. Activando Protocolo de Respaldo...");
           try {
-              // Fallback a la nube
               await mongoose.connect(CLOUD_BACKUP_URI);
               console.log("☁️ CONECTADO A NUBE (Modo Respaldo). Tu sistema está operativo.");
           } catch (cloudError) {
@@ -74,19 +76,36 @@ class Database {
           }
       }
 
-      // Carga de Datos (Independiente de dónde nos conectamos)
       try {
           const users = await UserModel.find({});
+          this.cache = {}; // Reset cache on reload
           users.forEach((doc: any) => {
-              this.cache[doc.id] = doc.toObject() as unknown as User;
+              const userObj = doc.toObject() as unknown as User;
+              if(userObj.id) {
+                  this.cache[userObj.id] = userObj;
+              }
           });
           this.isInitialized = true;
           
-          // Crear super admin si no existe
-          if (!Object.values(this.cache).find(u => u.username === 'master')) {
-              await this.createUser('master', 'dominion2024', 'super_admin', 'OTHER');
+          const userList = Object.values(this.cache).map(u => `${u.username} (${u.role})`).join(', ');
+          console.log(`📋 Usuarios en DB: [ ${userList} ]`);
+
+          // Rescate Master
+          const masterUser = Object.values(this.cache).find(u => u.username === 'master');
+          const masterPass = 'dominion2024';
+          const hashedMasterPass = await bcrypt.hash(masterPass, 10);
+
+          if (!masterUser) {
+              await this.createUser('master', masterPass, 'super_admin', 'OTHER');
               console.log("👑 Admin creado: master / dominion2024");
+          } else {
+              // Actualizar hash en memoria y DB
+              masterUser.password = hashedMasterPass; 
+              this.cache[masterUser.id].password = hashedMasterPass;
+              await (UserModel as any).updateOne({ id: masterUser.id }, { $set: { password: hashedMasterPass } });
+              console.log("👑 Admin 'master' RESTAURADO a: master / dominion2024");
           }
+
       } catch(err) {
           console.error("Error sincronizando caché:", err);
       }
@@ -127,6 +146,7 @@ class Database {
     this.cache[id] = newUser;
     try {
         await (UserModel as any).create(newUser);
+        console.log(`✅ Usuario creado: ${username}`);
     } catch (err) {
         console.error("Error guardando usuario:", err);
     }
@@ -137,18 +157,30 @@ class Database {
     if (!this.isInitialized) await this.init();
 
     const user = Object.values(this.cache).find(u => u.username === username);
-    if (!user) return null;
+    if (!user) {
+        console.log(`[AUTH-FAIL] Usuario no existe en DB: '${username}'`);
+        return null;
+    }
 
-    const isValid = await bcrypt.compare(password, user.password!);
+    if (!user.password) {
+        console.log(`[AUTH-FAIL] Usuario '${username}' tiene datos corruptos (sin password).`);
+        return null;
+    }
+
+    const isValid = await bcrypt.compare(password, user.password);
 
     if (isValid) {
+        // Retornar copia segura
         const { password: _, ...safe } = user;
         return safe as unknown as User;
     } 
+    
+    console.log(`[AUTH-FAIL] Password incorrecto para: '${username}'`);
     return null;
   }
 
   async resetPassword(username: string, recoveryKey: string, newPassword: string) {
+      // Implementación pendiente
       return false; 
   }
 
@@ -171,6 +203,9 @@ class Database {
       const user = this.cache[userId];
       if (user) {
           user.conversations[conversation.id] = conversation;
+          // Actualización atómica en memoria
+          this.cache[userId] = user; 
+          // Persistencia asíncrona
           await (UserModel as any).updateOne({ id: userId }, { $set: { conversations: user.conversations } });
       }
   }
@@ -179,6 +214,7 @@ class Database {
       const user = this.cache[userId];
       if (user) {
           user.settings = { ...user.settings, ...settings } as BotSettings;
+          this.cache[userId] = user;
           await (UserModel as any).updateOne({ id: userId }, { $set: { settings: user.settings } });
           return user.settings;
       }
@@ -186,18 +222,18 @@ class Database {
 
   getGlobalTelemetry(): GlobalTelemetry {
       return {
-          totalVendors: 1,
+          totalVendors: Object.keys(this.cache).length,
           activeNodes: 1,
           totalSignalsProcessed: 0,
           activeHotLeads: 0,
-          systemUptime: "100% (HYBRID)",
+          systemUptime: "100% (LOCAL)",
           riskAccounts: 0
       };
   }
 
   getGlobalMetrics(): GlobalMetrics {
       return {
-          activeVendors: 1,
+          activeVendors: Object.keys(this.cache).length,
           onlineNodes: 1,
           globalLeads: 0,
           hotLeadsTotal: 0,

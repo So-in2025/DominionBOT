@@ -1,8 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-
-// Fallback directo a la URL de Render para producción
-const BACKEND_URL = (import.meta as any).env?.VITE_BACKEND_URL || 'https://dominion-backend-ahsh.onrender.com';
+import { BACKEND_URL, API_HEADERS } from '../src/config.js';
 
 interface AdminLoginProps {
     onLogin: (token: string, role: string) => void;
@@ -72,7 +70,7 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin }) => {
 
             const res = await fetch(`${BACKEND_URL}/api/login`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { ...API_HEADERS },
                 body: JSON.stringify({ username, password }),
                 signal: controller.signal
             });
@@ -93,7 +91,8 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin }) => {
                 setError(data.message || 'Credenciales no válidas. Prueba master / dominion2024');
             }
         } catch (err) {
-            setError('Error de enlace con el servidor Render. Verifique conexión.');
+            console.error("LOGIN FAIL:", err);
+            setError(`Fallo de conexión con ${BACKEND_URL}. Verifique Ngrok.`);
         } finally {
             setLoading(false);
         }

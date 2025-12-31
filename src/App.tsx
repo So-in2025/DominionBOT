@@ -11,7 +11,6 @@ import AuditView from './components/Admin/AuditView.js';
 import AuthModal from './components/AuthModal.js';
 import LegalModal from './components/LegalModal.js'; 
 import AgencyDashboard from './components/AgencyDashboard.js';
-// IMPORTACIÓN CRÍTICA
 import { BACKEND_URL, API_HEADERS, getAuthHeaders } from './config.js';
 
 const SIMULATION_SCRIPT = [
@@ -52,6 +51,14 @@ export default function App() {
   const [isSimTyping, setIsSimTyping] = useState(false);
   const simScrollRef = useRef<HTMLDivElement>(null);
 
+  const handleLogout = () => {
+      localStorage.removeItem('saas_token');
+      localStorage.removeItem('saas_role');
+      setToken(null);
+      setUserRole(null);
+      window.location.reload();
+  };
+
   // HEALTH CHECK
   useEffect(() => {
       fetch(`${BACKEND_URL}/api/health`, { headers: API_HEADERS })
@@ -81,6 +88,11 @@ export default function App() {
                 fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) })
             ]);
             
+            if (sRes.status === 403 || cRes.status === 403) {
+                handleLogout();
+                return;
+            }
+
             if (sRes.ok) setSettings(await sRes.json());
             if (cRes.ok) setConversations(await cRes.json());
             setBackendError(null);
@@ -93,17 +105,22 @@ export default function App() {
     };
     loadData();
 
-    // POLLING ROBUSTO (Reemplazo de SSE para estabilidad en Ngrok)
     const intervalId = setInterval(async () => {
         try {
             const res = await fetch(`${BACKEND_URL}/api/status`, { headers: getAuthHeaders(token) });
+            if (res.status === 403) {
+                console.log("Sesión expirada. Cerrando...");
+                clearInterval(intervalId);
+                handleLogout();
+                return;
+            }
+
             if (res.ok) {
                 const data = await res.json();
                 setConnectionStatus(data.status);
                 if (data.qr) setQrCode(data.qr);
                 if (data.pairingCode) setPairingCode(data.pairingCode);
                 
-                // Actualizar conversaciones en segundo plano
                 const convRes = await fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) });
                 if(convRes.ok) setConversations(await convRes.json());
             }
@@ -115,7 +132,6 @@ export default function App() {
     return () => clearInterval(intervalId);
   }, [token]);
 
-  // Landing Animation
   useEffect(() => {
     if (token) return; 
     let timeoutId: any;
@@ -194,7 +210,13 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen bg-brand-black text-white font-sans overflow-hidden">
-      <AuthModal isOpen={authModal.isOpen} initialMode={authModal.mode} onClose={() => setAuthModal({ ...authModal, isOpen: false })} onSuccess={handleLoginSuccess} onOpenLegal={setLegalModalType} />
+      <AuthModal 
+        isOpen={authModal.isOpen} 
+        initialMode={authModal.mode} 
+        onClose={() => setAuthModal({ ...authModal, isOpen: false })} 
+        onSuccess={handleLoginSuccess} 
+        onOpenLegal={setLegalModalType} 
+      />
       <LegalModal type={legalModalType} onClose={() => setLegalModalType(null)} />
       
       <Header 
@@ -202,7 +224,7 @@ export default function App() {
         userRole={userRole} 
         onLoginClick={() => setAuthModal({ isOpen: true, mode: 'login' })} 
         onRegisterClick={() => setAuthModal({ isOpen: true, mode: 'register' })} 
-        onLogoutClick={() => { localStorage.clear(); window.location.reload(); }} 
+        onLogoutClick={handleLogout} 
         isBotGloballyActive={isBotGloballyActive} 
         onToggleBot={() => setIsBotGloballyActive(!isBotGloballyActive)} 
         currentView={currentView} 

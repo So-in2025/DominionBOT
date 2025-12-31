@@ -10,7 +10,7 @@ import AdminDashboard from './components/Admin/AdminDashboard.js';
 import AuditView from './components/Admin/AuditView.js';
 import AuthModal from './components/AuthModal.js';
 import LegalModal from './components/LegalModal.js'; 
-import AgencyDashboard from './components/AgencyDashboard.js';
+import AgencyDashboard from './src/components/AgencyDashboard.js';
 import { BACKEND_URL, API_HEADERS, getAuthHeaders } from './src/config.js';
 
 const SIMULATION_SCRIPT = [
@@ -35,7 +35,6 @@ export default function App() {
   const [isBotGloballyActive, setIsBotGloballyActive] = useState(true);
   const [auditTarget, setAuditTarget] = useState<User | null>(null);
   
-  // App States
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [settings, setSettings] = useState<BotSettings | null>(null);
@@ -51,6 +50,14 @@ export default function App() {
   const [visibleMessages, setVisibleMessages] = useState<any[]>([]);
   const [isSimTyping, setIsSimTyping] = useState(false);
   const simScrollRef = useRef<HTMLDivElement>(null);
+
+  const handleLogout = () => {
+      localStorage.removeItem('saas_token');
+      localStorage.removeItem('saas_role');
+      setToken(null);
+      setUserRole(null);
+      window.location.reload();
+  };
 
   // HEALTH CHECK
   useEffect(() => {
@@ -81,22 +88,33 @@ export default function App() {
                 fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) })
             ]);
             
+            if (sRes.status === 403 || cRes.status === 403) {
+                handleLogout();
+                return;
+            }
+
             if (sRes.ok) setSettings(await sRes.json());
             if (cRes.ok) setConversations(await cRes.json());
             setBackendError(null);
         } catch (e) {
             console.error("DATA ERROR:", e);
-            setBackendError("Error cargando datos. Verifique su conexión.");
+            setBackendError("Error cargando datos.");
         } finally {
             setIsLoadingSettings(false);
         }
     };
     loadData();
 
-    // POLLING ROBUSTO
     const intervalId = setInterval(async () => {
         try {
             const res = await fetch(`${BACKEND_URL}/api/status`, { headers: getAuthHeaders(token) });
+            if (res.status === 403) {
+                console.log("Sesión expirada. Cerrando...");
+                clearInterval(intervalId);
+                handleLogout();
+                return;
+            }
+
             if (res.ok) {
                 const data = await res.json();
                 setConnectionStatus(data.status);
@@ -137,9 +155,7 @@ export default function App() {
   }, [token]);
 
   useEffect(() => {
-      if (simScrollRef.current) {
-          simScrollRef.current.scrollTop = simScrollRef.current.scrollHeight;
-      }
+      if (simScrollRef.current) simScrollRef.current.scrollTop = simScrollRef.current.scrollHeight;
   }, [visibleMessages, isSimTyping]);
 
   const handleLoginSuccess = (t: string, r: string) => {
@@ -163,8 +179,7 @@ export default function App() {
               body: JSON.stringify({ phoneNumber }) 
           });
       } catch (e) { 
-          console.error("Error connecting:", e);
-          setBackendError("Fallo al iniciar conexión. Intente nuevamente.");
+          setBackendError("Fallo al iniciar conexión.");
       }
   };
 
@@ -210,7 +225,7 @@ export default function App() {
         userRole={userRole} 
         onLoginClick={() => setAuthModal({ isOpen: true, mode: 'login' })} 
         onRegisterClick={() => setAuthModal({ isOpen: true, mode: 'register' })} 
-        onLogoutClick={() => { localStorage.clear(); window.location.reload(); }} 
+        onLogoutClick={handleLogout} 
         isBotGloballyActive={isBotGloballyActive} 
         onToggleBot={() => setIsBotGloballyActive(!isBotGloballyActive)} 
         currentView={currentView} 
@@ -220,8 +235,8 @@ export default function App() {
 
       <main className="flex-1 overflow-hidden flex relative">
         {backendError && (
-            <div className="absolute top-0 left-0 right-0 bg-red-600/90 text-white text-[10px] font-bold p-2 text-center z-50 animate-pulse">
-                ⚠️ SISTEMA DESCONECTADO: {backendError}
+            <div className="absolute top-0 left-0 right-0 bg-red-600/90 text-white text-[10px] font-bold p-2 text-center z-50">
+                ⚠️ ERROR DE RED: {backendError}
             </div>
         )}
 
@@ -255,7 +270,7 @@ export default function App() {
                 />
               ) : (
                 <div className="flex-1 flex overflow-hidden relative">
-                    <div className={`${selectedConversationId ? 'hidden md:flex' : 'flex'} w-full md:w-80 h-full`}>
+                    <div className={`${selectedConversationId ? 'hidden md:flex' : 'flex'} w-full md:w-auto h-full`}>
                         <ConversationList 
                             conversations={conversations} 
                             selectedConversationId={selectedConversationId} 

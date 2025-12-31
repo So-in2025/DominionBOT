@@ -17,9 +17,9 @@ app.use((req, res, next) => {
     next();
 });
 
-// 2. CORS - Permisivo para aceptar peticiones desde Vercel
+// 2. CORS - Permisivo para aceptar peticiones desde Vercel y Ngrok
 const corsOptions = {
-    origin: '*', // Acepta conexiones desde tu Vercel y Ngrok
+    origin: '*', 
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Cache-Control', 'ngrok-skip-browser-warning'],
     credentials: true
@@ -40,11 +40,14 @@ app.post('/api/login', async (req: any, res: any) => {
         const user = await db.validateUser(username, password);
         if (user) {
             const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '30d' });
+            console.log(`[AUTH-SUCCESS] Token generado para: ${username}`);
             return res.json({ token, role: user.role });
         }
+        // Pequeño delay para mitigar fuerza bruta
         await new Promise(r => setTimeout(r, 500));
         res.status(401).json({ message: 'Credenciales inválidas.' });
     } catch (e: any) {
+        console.error("[AUTH-ERROR]", e);
         res.status(403).json({ message: e.message });
     }
 });
@@ -161,7 +164,7 @@ app.get('/api/health', (req, res) => {
 });
 
 // Inicio del servidor
-const PORT = 3001; // Puerto fijo para evitar conflictos con Vite (5173)
+const PORT = 3001; 
 app.listen(PORT, '0.0.0.0', async () => {
     console.log(`=================================================`);
     console.log(`🦅 DOMINION BACKEND (LOCAL) ACTIVO EN PUERTO ${PORT}`);
@@ -173,6 +176,7 @@ app.listen(PORT, '0.0.0.0', async () => {
     
     try {
         await db.init();
+        console.log(`📊 Usuarios cargados en memoria: ${db.getCacheSize()}`);
     } catch(e) {
         console.error("DB Init Error:", e);
     }

@@ -71,6 +71,7 @@ export interface Conversation {
   isAiSignalsEnabled: boolean;
   firstMessageAt?: Date | string;
   escalatedAt?: Date | string;
+  suggestedReplies?: string[];
 }
 
 export interface BotSettings {
@@ -80,6 +81,7 @@ export interface BotSettings {
   freeTrialDays: number;
   ctaLink: string;
   geminiApiKey?: string;
+  proxyUrl?: string;
   isActive: boolean;
   disabledMessage: string;
   archetype: PromptArchetype;
