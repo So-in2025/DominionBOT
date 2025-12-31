@@ -465,6 +465,9 @@ export default function App() {
   
   // Efecto para inicializar el AudioContext y reproducir el sonido de intro en la primera interacción.
   useEffect(() => {
+      // DEBUG: Log BACKEND_URL in App component itself
+      console.log(`%c [APP.TSX] BACKEND_URL al montar App: ${BACKEND_URL}`, 'background: #3498db; color: white; font-weight: bold;');
+
       const initAudioAndPlayIntro = () => {
           console.log("[AudioService] User interaction detected, initializing AudioContext.");
           audioService.initContext();

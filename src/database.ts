@@ -97,7 +97,7 @@ class Database {
               maxPoolSize: 10
           });
           this.isInitialized = true;
-          console.log("✅ [DB] Conexión establecida.");
+          console.log(`✅ [DB] Conexión establecida a la base de datos: ${mongoose.connection.db.databaseName}`); // Log database name
       } catch (e) {
           console.error("❌ [DB] ERROR FATAL DE CONEXIÓN:", e);
           throw e; 
