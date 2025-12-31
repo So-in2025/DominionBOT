@@ -59,23 +59,34 @@ export default function App() {
       window.location.reload();
   };
 
-  // HEALTH CHECK
-  useEffect(() => {
-      fetch(`${BACKEND_URL}/api/health`, { headers: API_HEADERS })
-        .then(res => {
-            if(res.ok) {
-                console.log("✅ SYSTEM ONLINE");
-                setIsServerReady(true);
-                setBackendError(null);
-            } else {
-                setBackendError(`Error ${res.status}: Backend inalcanzable`);
-            }
-        })
-        .catch(err => {
-            console.error("❌ CONEXIÓN FALLIDA:", err);
-            setBackendError(`No conecta a: ${BACKEND_URL}`);
+  // HEALTH CHECK CON REINTENTOS (Solución para servidores que se duermen)
+  const checkHealth = useCallback(async (retries = 3) => {
+    try {
+        const res = await fetch(`${BACKEND_URL}/api/health`, { 
+            headers: API_HEADERS,
+            signal: AbortSignal.timeout(5000) 
         });
+        if (res.ok) {
+            console.log("✅ SYSTEM ONLINE");
+            setIsServerReady(true);
+            setBackendError(null);
+        } else {
+            throw new Error(`Status ${res.status}`);
+        }
+    } catch (err) {
+        if (retries > 0) {
+            console.warn(`[RETRY] Fallo health check, reintentando en 2s... (${retries} restantes)`);
+            setTimeout(() => checkHealth(retries - 1), 2000);
+        } else {
+            console.error("❌ CONEXIÓN FALLIDA DEFINITIVAMENTE:", err);
+            setBackendError(`Backend inactivo o inaccesible en: ${BACKEND_URL}`);
+        }
+    }
   }, []);
+
+  useEffect(() => {
+      checkHealth();
+  }, [checkHealth]);
 
   useEffect(() => {
     if (!token) return;
@@ -98,7 +109,7 @@ export default function App() {
             setBackendError(null);
         } catch (e) {
             console.error("DATA ERROR:", e);
-            setBackendError("Error cargando datos.");
+            setBackendError("Error cargando datos. Revisa el túnel/backend.");
         } finally {
             setIsLoadingSettings(false);
         }
@@ -109,7 +120,6 @@ export default function App() {
         try {
             const res = await fetch(`${BACKEND_URL}/api/status`, { headers: getAuthHeaders(token) });
             if (res.status === 403) {
-                console.log("Sesión expirada. Cerrando...");
                 clearInterval(intervalId);
                 handleLogout();
                 return;
@@ -125,7 +135,7 @@ export default function App() {
                 if(convRes.ok) setConversations(await convRes.json());
             }
         } catch (e) {
-            // Silencioso
+            // Silencioso para polling
         }
     }, 4000);
 
@@ -234,8 +244,8 @@ export default function App() {
 
       <main className="flex-1 overflow-hidden flex relative">
         {backendError && (
-            <div className="absolute top-0 left-0 right-0 bg-red-600/90 text-white text-[10px] font-bold p-2 text-center z-50">
-                ⚠️ ERROR DE RED: {backendError}
+            <div className="absolute top-0 left-0 right-0 bg-red-600/95 text-white text-[10px] font-black p-2 text-center z-[200] shadow-xl animate-pulse">
+                ⚠️ SISTEMA OFFLINE: {backendError}
             </div>
         )}
 
@@ -319,7 +329,7 @@ function LandingPage({ onAuth, onRegister, visibleMessages, isSimTyping, simScro
                     <div className="space-y-10 text-center lg:text-left">
                         <div className={`inline-flex items-center gap-3 px-4 py-1.5 border rounded-full text-[11px] font-black uppercase tracking-[0.3em] backdrop-blur-xl transition-all ${isServerReady ? 'border-green-500/30 bg-green-500/10 text-green-400 shadow-[0_0_20px_rgba(34,197,94,0.2)]' : 'border-red-500/30 bg-red-500/10 text-red-400'}`}>
                             <span className={`w-2 h-2 rounded-full ${isServerReady ? 'bg-green-500 animate-pulse' : 'bg-red-500 animate-pulse'}`}></span>
-                            {isServerReady ? 'SISTEMA ONLINE' : 'BUSCANDO TÚNEL...'}
+                            {isServerReady ? 'SISTEMA ONLINE' : 'CONECTANDO NODO...'}
                         </div>
                         
                         <h1 className="text-6xl md:text-8xl lg:text-[90px] font-black text-white leading-tight tracking-normal py-2">

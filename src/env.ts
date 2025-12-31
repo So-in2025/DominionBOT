@@ -1,11 +1,11 @@
-
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 
 // 1. Detectar qué archivo existe (.env o .env.local)
-const envPath = path.resolve(process.cwd(), '.env');
-const localEnvPath = path.resolve(process.cwd(), '.env.local');
+// Fixed: Removed process.cwd() to resolve type errors; path.resolve defaults to the CWD when relative paths are used.
+const envPath = path.resolve('.env');
+const localEnvPath = path.resolve('.env.local');
 
 // 2. Cargar configuración
 if (fs.existsSync(envPath)) {

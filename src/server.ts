@@ -11,27 +11,41 @@ import { generateBotResponse } from './services/aiService.js';
 
 const app = express();
 
-// 1. LOGGER DE PRODUCCIÓN (Simple)
+// 1. LOGGER DE PRODUCCIÓN
 app.use((req, res, next) => {
-    // Solo loguear endpoints API relevantes para no saturar logs
     if (req.url.startsWith('/api')) {
-        console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} | IP: ${req.ip}`);
+        console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ${req.url}`);
     }
     next();
 });
 
-// 2. CORS - Configurado para soportar preflight y credenciales
-const corsOptions = {
-    origin: '*', // En producción real, cambiar esto por el dominio del frontend
+// 2. CORS DINÁMICO (Configuración para compatibilidad total)
+app.use(cors({
+    origin: function (origin, callback) {
+        // Permitir todos los orígenes pero de forma compatible con credenciales
+        callback(null, true);
+    },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Cache-Control', 'ngrok-skip-browser-warning'],
-    credentials: true
-};
+    allowedHeaders: ['Content-Type', 'Authorization', 'Cache-Control', 'ngrok-skip-browser-warning', 'Accept'],
+    credentials: true,
+    maxAge: 86400
+}) as any);
 
-app.use(cors(corsOptions) as any);
-app.options('*', cors(corsOptions) as any);
+/**
+ * Middleware de Refuerzo de CORS:
+ * Asegura que incluso si un error ocurre fuera del router, 
+ * los headers de acceso estén presentes para evitar el error "Failed to fetch" en el frontend.
+ */
+app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    if (origin) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+    }
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    next();
+});
 
-app.use(express.json({ limit: '10mb' }) as any); // Limite aumentado para cargas útiles grandes
+app.use(express.json({ limit: '10mb' }) as any);
 
 // ==========================================
 // API ROUTES
@@ -43,10 +57,9 @@ app.post('/api/login', async (req: any, res: any) => {
         const user = await db.validateUser(username, password);
         if (user) {
             const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
-            console.log(`[AUTH] Token generado para: ${username}`);
+            console.log(`[AUTH] Login exitoso: ${username}`);
             return res.json({ token, role: user.role });
         }
-        // Delay para mitigar ataques de fuerza bruta
         await new Promise(r => setTimeout(r, 1000));
         res.status(401).json({ message: 'Credenciales inválidas.' });
     } catch (e: any) {
@@ -62,7 +75,7 @@ app.post('/api/register', async (req: any, res: any) => {
         if (!newUser) return res.status(400).json({ message: 'El usuario ya existe.' });
         
         const token = jwt.sign({ id: newUser.id, role: newUser.role }, JWT_SECRET, { expiresIn: '7d' });
-        console.log(`[REGISTER] New user ${username} created.`);
+        console.log(`[REGISTER] Nuevo nodo creado: ${username}`);
         res.status(201).json({ token, role: newUser.role, recoveryKey: newUser.recoveryKey });
     } catch (e) {
         res.status(500).json({ message: 'Error interno.' });
@@ -82,7 +95,6 @@ app.post('/api/settings/simulate', authenticateToken, async (req: any, res: any)
     if (!user) return res.status(404).json({ message: "Usuario no encontrado" });
 
     const conversations = Object.values(user.conversations || {});
-    // Filtrar conversaciones que tengan mensajes
     const testCases = conversations
         .filter((c: any) => c.messages && c.messages.length > 0)
         .slice(0, 3);
@@ -133,9 +145,9 @@ app.get('/api/metrics', authenticateToken, async (req: any, res: any) => {
         hotLeads: hot,
         warmLeads: warm,
         coldLeads: cold,
-        totalMessages: 0, // Calcular real si es necesario
+        totalMessages: 0,
         conversionRate: convs.length > 0 ? Math.round((hot / convs.length) * 100) : 0,
-        revenueEstimated: hot * 150, // Estimación mock
+        revenueEstimated: hot * 150,
         avgEscalationTimeMinutes: 0,
         activeSessions: 1,
         humanDeviationScore: user.governance.humanDeviationScore || 0
@@ -165,25 +177,20 @@ app.post('/api/conversation/update', authenticateToken, handleUpdateConversation
 app.get('/api/conversations', authenticateToken, handleGetConversations);
 
 app.get('/api/health', (req, res) => {
-    const dbStatus = db.isReady() ? 'CONNECTED' : 'CONNECTING';
-    res.status(200).json({ status: 'DOMINION_ONLINE', dbStatus });
+    res.status(200).json({ status: 'DOMINION_ONLINE', database: db.isReady() ? 'CONNECTED' : 'CONNECTING' });
 });
 
 // Inicio del servidor
 app.listen(Number(PORT), '0.0.0.0', async () => {
     console.log(`=================================================`);
-    console.log(`🦅 DOMINION BACKEND (PROD) ACTIVO EN PUERTO ${PORT}`);
+    console.log(`🦅 DOMINION BACKEND ACTIVO EN PUERTO ${PORT}`);
     console.log(`-------------------------------------------------`);
-    console.log(`1. Database: MongoDB Atlas (Direct Connection)`);
-    console.log(`2. Backend: http://0.0.0.0:${PORT}`);
-    console.log(`=================================================`);
     
     try {
         await db.init();
-        const count = await db.getCacheSize(); // Ahora devuelve count de Mongo
-        console.log(`📊 Usuarios registrados en DB: ${count}`);
+        const count = await db.getCacheSize();
+        console.log(`📊 Usuarios registrados: ${count}`);
     } catch(e) {
-        console.error("❌ ERROR CRÍTICO AL INICIAR DB:", e);
-        process.exit(1); // Fallar rápido en producción si no hay DB
+        console.error("❌ ERROR AL INICIAR DB:", e);
     }
 });

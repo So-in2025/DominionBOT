@@ -1,10 +1,10 @@
-
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { JWT_SECRET } from '../env.js';
 
 // Usamos 'export function' explícitamente para evitar problemas de resolución de alias en TS
-export function authenticateToken(req: any, res: any, next: NextFunction) {
+// Fixed: Changed next parameter type to any to resolve "Type 'NextFunction' has no call signatures"
+export function authenticateToken(req: any, res: any, next: any) {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1]; 
 
