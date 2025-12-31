@@ -509,16 +509,20 @@ export default function App() {
 
   // SSE Connection and Event Handling (Replaces Polling)
   useEffect(() => {
-    if (!token || userRole === 'super_admin') { // Super admin does not need real-time chat events
+    // Only connect if there's a token and it's not a super_admin (who doesn't need chat events)
+    if (!token || userRole === 'super_admin') { 
         if (eventSourceRef.current) {
+            console.log("SSE: Closing existing connection (no token or super_admin).");
             eventSourceRef.current.close();
             eventSourceRef.current = null;
         }
         return;
     }
 
+    // Close previous connection before opening a new one, in case token/role changed
     if (eventSourceRef.current) {
-        eventSourceRef.current.close(); // Close existing connection if token changes or component re-renders
+        console.log("SSE: Closing previous connection before re-initializing.");
+        eventSourceRef.current.close(); 
     }
     
     let eventSource: EventSource;
@@ -562,6 +566,7 @@ export default function App() {
         eventSource.addEventListener('connection_status', (event) => {
             const statusData = JSON.parse(event.data);
             console.log("SSE: Connection status update received", statusData);
+            // Only update connection status if it's actually different
             if (statusData.status !== connectionStatus) {
                 setConnectionStatus(statusData.status);
                 switch(statusData.status) {
@@ -579,6 +584,8 @@ export default function App() {
             console.error("SSE: EventSource failed:", error);
             // FIX: Enhanced error handling to check backend health via fetch
             try {
+                // Use non-authenticated health check if possible, or authenticated if needed.
+                // For a health check, API_HEADERS is sufficient as it includes ngrok-skip-browser-warning
                 const healthRes = await fetch(`${BACKEND_URL}/api/health`, { headers: API_HEADERS });
                 if (healthRes.ok) {
                     const healthData = await healthRes.json();
@@ -612,7 +619,7 @@ export default function App() {
             eventSourceRef.current = null;
         }
     };
-  }, [token, userRole, connectionStatus, lastSseErrorAudioPlayed]); // Add lastSseErrorAudioPlayed to dependencies
+  }, [token, userRole]); // FIX: Simplified dependencies to prevent excessive reconnections
 
   useEffect(() => {
     if (!token) {

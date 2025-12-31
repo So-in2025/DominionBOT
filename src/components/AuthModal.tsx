@@ -116,11 +116,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
             }
         } catch (err: any) {
             console.error("Auth Fail", err);
-            if (BACKEND_URL.includes('localhost:3001')) {
-                setError(`Fallo de conexión con localhost:3001. Si estás en Vercel, la variable VITE_BACKEND_URL no está configurada.`);
-            } else {
-                setError(`Fallo de conexión con ${BACKEND_URL}. ¿Backend Activo y Ngrok funcionando?`);
-            }
+            setError(`Fallo de conexión con ${BACKEND_URL}. ¿Backend Activo y Ngrok funcionando? Si no estás en desarrollo, la variable VITE_BACKEND_URL no está configurada correctamente en Vercel.`);
         } finally {
             setLoading(false);
         }

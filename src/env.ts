@@ -21,7 +21,7 @@ if (fs.existsSync(envPath)) {
 // 3. Exportar constantes ÚNICAS para toda la app
 // Si no existe la variable, usa 'dominion-local-secret-key' SIEMPRE.
 export const JWT_SECRET = process.env.JWT_SECRET || 'dominion-local-secret-key';
-export const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/dominion_local';
+export const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://admin:C3WcIkonjZ4tnYUN@cluster0.rxgrwk7.mongodb.net/dominion_local?retryWrites=true&w=majority&appName=Cluster0';
 export const PORT = process.env.PORT || 3001;
 
 // Debug de seguridad (solo muestra los últimos 4 caracteres)

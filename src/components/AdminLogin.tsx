@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { BACKEND_URL, API_HEADERS } from '../config.js';
 
@@ -92,7 +91,7 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin }) => {
             }
         } catch (err) {
             console.error("LOGIN FAIL:", err);
-            setError(`Fallo de conexión con ${BACKEND_URL}. Verifique Ngrok.`);
+            setError(`Fallo de conexión con ${BACKEND_URL}. Verifique la URL del backend y su conexión a internet.`);
         } finally {
             setLoading(false);
         }

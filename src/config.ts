@@ -35,30 +35,14 @@ const getEnvUrl = () => {
 
 const envUrl = getEnvUrl();
 
-// Detección de entorno local sin referenciar 'window' directamente como identificador
-const getIsLocal = () => {
-    try {
-        const win = g.window;
-        if (win && win.location) {
-            const hostname = win.location.hostname;
-            return hostname === 'localhost' || 
-                   hostname === '127.0.0.1' || 
-                   hostname.startsWith('192.168.');
-        }
-    } catch (e) {}
-    return false;
-};
-
-const isLocal = getIsLocal();
-
 /**
  * URL del Backend Resuelta:
  * 1. Prioridad: Variable de entorno configurada (`VITE_BACKEND_URL` en frontend, `BACKEND_URL` en backend).
- * 2. Fallback (si no hay variable de entorno): `http://localhost:3001`.
+ * 2. Fallback (si no hay variable de entorno): `https://unblanketed-waylon-arbitrarily.ngrok-free.dev`.
  */
 export const BACKEND_URL = envUrl 
     ? envUrl.replace(/\/$/, '') 
-    : 'http://localhost:3001'; 
+    : 'https://unblanketed-waylon-arbitrarily.ngrok-free.dev'; 
 
 // HEADERS OBLIGATORIOS PARA EVITAR BLOQUEOS DE NGROK Y CORS
 export const API_HEADERS = {
@@ -79,12 +63,11 @@ export const getAuthHeaders = (token: string | null) => ({
 if (typeof g.window !== 'undefined') {
     console.log(`%c 🦅 DOMINION NETWORK `, 'background: #D4AF37; color: #000; font-weight: bold; padding: 2px 6px; border-radius: 4px;');
     console.log(`%c API_TARGET: ${BACKEND_URL} `, 'color: #D4AF37; font-family: monospace;');
-    if (BACKEND_URL.includes('localhost:3001')) {
-        // Hacemos este mensaje de error aún más visible y con instrucciones.
-        console.error(`%c 🔥 CRÍTICO: El frontend desplegado en Vercel NO está utilizando tu URL de Ngrok. ¡Está apuntando a localhost:3001!`, 'background: #FF0000; color: #FFFFFF; font-weight: bold; padding: 5px 10px; border-radius: 5px; text-shadow: 1px 1px 2px rgba(0,0,0,0.5);');
-        console.warn(`%c PASOS CLAVE PARA LA SOLUCIÓN (PARA DEPLOYMENT EN VERCEL):
+    if (BACKEND_URL.includes('ngrok-free.dev') && !envUrl) {
+        console.warn(`%c ⚠️ ALERTA: El frontend está usando la URL de Ngrok hardcodeada. Asegúrate de configurar VITE_BACKEND_URL en Vercel para una URL dinámica y segura.`, 'background: #FFA500; color: #000000; font-weight: bold; padding: 5px 10px; border-radius: 5px; text-shadow: 1px 1px 2px rgba(0,0,0,0.5);');
+        console.warn(`%c PASOS CLAVE PARA UNA CONFIGURACIÓN ÓPTIMA (PARA DEPLOYMENT EN VERCEL):
 1. Ve a tu proyecto en Vercel -> Settings -> Environment Variables.
-2. Asegúrate de que tienes una variable llamada 'VITE_BACKEND_URL' con el VALOR CORRECTO de tu URL de Ngrok.
+2. Asegúrate de que tienes una variable llamada 'VITE_BACKEND_URL' con el VALOR CORRECTO de tu URL de Ngrok o tu dominio personalizado del backend.
 3. ¡ES FUNDAMENTAL que DISPARES un NUEVO DEPLOYMENT en Vercel después de configurar la variable!`, 'background: #FFA500; color: #000000; font-weight: bold; padding: 10px; border-radius: 5px; line-height: 1.5; white-space: pre-wrap;');
     } else {
         console.log(`%c ✅ CONEXIÓN CONFIRMADA: Frontend usando URL: ${BACKEND_URL}`, 'background: #4CAF50; color: #FFFFFF; font-weight: bold; padding: 3px 8px; border-radius: 3px;');
