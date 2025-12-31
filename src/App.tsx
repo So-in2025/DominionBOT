@@ -124,6 +124,7 @@ const TestimonialsSection = ({ isLoggedIn, token, showToast }: { isLoggedIn: boo
                     setRealTestimonials([]);
                 }
             } catch (e) { 
+                // FIX: Consolidated error handling, removed specific audio call here as it's handled globally.
                 console.error("Fallo de red o de parseo al cargar reseñas:", e); 
                 setRealTestimonials([]);
             }
@@ -427,6 +428,9 @@ export default function App() {
   const [isTyping, setIsTyping] = useState(false);
   const [isLoadingSettings, setIsLoadingSettings] = useState(false);
   const [toast, setToast] = useState<ToastData | null>(null);
+  // New state to manage audio cooldown for SSE errors
+  const [lastSseErrorAudioPlayed, setLastSseErrorAudioPlayed] = useState<number>(0);
+
   // Removed isPollingStatus as SSE replaces polling
 
   // Simulación de Landing
@@ -517,63 +521,89 @@ export default function App() {
         eventSourceRef.current.close(); // Close existing connection if token changes or component re-renders
     }
     
-    // Establish new SSE connection
-    const headers = getAuthHeaders(token);
-    const eventSource = new EventSource(`${BACKEND_URL}/api/events?token=${token}`, { withCredentials: false });
-    eventSourceRef.current = eventSource;
+    let eventSource: EventSource;
+    try {
+        // FIX: Add ngrok-skip-browser-warning as a query parameter for EventSource
+        const sseUrl = `${BACKEND_URL}/api/events?token=${token}&ngrok-skip-browser-warning=true`;
+        console.log(`[SSE-DEBUG] Attempting to connect to SSE endpoint: ${sseUrl}`);
+        eventSource = new EventSource(sseUrl, { withCredentials: false });
+        eventSourceRef.current = eventSource;
 
-    eventSource.onopen = () => {
-        console.log("SSE: Connection opened.");
-        setBackendError(null); // Clear backend error on successful SSE connection
-    };
+        eventSource.onopen = () => {
+            console.log("SSE: Connection opened.");
+            setBackendError(null); // Clear backend error on successful SSE connection
+        };
 
-    eventSource.onmessage = (event) => {
-        // Generic message for debugging, usually specific events are preferred
-        console.log("SSE: Generic message received", event.data);
-    };
+        eventSource.onmessage = (event) => {
+            // Generic message for debugging, usually specific events are preferred
+            console.log("SSE: Generic message received", event.data);
+        };
 
-    eventSource.addEventListener('conversation_update', (event) => {
-        const updatedConversation: Conversation = JSON.parse(event.data);
-        console.log("SSE: Conversation update received", updatedConversation);
-        setConversations(prevConversations => {
-            const existingIndex = prevConversations.findIndex(c => c.id === updatedConversation.id);
-            let newConversations;
-            if (existingIndex > -1) {
-                newConversations = prevConversations.map(c => c.id === updatedConversation.id ? updatedConversation : c);
-            } else {
-                newConversations = [...prevConversations, updatedConversation];
-            }
-            // Sort by last activity to show most recent first
-            return newConversations.sort((a, b) => {
-                const dateA = new Date(a.lastActivity || a.firstMessageAt || 0);
-                const dateB = new Date(b.lastActivity || b.firstMessageAt || 0);
-                return dateB.getTime() - dateA.getTime();
+        eventSource.addEventListener('conversation_update', (event) => {
+            const updatedConversation: Conversation = JSON.parse(event.data);
+            console.log("SSE: Conversation update received", updatedConversation);
+            setConversations(prevConversations => {
+                const existingIndex = prevConversations.findIndex(c => c.id === updatedConversation.id);
+                let newConversations;
+                if (existingIndex > -1) {
+                    newConversations = prevConversations.map(c => c.id === updatedConversation.id ? updatedConversation : c);
+                } else {
+                    newConversations = [...prevConversations, updatedConversation];
+                }
+                // Sort by last activity to show most recent first
+                return newConversations.sort((a, b) => {
+                    const dateA = new Date(a.lastActivity || a.firstMessageAt || 0);
+                    const dateB = new Date(b.lastActivity || b.firstMessageAt || 0);
+                    return dateB.getTime() - dateA.getTime();
+                });
             });
         });
-    });
 
-    eventSource.addEventListener('connection_status', (event) => {
-        const statusData = JSON.parse(event.data);
-        console.log("SSE: Connection status update received", statusData);
-        if (statusData.status !== connectionStatus) {
-            setConnectionStatus(statusData.status);
-            switch(statusData.status) {
-                case ConnectionStatus.GENERATING_QR: audioService.play('connection_establishing'); break;
-                case ConnectionStatus.AWAITING_SCAN: audioService.play('connection_pending'); break;
-                case ConnectionStatus.CONNECTED: audioService.play('connection_success'); break;
-                case ConnectionStatus.DISCONNECTED: audioService.play('connection_disconnected'); break;
+        eventSource.addEventListener('connection_status', (event) => {
+            const statusData = JSON.parse(event.data);
+            console.log("SSE: Connection status update received", statusData);
+            if (statusData.status !== connectionStatus) {
+                setConnectionStatus(statusData.status);
+                switch(statusData.status) {
+                    case ConnectionStatus.GENERATING_QR: audioService.play('connection_establishing'); break;
+                    case ConnectionStatus.AWAITING_SCAN: audioService.play('connection_pending'); break;
+                    case ConnectionStatus.CONNECTED: audioService.play('connection_success'); break;
+                    case ConnectionStatus.DISCONNECTED: audioService.play('connection_disconnected'); break;
+                }
             }
-        }
-        setQrCode(statusData.qr || null);
-        setPairingCode(statusData.pairingCode || null);
-    });
+            setQrCode(statusData.qr || null);
+            setPairingCode(statusData.pairingCode || null);
+        });
 
-    eventSource.onerror = (error) => {
-        console.error("SSE: EventSource failed:", error);
-        setBackendError("Alerta: Fallo de conexión en tiempo real. Reintentando...");
+        eventSource.onerror = async (error) => {
+            console.error("SSE: EventSource failed:", error);
+            // FIX: Enhanced error handling to check backend health via fetch
+            try {
+                const healthRes = await fetch(`${BACKEND_URL}/api/health`, { headers: API_HEADERS });
+                if (healthRes.ok) {
+                    const healthData = await healthRes.json();
+                    setBackendError(`Alerta: Fallo de conexión en tiempo real (SSE). Backend: ${healthData.status}.`);
+                } else {
+                    setBackendError(`Alerta: Fallo de conexión con el nodo central. Código: ${healthRes.status}.`);
+                }
+            } catch (fetchError) {
+                setBackendError("Alerta: Fallo de conexión con el nodo central (red inalcanzable).");
+            }
+            
+            const now = Date.now();
+            const COOLDOWN_MS = 30000; // 30 seconds
+            if (now - lastSseErrorAudioPlayed > COOLDOWN_MS) {
+                audioService.play('alert_error_connection');
+                setLastSseErrorAudioPlayed(now);
+            }
+            // EventSource automatically tries to reconnect, so no need for manual retry here.
+        };
+    } catch (e) {
+        console.error("[SSE-CRITICAL] Error creating EventSource object:", e);
+        setBackendError("Error crítico al inicializar la conexión en tiempo real.");
         audioService.play('alert_error_connection');
-        // EventSource automatically tries to reconnect, so no need for manual retry here.
-    };
+    }
+
 
     return () => {
         if (eventSourceRef.current) {
@@ -582,7 +612,7 @@ export default function App() {
             eventSourceRef.current = null;
         }
     };
-  }, [token, userRole, connectionStatus]); // Rerun if token or userRole changes
+  }, [token, userRole, connectionStatus, lastSseErrorAudioPlayed]); // Add lastSseErrorAudioPlayed to dependencies
 
   useEffect(() => {
     if (!token) {

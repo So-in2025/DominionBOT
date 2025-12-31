@@ -162,6 +162,33 @@ app.get('/api/health', (req, res) => {
     res.status(200).json({ status: 'DOMINION_ONLINE', database: db.isReady() ? 'CONNECTED' : 'CONNECTING' });
 });
 
+// ==========================================
+// ERROR HANDLING AND 404 FALLBACKS
+// ==========================================
+
+// Catch-all for /api routes not found, ensures JSON response for APIs
+app.use('/api', (req: any, res) => {
+    logService.warn(`Ruta de API no encontrada: ${req.method} ${req.originalUrl}`, req.user?.id, req.user?.username);
+    res.status(404).json({ message: 'Ruta de API no encontrada.' });
+});
+
+// General 404 for non-/api routes (typically caught by frontend's index.html rewrite in Vercel)
+app.use((req: any, res) => {
+    logService.warn(`Ruta no encontrada: ${req.method} ${req.originalUrl}`, req.user?.id, req.user?.username);
+    res.status(404).send('Página no encontrada.'); // Still send HTML for non-API paths for clarity
+});
+
+// Global error handler
+app.use((err: any, req: any, res: any, next: any) => {
+    logService.error('Error no manejado en Express', err, req.user?.id, req.user?.username, { path: req.path, method: req.method });
+    console.error("DEBUG: Global Express Error:", err); // Log full error in dev
+    res.status(err.status || 500).json({
+        message: err.message || 'Error interno del servidor.',
+        error: process.env.NODE_ENV === 'development' ? err : {} // Only send full error in dev
+    });
+});
+
+
 app.listen(Number(PORT), '0.0.0.0', async () => {
     console.log(`🦅 DOMINION BACKEND ACTIVO EN PUERTO ${PORT}`);
     try {

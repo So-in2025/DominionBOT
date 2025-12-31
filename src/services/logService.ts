@@ -11,10 +11,12 @@ class LogService {
         this.log('WARN', message, userId, username, metadata);
     }
 
-    public error(message: string, error: any, userId?: string, username?: string): void {
+    // FIX: Updated `error` method signature to accept an optional `additionalMetadata` parameter.
+    public error(message: string, error: any, userId?: string, username?: string, additionalMetadata?: Record<string, any>): void {
         const metadata = {
             error_message: error.message,
             error_stack: error.stack,
+            ...additionalMetadata, // Merge additional metadata provided by the caller
         };
         this.log('ERROR', message, userId, username, metadata);
     }

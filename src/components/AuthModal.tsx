@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { IntendedUse } from '../types';
 import { BACKEND_URL, API_HEADERS } from '../config';
@@ -46,6 +45,9 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
             setAgreedTerms(false);
             setAgreedManifesto(false);
             setTimeout(() => setAnimateIn(true), 10);
+            
+            // CRÍTICO: Log del valor real de BACKEND_URL cuando el modal se abre.
+            console.log(`%c [AUTH_MODAL] Usando BACKEND_URL: ${BACKEND_URL}`, 'background: #3498db; color: white; font-weight: bold;');
         } else {
             setAnimateIn(false);
         }
@@ -114,7 +116,11 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
             }
         } catch (err: any) {
             console.error("Auth Fail", err);
-            setError(`Fallo de conexión con ${BACKEND_URL}. ¿Backend Activo?`);
+            if (BACKEND_URL.includes('localhost:3001')) {
+                setError(`Fallo de conexión con localhost:3001. Si estás en Vercel, la variable VITE_BACKEND_URL no está configurada.`);
+            } else {
+                setError(`Fallo de conexión con ${BACKEND_URL}. ¿Backend Activo y Ngrok funcionando?`);
+            }
         } finally {
             setLoading(false);
         }

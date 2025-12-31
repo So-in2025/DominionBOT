@@ -132,8 +132,8 @@ export const handleGetTtsAudio = async (req: any, res: any) => {
         return res.status(400).send('Nombre de evento inválido.');
     }
 
-    // SECURITY FIX: Only landing_intro is public. All other sounds require auth.
-    if (eventName !== 'landing_intro' && !req.user) {
+    // SECURITY FIX: Only landing_intro and alert_error_connection are public.
+    if (eventName !== 'landing_intro' && eventName !== 'alert_error_connection' && !req.user) {
         return res.status(401).send('Autenticación requerida para este recurso de audio.');
     }
     
