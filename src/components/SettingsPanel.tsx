@@ -1,7 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
 import { BotSettings, PromptArchetype } from '../types';
-import { BACKEND_URL, getAuthHeaders } from '../config.js';
 import { GoogleGenAI } from "@google/genai";
 
 interface SettingsPanelProps {
@@ -29,7 +28,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
   const [isGeneratingIA, setIsGeneratingIA] = useState(false);
 
   useEffect(() => {
-    if (settings) setCurrent(settings);
+    if (settings) {
+        // Ensure ignoredJids is always an array
+        const validatedSettings = { ...settings, ignoredJids: settings.ignoredJids || [] };
+        setCurrent(validatedSettings);
+    }
   }, [settings]);
 
   const save = () => {
@@ -124,7 +127,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
     <div className="flex-1 bg-brand-black p-4 md:p-10 overflow-y-auto h-full custom-scrollbar animate-fade-in font-sans">
       <div className="max-w-6xl mx-auto space-y-10 pb-32">
         
-        {/* HEADER */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-white/5 pb-8">
             <div>
                 <h2 className="text-3xl font-black text-white tracking-tighter uppercase">Cerebro <span className="text-brand-gold">Neural</span></h2>
@@ -140,7 +142,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
             
-            {/* COLUMNA 1: ESTRATEGIA Y PRIVACIDAD */}
             <div className="space-y-8">
                 <section className="bg-brand-surface border border-white/5 rounded-3xl p-8 shadow-2xl">
                     <h3 className="text-sm font-black text-white uppercase tracking-widest mb-8 flex items-center gap-3">
@@ -193,7 +194,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
                 </section>
             </div>
 
-            {/* COLUMNA 2: WIZARD DE CONOCIMIENTO (NUEVO PROCESO ROBUSTO) */}
             <div className="space-y-8">
                 <section className="bg-brand-surface border border-white/5 rounded-[40px] p-0 shadow-2xl overflow-hidden min-h-[650px] flex flex-col relative">
                     <div className="p-8 border-b border-white/5 bg-black/40 flex justify-between items-center backdrop-blur-md">
@@ -212,10 +212,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
                         {wizardStep === 0 && (
                             <div className="space-y-8 animate-fade-in">
                                 <div className="space-y-3">
-                                    <label className="text-[12px] font-black text-brand-gold uppercase tracking-[0.3em]">PASO 0: INFRAESTRUCTURA MOTOR</label>
+                                    <label className="text-[12px] font-black text-brand-gold uppercase tracking-[0.3em]">PASO 0: MOTOR NEURAL</label>
                                     <h4 className="text-2xl font-black text-white tracking-tighter">Vincula tu Gemini API Key</h4>
                                     <p className="text-sm text-gray-400 leading-relaxed font-medium">Es el combustible de la inteligencia. Dominion no guarda esta clave de forma externa fuera de tu nodo.</p>
-                                    <a href="https://aistudio.google.com/app/apikey" target="_blank" className="text-brand-gold text-xs underline font-bold uppercase">Obtener clave gratis aquí</a>
+                                    <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-brand-gold text-xs underline font-bold uppercase">Obtener clave gratis aquí</a>
                                 </div>
                                 <input 
                                     type="password"
@@ -258,14 +258,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
                                         <button 
                                             onClick={handleMagicIA}
                                             disabled={isGeneratingIA || !current.geminiApiKey}
-                                            className={`flex items-center gap-2 px-4 py-2 bg-brand-gold/10 border border-brand-gold/20 rounded-full text-[10px] font-black uppercase text-brand-gold hover:bg-brand-gold hover:text-black transition-all ${isGeneratingIA ? 'animate-pulse' : ''}`}
+                                            className={`flex items-center gap-2 px-4 py-2 bg-brand-gold/10 border border-brand-gold/20 rounded-full text-[10px] font-black uppercase text-brand-gold hover:bg-brand-gold hover:text-black transition-all disabled:opacity-40 disabled:cursor-not-allowed ${isGeneratingIA ? 'animate-pulse' : ''}`}
                                         >
                                             <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                                             {isGeneratingIA ? 'Redactando...' : 'Magia IA'}
                                         </button>
                                     </div>
                                     <h4 className="text-2xl font-black text-white tracking-tighter">Define tu oferta comercial</h4>
-                                    <p className="text-sm text-gray-400 leading-relaxed font-medium">Describe qué vendes y cómo resuelves problemas. Usa el botón "Magia IA" si quieres un pitch profesional basado en tu nombre.</p>
+                                    <p className="text-sm text-gray-400 leading-relaxed font-medium">Describe qué vendes y cómo resuelves problemas. Usa "Magia IA" si quieres un pitch profesional basado en tu nombre.</p>
                                 </div>
                                 <textarea 
                                     value={current.productDescription} 
@@ -275,7 +275,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
                                 />
                                 <div className="flex gap-4 pt-6">
                                     <button onClick={() => setWizardStep(1)} className="flex-1 py-5 text-gray-500 font-black text-[11px] uppercase tracking-widest hover:text-white transition-colors">Atrás</button>
-                                    <button onClick={() => setWizardStep(3)} disabled={current.productDescription.length < 10} className="flex-[2] py-5 bg-white/5 hover:bg-white/10 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest disabled:opacity-20 transition-all border border-white/10 shadow-xl">Siguiente &rarr;</button>
+                                    <button onClick={() => setWizardStep(3)} disabled={!current.productDescription || current.productDescription.length < 10} className="flex-[2] py-5 bg-white/5 hover:bg-white/10 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest disabled:opacity-20 transition-all border border-white/10 shadow-xl">Siguiente &rarr;</button>
                                 </div>
                             </div>
                         )}

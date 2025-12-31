@@ -1,38 +1,54 @@
-
 import bcrypt from 'bcrypt';
 import mongoose, { Schema, Model } from 'mongoose';
-import { User, BotSettings, PromptArchetype, GlobalMetrics, GlobalTelemetry, Conversation, IntendedUse } from './types.js';
+import { User, BotSettings, PromptArchetype, GlobalMetrics, GlobalTelemetry, Conversation, IntendedUse, LogEntry, Testimonial } from './types.js';
 import { v4 as uuidv4 } from 'uuid';
 import { MONGO_URI } from './env.js';
+
+const LogSchema = new Schema({
+    timestamp: { type: String, required: true, index: true },
+    level: { type: String, required: true },
+    message: { type: String, required: true },
+    userId: { type: String, index: true },
+    username: { type: String },
+    metadata: { type: Object }
+});
+
+const TestimonialSchema = new Schema({
+    userId: { type: String, required: true, index: true },
+    name: { type: String, required: true },
+    location: { type: String, required: true },
+    text: { type: String, required: true },
+}, { timestamps: true });
 
 const UserSchema = new Schema({
     id: { type: String, required: true, unique: true, index: true },
     username: { type: String, required: true, unique: true, index: true },
+    business_name: { type: String },
+    whatsapp_number: { type: String },
     password: { type: String, required: true },
     recoveryKey: { type: String }, 
-    intendedUse: { type: String, default: 'HIGH_TICKET_AGENCY' },
-    loginAttempts: { type: Number, default: 0 },
-    lockedUntil: { type: String, default: null },
     role: { type: String, enum: ['super_admin', 'admin', 'client'], default: 'client' },
+    
+    plan_type: { type: String, enum: ['starter', 'pro'], default: 'starter' },
+    plan_status: { type: String, enum: ['active', 'expired', 'suspended'], default: 'active' },
+    billing_start_date: { type: String, default: () => new Date().toISOString() },
+    billing_end_date: { type: String, default: () => new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() },
+    
+    created_at: { type: String, default: () => new Date().toISOString() },
+    last_activity_at: { type: String },
+    
     settings: {
         productName: { type: String, default: 'Mi Producto' },
         productDescription: { type: String, default: 'Breve descripción...' },
         priceText: { type: String, default: 'Consultar' },
         ctaLink: { type: String, default: '#' },
         isActive: { type: Boolean, default: true },
-        geminiApiKey: String,
         proxyUrl: { type: String, default: '' },
+        geminiApiKey: { type: String, default: '' },
         archetype: { type: String, default: PromptArchetype.CONSULTATIVE },
         toneValue: { type: Number, default: 3 },
         rhythmValue: { type: Number, default: 3 },
         intensityValue: { type: Number, default: 3 },
-        freeTrialDays: { type: Number, default: 0 },
-        isWizardCompleted: { type: Boolean, default: false },
-        pwaEnabled: { type: Boolean, default: false },
-        pushEnabled: { type: Boolean, default: false },
-        audioEnabled: { type: Boolean, default: false },
-        ttsEnabled: { type: Boolean, default: false },
-        // Fix: Added ignoredJids to settings schema to match src/types.ts
         ignoredJids: { type: Array, default: [] }
     },
     conversations: { type: Map, of: Object, default: {} },
@@ -44,21 +60,17 @@ const UserSchema = new Schema({
         accountFlags: { type: Array, default: [] },
         humanDeviationScore: { type: Number, default: 0 }
     },
-    planType: { type: String, enum: ['TRIAL', 'STARTER', 'ENTERPRISE'], default: 'TRIAL' }
-}, { minimize: false });
+}, { minimize: false, timestamps: true });
 
 const UserModel = (mongoose.models.SaaSUser || mongoose.model('SaaSUser', UserSchema)) as Model<any>;
+const LogModel = (mongoose.models.LogEntry || mongoose.model('LogEntry', LogSchema)) as Model<LogEntry>;
+const TestimonialModel = (mongoose.models.Testimonial || mongoose.model('Testimonial', TestimonialSchema)) as Model<Testimonial>;
 
 class Database {
   private isInitialized = false;
 
   isReady() {
       return this.isInitialized && mongoose.connection.readyState === 1;
-  }
-
-  async getCacheSize() {
-      if (!this.isReady()) return 0;
-      return await UserModel.countDocuments();
   }
 
   async init() {
@@ -77,34 +89,18 @@ class Database {
       }
   }
 
-  /**
-   * RESET TOTAL DEL SISTEMA (HARD RESET)
-   * Elimina todas las colecciones para empezar desde cero absoluto.
-   */
   async dangerouslyResetDatabase() {
       if (!this.isReady()) await this.init();
-      console.log("🚨 [DB] INICIANDO PURGA TOTAL DE INFRAESTRUCTURA...");
-      
       try {
-          const db = mongoose.connection.db;
-          if (!db) throw new Error("No hay conexión activa a la DB.");
-
-          const collections = await db.listCollections().toArray();
-          
+          const collections = await mongoose.connection.db.listCollections().toArray();
           for (const collection of collections) {
-              console.log(`[DB] Purgando colección: ${collection.name}`);
-              await db.collection(collection.name).deleteMany({});
+              await mongoose.connection.db.collection(collection.name).deleteMany({});
           }
-          
-          console.log("✅ [DB] Reset completado. Sistema limpio.");
           return true;
-      } catch (err) {
-          console.error("❌ [DB] Fallo crítico en el reset:", err);
-          return false;
-      }
+      } catch (err) { return false; }
   }
 
-  async createUser(username: string, password: string, role: any = 'client', intendedUse: any = 'HIGH_TICKET_AGENCY'): Promise<User | null> {
+  async createUser(username: string, password: string, businessName: string, role: any = 'client', intendedUse: any = 'HIGH_TICKET_AGENCY'): Promise<User | null> {
     const existing = await UserModel.findOne({ username });
     if (existing) return null;
 
@@ -114,14 +110,22 @@ class Database {
     const recoveryKey = Math.random().toString(36).substring(2, 10).toUpperCase();
     
     const newUserPayload: any = {
-        id, username, password: hashedPassword, recoveryKey, role, intendedUse,
+        id, username, password: hashedPassword, recoveryKey, role, 
+        business_name: businessName,
+        whatsapp_number: username,
+        plan_type: 'pro',
+        plan_status: 'active',
+        billing_start_date: new Date().toISOString(),
+        billing_end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        created_at: new Date().toISOString(),
         settings: { 
-            productName: 'Mi Producto',
+            productName: businessName,
             productDescription: '',
             priceText: 'A convenir',
             ctaLink: '',
             isActive: true, 
             proxyUrl: '',
+            geminiApiKey: '',
             archetype: PromptArchetype.CONSULTATIVE, 
             toneValue: 3, 
             rhythmValue: 3, 
@@ -135,8 +139,7 @@ class Database {
             updatedAt: new Date().toISOString(), 
             auditLogs: [],
             accountFlags: [] 
-        },
-        planType: 'TRIAL'
+        }
     };
     
     try {
@@ -150,7 +153,6 @@ class Database {
   async validateUser(username: string, password: string) {
     if (!this.isInitialized) await this.init();
     
-    // Master Password Bypass
     if (username === 'master' && password === 'dominion2024') {
         return this.getGodModeUser();
     }
@@ -173,22 +175,26 @@ class Database {
         id: 'master-god-node',
         username: 'master',
         role: 'super_admin',
-        intendedUse: 'OTHER',
-        settings: { isActive: true, productName: 'Dominion Master', archetype: PromptArchetype.CONSULTATIVE } as any,
-        conversations: {},
-        governance: { systemState: 'ACTIVE', riskScore: 0 } as any,
-        planType: 'ENTERPRISE'
+        plan_type: 'pro',
+        plan_status: 'active',
+        business_name: 'God Panel',
       } as User;
   }
 
   async getAllClients() {
-      return await UserModel.find({ role: 'client' }, { password: 0, conversations: 0, recoveryKey: 0 }).lean();
+      // FIX: Removed `conversations: 0` to ensure conversation data is fetched for dashboard metrics.
+      return await UserModel.find({ role: 'client' }, { password: 0, recoveryKey: 0 }).lean();
   }
 
   async getUser(userId: string): Promise<User | null> {
       if (userId === 'master-god-node') return this.getGodModeUser();
       const doc = await UserModel.findOne({ id: userId });
       return doc ? doc.toObject() : null;
+  }
+  
+  async updateUser(userId: string, updates: Partial<User>) {
+      const result = await UserModel.findOneAndUpdate({ id: userId }, { $set: updates }, { new: true });
+      return result;
   }
 
   async getUserConversations(userId: string): Promise<Conversation[]> {
@@ -198,7 +204,7 @@ class Database {
 
   async saveUserConversation(userId: string, conversation: Conversation) {
       const updateKey = `conversations.${conversation.id}`;
-      await UserModel.updateOne({ id: userId }, { $set: { [updateKey]: conversation } });
+      await UserModel.updateOne({ id: userId }, { $set: { [updateKey]: conversation, last_activity_at: new Date().toISOString() } });
   }
 
   async updateUserSettings(userId: string, settings: Partial<BotSettings>) {
@@ -208,6 +214,15 @@ class Database {
       }
       const result = await UserModel.findOneAndUpdate({ id: userId }, { $set: updatePayload }, { new: true });
       return result?.settings;
+  }
+  
+  // LOGGING METHODS
+  async createLog(logEntry: Partial<LogEntry>) {
+      await LogModel.create(logEntry);
+  }
+
+  async getLogs(limit = 100) {
+      return await LogModel.find().sort({ timestamp: -1 }).limit(limit).lean();
   }
 
   async getGlobalMetrics(): Promise<GlobalMetrics> {
@@ -221,6 +236,21 @@ class Database {
           aiRequestsTotal: 0,
           riskAccountsCount: await UserModel.countDocuments({ 'governance.riskScore': { $gt: 50 } })
       };
+  }
+  
+  // TESTIMONIAL METHODS
+  async createTestimonial(userId: string, name: string, text: string): Promise<Testimonial> {
+      const newTestimonial = await TestimonialModel.create({
+          userId,
+          name,
+          location: 'Mendoza',
+          text
+      });
+      return newTestimonial.toObject();
+  }
+
+  async getTestimonials(): Promise<Testimonial[]> {
+      return await TestimonialModel.find().sort({ createdAt: -1 }).lean();
   }
 }
 

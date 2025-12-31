@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { BotSettings, DashboardMetrics, User } from '../types.js';
-import { getAuthHeaders } from '../config.js';
+import { getAuthHeaders } from '../config';
 
 interface AgencyDashboardProps {
   token: string;

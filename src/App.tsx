@@ -1,17 +1,18 @@
 
-import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { Conversation, BotSettings, Message, View, ConnectionStatus, User, LeadStatus, PromptArchetype } from './types.js';
-import Header from './components/Header.js';
-import ConversationList from './components/ConversationList.js';
-import ChatWindow from './components/ChatWindow.js';
-import SettingsPanel from './components/SettingsPanel.js';
-import ConnectionPanel from './components/ConnectionPanel.js';
-import AdminDashboard from './components/Admin/AdminDashboard.js';
-import AuditView from './components/Admin/AuditView.js';
-import AuthModal from './components/AuthModal.js';
-import LegalModal from './components/LegalModal.js'; 
-import AgencyDashboard from './components/AgencyDashboard.js';
-import { BACKEND_URL, API_HEADERS, getAuthHeaders } from './config.js';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
+import { Conversation, BotSettings, Message, View, ConnectionStatus, User, LeadStatus, PromptArchetype, Testimonial } from './types';
+import Header from './components/Header';
+import ConversationList from './components/ConversationList';
+import ChatWindow from './components/ChatWindow';
+import SettingsPanel from './components/SettingsPanel';
+import ConnectionPanel from './components/ConnectionPanel';
+import AdminDashboard from './components/Admin/AdminDashboard';
+import AuditView from './components/Admin/AuditView';
+import AuthModal from './components/AuthModal';
+import LegalModal from './components/LegalModal'; 
+import AgencyDashboard from './components/AgencyDashboard';
+import Toast, { ToastData } from './components/Toast';
+import { BACKEND_URL, API_HEADERS, getAuthHeaders } from './config';
 
 const SIMULATION_SCRIPT = [
     { id: 1, type: 'user', text: "Hola, vi el anuncio. ¿Cómo funciona el bot?", delayBefore: 1000 },
@@ -26,12 +27,41 @@ const SIMULATION_SCRIPT = [
     { id: 10, type: 'bot', text: "Excelente. Te dejo el link para que actives tu nodo de infraestructura ahora mismo y empecemos a filtrar. \n\n👉 https://dominion-bot.vercel.app/\n(Toca en 'Solicitar Acceso')", statusLabel: "VENTA CERRADA ✅", delayBefore: 2200 },
 ];
 
+// Contenido para la Sección de Testimonios
+const PREDEFINED_TESTIMONIALS = [
+    { name: "Marcos López", location: "Mendoza", text: "Bueno, parece que soy el primero en comentar. La verdad entré medio de curioso y no entendía nada al principio, pero después de usarlo un poco me acomodó bastante el WhatsApp." },
+    { name: "Sofía Romano", location: "Mendoza", text: "No suelo comentar estas cosas, pero hasta ahora viene funcionando bien. Se nota que está pensado para ventas posta." },
+    { name: "Javier Torres", location: "Mendoza", text: "Antes era responder mensajes todo el día sin parar. Ahora por lo menos está más ordenado. Eso ya vale la pena." },
+    { name: "Valentina Giménez", location: "Mendoza", text: "Me gustó que no sea complicado como otros bots que probé. Acá fue conectar y listo." },
+    { name: "Lucas Herrera", location: "Mendoza", text: "La verdad me ahorró bastante desgaste. Antes terminaba el día quemado." },
+    { name: "Camila Fernandez", location: "Mendoza", text: "Buen precio para lo que hace. Pensé que iba a ser más caro." },
+    { name: "Mateo Diaz", location: "Mendoza", text: "No es magia, pero ayuda mucho a filtrar. Para mí cumple." },
+    { name: "Lucía Martinez", location: "Mendoza", text: "Todavía lo estoy probando, pero por ahora viene prolijo." },
+    { name: "Agustín Cruz", location: "Mendoza", text: "Pasé de contestar cualquier cosa a responder solo lo importante. Con eso ya estoy conforme." },
+    { name: "Abril Morales", location: "Mendoza", text: "Me sorprendió que no suene a bot." },
+    { name: "Bautista Ríos", location: "Mendoza", text: "Venía de putear bastante con WhatsApp todos los días. Ahora eso bajó bastante." },
+    { name: "Mía Castillo", location: "Mendoza", text: "Se nota que está pensado para comerciantes y no para programadores." },
+    { name: "Tomás Vega", location: "Mendoza", text: "Probé otros sistemas y siempre algo fallaba. Este por ahora se mantiene estable." },
+    { name: "Isabella Pardo", location: "Mendoza", text: "Me gustó que no invade ni molesta a los clientes." },
+    { name: "Felipe Muñoz", location: "Mendoza", text: "No esperaba mucho y me terminó sorprendiendo." },
+    { name: "Martina Flores", location: "Mendoza", text: "Lo estoy usando hace unos días y la experiencia viene siendo buena." },
+    { name: "Santino Rivas", location: "Mendoza", text: "Simple, directo y sin vueltas. Eso suma." },
+    { name: "Victoria Medina", location: "Mendoza", text: "Se agradece algo así para laburar más tranquilo." },
+    { name: "Benjamín Castro", location: "Mendoza", text: "Después de varios días usándolo, lo seguiría usando sin dudas." },
+    { name: "Emilia Ponce", location: "Mendoza", text: "Ojalá lo sigan mejorando, pero la base está muy bien." },
+];
+
 export default function App() {
   const [token, setToken] = useState<string | null>(localStorage.getItem('saas_token'));
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [userRole, setUserRole] = useState<string | null>(localStorage.getItem('saas_role'));
   const [authModal, setAuthModal] = useState<{ isOpen: boolean; mode: 'login' | 'register' }>({ isOpen: false, mode: 'login' });
   const [legalModalType, setLegalModalType] = useState<'privacy' | 'terms' | 'manifesto' | null>(null); 
-  const [currentView, setCurrentView] = useState<View>(View.CHATS);
+  const [currentView, setCurrentView] = useState<View>(() => {
+    const role = localStorage.getItem('saas_role');
+    return role === 'super_admin' ? View.ADMIN_GLOBAL : View.CHATS;
+  });
+  const [showLanding, setShowLanding] = useState(false);
   const [isBotGloballyActive, setIsBotGloballyActive] = useState(true);
   const [auditTarget, setAuditTarget] = useState<User | null>(null);
   
@@ -44,66 +74,66 @@ export default function App() {
   const [backendError, setBackendError] = useState<string | null>(null);
   const [isTyping, setIsTyping] = useState(false);
   const [isLoadingSettings, setIsLoadingSettings] = useState(false);
-  const [isServerReady, setIsServerReady] = useState(false);
+  const [toast, setToast] = useState<ToastData | null>(null);
 
   // Simulación de Landing
   const [visibleMessages, setVisibleMessages] = useState<any[]>([]);
   const [isSimTyping, setIsSimTyping] = useState(false);
   const simScrollRef = useRef<HTMLDivElement>(null);
 
+  const showToast = (message: string, type: 'success' | 'error') => {
+    setToast({ message, type });
+  };
+  
+  const handleNavigate = (view: View) => {
+      if (view === View.CHATS && (window as any).IS_LANDING_VIEW) {
+          setShowLanding(true);
+      } else {
+          setShowLanding(false);
+          setCurrentView(view);
+      }
+      (window as any).IS_LANDING_VIEW = view === View.CHATS && showLanding;
+  };
+
+
   const handleLogout = () => {
       localStorage.removeItem('saas_token');
       localStorage.removeItem('saas_role');
       setToken(null);
       setUserRole(null);
-      window.location.reload();
+      setCurrentUser(null);
+      setShowLanding(false);
+      setCurrentView(View.CHATS);
+      setAuditTarget(null);
   };
 
-  // HEALTH CHECK CON REINTENTOS (Solución para servidores que se duermen)
-  const checkHealth = useCallback(async (retries = 3) => {
-    try {
-        const res = await fetch(`${BACKEND_URL}/api/health`, { 
-            headers: API_HEADERS,
-            signal: AbortSignal.timeout(5000) 
-        });
-        if (res.ok) {
-            console.log("✅ SYSTEM ONLINE");
-            setIsServerReady(true);
-            setBackendError(null);
-        } else {
-            throw new Error(`Status ${res.status}`);
-        }
-    } catch (err) {
-        if (retries > 0) {
-            console.warn(`[RETRY] Fallo health check, reintentando en 2s... (${retries} restantes)`);
-            setTimeout(() => checkHealth(retries - 1), 2000);
-        } else {
-            console.error("❌ CONEXIÓN FALLIDA DEFINITIVAMENTE:", err);
-            setBackendError(`Backend inactivo o inaccesible en: ${BACKEND_URL}`);
-        }
+  useEffect(() => {
+    if (userRole === 'super_admin' && ![View.ADMIN_GLOBAL, View.AUDIT_MODE].includes(currentView)) {
+        setCurrentView(View.ADMIN_GLOBAL);
     }
-  }, []);
+  }, [currentView, userRole]);
 
   useEffect(() => {
-      checkHealth();
-  }, [checkHealth]);
+    if (!token) {
+        setCurrentUser(null);
+        return;
+    };
 
-  useEffect(() => {
-    if (!token) return;
-
-    const loadData = async () => {
+    const loadUserData = async () => {
         setIsLoadingSettings(true);
         try {
-            const [sRes, cRes] = await Promise.all([
+            const [userRes, sRes, cRes] = await Promise.all([
+                fetch(`${BACKEND_URL}/api/user/me`, { headers: getAuthHeaders(token) }),
                 fetch(`${BACKEND_URL}/api/settings`, { headers: getAuthHeaders(token) }),
                 fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) })
             ]);
             
-            if (sRes.status === 403 || cRes.status === 403) {
+            if ([userRes, sRes, cRes].some(res => res.status === 403)) {
                 handleLogout();
                 return;
             }
 
+            if (userRes.ok) setCurrentUser(await userRes.json());
             if (sRes.ok) setSettings(await sRes.json());
             if (cRes.ok) setConversations(await cRes.json());
             setBackendError(null);
@@ -114,7 +144,7 @@ export default function App() {
             setIsLoadingSettings(false);
         }
     };
-    loadData();
+    loadUserData();
 
     const intervalId = setInterval(async () => {
         try {
@@ -134,9 +164,7 @@ export default function App() {
                 const convRes = await fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) });
                 if(convRes.ok) setConversations(await convRes.json());
             }
-        } catch (e) {
-            // Silencioso para polling
-        }
+        } catch (e) { /* Silencioso para polling */ }
     }, 4000);
 
     return () => clearInterval(intervalId);
@@ -169,10 +197,12 @@ export default function App() {
   }, [visibleMessages, isSimTyping]);
 
   const handleLoginSuccess = (t: string, r: string) => {
-      setToken(t);
-      setUserRole(r);
       localStorage.setItem('saas_token', t);
       localStorage.setItem('saas_role', r);
+      setToken(t);
+      setUserRole(r);
+      setShowLanding(false);
+      setCurrentView(r === 'super_admin' ? View.ADMIN_GLOBAL : View.CHATS);
       setAuthModal({ ...authModal, isOpen: false });
   };
 
@@ -218,8 +248,39 @@ export default function App() {
 
   const selectedConversation = conversations.find(c => c.id === selectedConversationId) || null;
 
+  const renderClientView = () => {
+    if (userRole === 'super_admin') {
+      if (currentView === View.AUDIT_MODE && auditTarget) {
+        return <AuditView user={auditTarget} onClose={() => setCurrentView(View.ADMIN_GLOBAL)} onUpdate={(user) => setAuditTarget(user)} showToast={showToast} />;
+      }
+      return <AdminDashboard token={token!} backendUrl={BACKEND_URL} onAudit={(u) => { setAuditTarget(u); setCurrentView(View.AUDIT_MODE); }} showToast={showToast} onLogout={handleLogout} />;
+    }
+
+    switch(currentView) {
+        case View.DASHBOARD:
+            return <AgencyDashboard token={token!} backendUrl={BACKEND_URL} settings={settings!} onUpdateSettings={handleUpdateSettings} />;
+        case View.SETTINGS:
+            return <SettingsPanel settings={settings} isLoading={isLoadingSettings} onUpdateSettings={handleUpdateSettings} onOpenLegal={setLegalModalType} />;
+        case View.CONNECTION:
+            return <ConnectionPanel user={currentUser} status={connectionStatus} qrCode={qrCode} pairingCode={pairingCode} onConnect={handleConnect} onDisconnect={() => fetch(`${BACKEND_URL}/api/disconnect`, { headers: getAuthHeaders(token!) })} />;
+        case View.CHATS:
+        default:
+            return (
+                <div className="flex-1 flex overflow-hidden relative">
+                    <div className={`${selectedConversationId ? 'hidden md:flex' : 'flex'} w-full md:w-auto h-full`}>
+                        <ConversationList conversations={conversations} selectedConversationId={selectedConversationId} onSelectConversation={setSelectedConversationId} backendError={backendError} />
+                    </div>
+                    <div className={`${!selectedConversationId ? 'hidden md:flex' : 'flex'} flex-1 h-full`}>
+                        <ChatWindow conversation={selectedConversation} onSendMessage={handleSendMessage} onToggleBot={(id) => fetch(`${BACKEND_URL}/api/conversation/update`, { method: 'POST', headers: getAuthHeaders(token!), body: JSON.stringify({ id, updates: { isBotActive: !selectedConversation?.isBotActive } }) })} isTyping={isTyping} isBotGloballyActive={isBotGloballyActive} isMobile={true} onBack={() => setSelectedConversationId(null)} onUpdateConversation={(id, updates) => { setConversations(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c)); fetch(`${BACKEND_URL}/api/conversation/update`, { method: 'POST', headers: getAuthHeaders(token!), body: JSON.stringify({ id, updates }) }); }} />
+                    </div>
+                </div>
+            );
+    }
+  }
+
   return (
     <div className="flex flex-col h-screen bg-brand-black text-white font-sans overflow-hidden">
+      <Toast toast={toast} onClose={() => setToast(null)} />
       <AuthModal 
         isOpen={authModal.isOpen} 
         initialMode={authModal.mode} 
@@ -238,7 +299,7 @@ export default function App() {
         isBotGloballyActive={isBotGloballyActive} 
         onToggleBot={() => setIsBotGloballyActive(!isBotGloballyActive)} 
         currentView={currentView} 
-        onNavigate={setCurrentView} 
+        onNavigate={handleNavigate} 
         connectionStatus={connectionStatus}
       />
 
@@ -249,7 +310,7 @@ export default function App() {
             </div>
         )}
 
-        {!token ? (
+        {(!token || showLanding) ? (
             <LandingPage 
                 onAuth={() => setAuthModal({ isOpen: true, mode: 'login' })} 
                 onRegister={() => setAuthModal({ isOpen: true, mode: 'register' })}
@@ -257,74 +318,267 @@ export default function App() {
                 isSimTyping={isSimTyping}
                 simScrollRef={simScrollRef}
                 onOpenLegal={setLegalModalType}
-                isServerReady={isServerReady}
+                isServerReady={true}
+                isLoggedIn={!!token}
+                token={token}
+                showToast={showToast}
             />
         ) : (
-            <>
-              {currentView === View.ADMIN_GLOBAL ? (
-                <AdminDashboard token={token} backendUrl={BACKEND_URL} onAudit={(u) => { setAuditTarget(u); setCurrentView(View.AUDIT_MODE); }} />
-              ) : currentView === View.AUDIT_MODE && auditTarget ? (
-                <AuditView user={auditTarget} onClose={() => setCurrentView(View.ADMIN_GLOBAL)} />
-              ) : currentView === View.DASHBOARD ? (
-                <AgencyDashboard token={token!} backendUrl={BACKEND_URL} settings={settings!} onUpdateSettings={handleUpdateSettings} />
-              ) : currentView === View.SETTINGS ? (
-                <SettingsPanel settings={settings} isLoading={isLoadingSettings} onUpdateSettings={handleUpdateSettings} onOpenLegal={setLegalModalType} />
-              ) : currentView === View.CONNECTION ? (
-                <ConnectionPanel 
-                    status={connectionStatus} 
-                    qrCode={qrCode} 
-                    pairingCode={pairingCode}
-                    onConnect={handleConnect}
-                    onDisconnect={() => fetch(`${BACKEND_URL}/api/disconnect`, { headers: getAuthHeaders(token) })}
-                />
-              ) : (
-                <div className="flex-1 flex overflow-hidden relative">
-                    <div className={`${selectedConversationId ? 'hidden md:flex' : 'flex'} w-full md:w-auto h-full`}>
-                        <ConversationList 
-                            conversations={conversations} 
-                            selectedConversationId={selectedConversationId} 
-                            onSelectConversation={setSelectedConversationId} 
-                            backendError={backendError}
-                        />
-                    </div>
-                    <div className={`${!selectedConversationId ? 'hidden md:flex' : 'flex'} flex-1 h-full`}>
-                        <ChatWindow 
-                            conversation={selectedConversation} 
-                            onSendMessage={handleSendMessage}
-                            onToggleBot={(id) => fetch(`${BACKEND_URL}/api/conversation/update`, {
-                                method: 'POST',
-                                headers: getAuthHeaders(token),
-                                body: JSON.stringify({ id, updates: { isBotActive: !selectedConversation?.isBotActive } })
-                            })}
-                            isTyping={isTyping}
-                            isBotGloballyActive={isBotGloballyActive}
-                            isMobile={true} 
-                            onBack={() => setSelectedConversationId(null)}
-                            onUpdateConversation={(id, updates) => {
-                                setConversations(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
-                                fetch(`${BACKEND_URL}/api/conversation/update`, {
-                                    method: 'POST',
-                                    headers: getAuthHeaders(token),
-                                    body: JSON.stringify({ id, updates })
-                                });
-                            }}
-                        />
-                    </div>
-                </div>
-              )}
-            </>
+            renderClientView()
         )}
       </main>
     </div>
   );
 }
 
-function LandingPage({ onAuth, onRegister, visibleMessages, isSimTyping, simScrollRef, onOpenLegal, isServerReady }: any) {
+// --- START: Landing Page Strategic Sections ---
+
+const HowItWorksSection = () => {
+  const pillars = [
+    {
+      icon: <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M12 19c-3.866 0-7-3.134-7-7s3.134-7 7-7 7 3.134 7 7-3.134 7-7 7zM9 13l2-2 2 2" /></svg>,
+      title: "Filtro Neural Avanzado",
+      description: "Utilizamos el poder de Google Gemini para decodificar la intención real de tus clientes. No solo respondemos, calificamos oportunidades."
+    },
+    {
+      icon: <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>,
+      title: "Soberanía y Seguridad (BYOK)",
+      description: "Opera con tu propia API Key de Google. Tus datos, tus conversaciones y tu inteligencia de negocio son solo tuyos. Siempre."
+    },
+    {
+      icon: <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>,
+      title: "Telemetría de Alto Impacto",
+      description: "Accede a un panel con métricas reales de conversión y rendimiento. Mide lo que importa, optimiza para ganar."
+    }
+  ];
+
+  return (
+    <section className="bg-brand-black py-20 sm:py-32">
+      <div className="max-w-7xl mx-auto px-6 lg:px-8">
+        <div className="max-w-2xl mx-auto lg:mx-0">
+          <h2 className="text-base font-semibold leading-7 text-brand-gold uppercase tracking-widest">El Núcleo Operativo</h2>
+          <p className="mt-2 text-3xl font-black tracking-tight text-white sm:text-4xl">Más que un Bot, una Infraestructura</p>
+          <p className="mt-6 text-lg leading-8 text-gray-400">Dominion no es un chatbot de flujos. Es un sistema de calificación de señales comerciales diseñado para un propósito: la eficiencia.</p>
+        </div>
+        <div className="max-w-2xl mx-auto mt-16 sm:mt-20 lg:mt-24 lg:max-w-none">
+          <dl className="grid max-w-xl grid-cols-1 gap-x-8 gap-y-16 lg:max-w-none lg:grid-cols-3">
+            {pillars.map((pillar) => (
+              <div key={pillar.title} className="flex flex-col group">
+                <dt className="flex items-center gap-x-3 text-base font-semibold leading-7 text-white">
+                  <div className="h-12 w-12 flex-none rounded-lg bg-white/5 group-hover:bg-brand-gold/10 border border-white/10 group-hover:border-brand-gold/30 transition-all flex items-center justify-center text-brand-gold">
+                    {pillar.icon}
+                  </div>
+                  {pillar.title}
+                </dt>
+                <dd className="mt-4 flex flex-auto flex-col text-base leading-7 text-gray-400">
+                  <p className="flex-auto">{pillar.description}</p>
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      </div>
+    </section>
+  );
+};
+
+const TestimonialsSection = ({ isLoggedIn, token, showToast }: { isLoggedIn: boolean, token: string | null, showToast: (message: string, type: 'success' | 'error') => void }) => {
+    const [simulatedTestimonials, setSimulatedTestimonials] = useState<any[]>([]);
+    const [realTestimonials, setRealTestimonials] = useState<Testimonial[]>([]);
+    const [newTestimonialText, setNewTestimonialText] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    useEffect(() => {
+        const fetchRealTestimonials = async () => {
+            try {
+                const res = await fetch(`${BACKEND_URL}/api/testimonials`);
+                if (res.ok) setRealTestimonials(await res.json());
+            } catch (e) { console.error("Failed to fetch testimonials", e); }
+        };
+        fetchRealTestimonials();
+    }, []);
+
+    useEffect(() => {
+        const LAUNCH_KEY = 'dominion_launch_date';
+        const MAX_DAYS = 10;
+        const INTERVAL_MS = 12 * 60 * 60 * 1000;
+
+        let launchDate = localStorage.getItem(LAUNCH_KEY);
+        if (!launchDate) {
+            launchDate = new Date().toISOString();
+            localStorage.setItem(LAUNCH_KEY, launchDate);
+        }
+
+        const updateVisible = () => {
+            const msSinceLaunch = new Date().getTime() - new Date(launchDate!).getTime();
+            const daysSinceLaunch = msSinceLaunch / (1000 * 60 * 60 * 24);
+            
+            if (daysSinceLaunch > MAX_DAYS) {
+                setSimulatedTestimonials(PREDEFINED_TESTIMONIALS);
+                return;
+            }
+
+            const intervalsPassed = Math.floor(msSinceLaunch / INTERVAL_MS);
+            const count = Math.min(intervalsPassed + 1, PREDEFINED_TESTIMONIALS.length);
+            setSimulatedTestimonials(PREDEFINED_TESTIMONIALS.slice(0, count));
+        };
+        
+        updateVisible();
+        const intervalId = setInterval(updateVisible, INTERVAL_MS);
+        return () => clearInterval(intervalId);
+    }, []);
+
+    const allTestimonials = useMemo(() => {
+        const launchDate = new Date(localStorage.getItem('dominion_launch_date') || new Date().toISOString());
+        const INTERVAL_MS = 12 * 60 * 60 * 1000;
+
+        const simulatedWithDates = simulatedTestimonials.map((t, i) => ({
+            ...t,
+            createdAt: new Date(launchDate.getTime() + i * INTERVAL_MS).toISOString(),
+            _id: `sim_${i}`
+        }));
+
+        const combined = [...realTestimonials, ...simulatedWithDates];
+        combined.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        return combined;
+    }, [realTestimonials, simulatedTestimonials]);
+
+    const handleSubmitTestimonial = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!newTestimonialText.trim() || !token) return;
+
+        setIsSubmitting(true);
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/testimonials`, {
+                method: 'POST',
+                headers: getAuthHeaders(token),
+                body: JSON.stringify({ text: newTestimonialText })
+            });
+
+            if (res.ok) {
+                const newTestimonial = await res.json();
+                setRealTestimonials(prev => [newTestimonial, ...prev]);
+                setNewTestimonialText('');
+                showToast('¡Gracias por tu reseña!', 'success');
+            } else {
+                showToast('Hubo un error al enviar tu reseña.', 'error');
+            }
+        } catch (error) {
+            showToast('Error de red al enviar la reseña.', 'error');
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+    
+    const renderTestimonialForm = () => {
+        if (!isLoggedIn) {
+            return (
+                 <div className="mt-20 text-center relative group">
+                    <input type="text" placeholder="Dejá tu reseña..." disabled className="w-full max-w-2xl mx-auto bg-brand-black border border-dashed border-white/20 rounded-2xl py-6 px-8 text-center text-gray-500 cursor-not-allowed" />
+                    <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 w-max opacity-0 group-hover:opacity-100 transition-opacity bg-brand-gold text-black text-xs font-bold px-4 py-2 rounded-lg shadow-lg">
+                        Inicia sesión para compartir tu experiencia
+                    </div>
+                </div>
+            );
+        }
+
+        return (
+            <form onSubmit={handleSubmitTestimonial} className="mt-20 max-w-2xl mx-auto animate-fade-in">
+                <h3 className="text-center font-bold text-brand-gold mb-4 uppercase text-xs tracking-widest">Comparte tu experiencia</h3>
+                <div className="relative">
+                    <textarea value={newTestimonialText} onChange={(e) => setNewTestimonialText(e.target.value)} placeholder="Escribe tu reseña aquí..." className="w-full bg-brand-black border border-white/20 rounded-2xl py-4 px-6 text-white h-28 resize-none focus:border-brand-gold focus:ring-brand-gold/50 outline-none transition" maxLength={250} />
+                    <p className="absolute bottom-3 right-4 text-[10px] text-gray-500 font-mono">{newTestimonialText.length} / 250</p>
+                </div>
+                <button type="submit" disabled={isSubmitting || !newTestimonialText.trim()} className="w-full mt-4 py-4 bg-brand-gold text-black rounded-xl font-black text-xs uppercase tracking-[0.2em] shadow-lg shadow-brand-gold/20 hover:scale-[1.02] transition-transform disabled:opacity-50 disabled:cursor-not-allowed">
+                    {isSubmitting ? 'Publicando...' : 'Publicar Reseña'}
+                </button>
+            </form>
+        );
+    };
+
     return (
-        <div className="relative flex-1 overflow-y-auto overflow-x-hidden bg-brand-black flex flex-col font-sans">
+        <section className="bg-brand-surface py-20 sm:py-32">
+            <div className="mx-auto max-w-7xl px-6 lg:px-8">
+                <div className="mx-auto max-w-xl text-center">
+                    <h2 className="text-lg font-semibold leading-8 tracking-tight text-brand-gold uppercase">El Muro de la Verdad</h2>
+                    <p className="mt-2 text-3xl font-black tracking-tight text-white sm:text-4xl">Resultados Reales de Negocios Reales</p>
+                </div>
+                <div className="mx-auto mt-16 flow-root max-w-2xl sm:mt-20 lg:mx-0 lg:max-w-none">
+                    <div className="columns-1 sm:columns-2 lg:columns-3 gap-8 space-y-8">
+                        {allTestimonials.map((testimonial) => (
+                            <div key={testimonial._id} className="break-inside-avoid p-8 bg-brand-black border border-white/10 rounded-3xl shadow-lg hover:shadow-brand-gold/10 transition-shadow duration-300">
+                                <div className="flex items-center gap-x-4">
+                                    <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center text-brand-gold font-bold text-lg">{testimonial.name.charAt(0)}</div>
+                                    <div>
+                                        <div className="font-semibold text-white">{testimonial.name}</div>
+                                        <div className="text-gray-500 text-xs">{testimonial.location}</div>
+                                    </div>
+                                </div>
+                                <div className="relative mt-6">
+                                    <p className="text-sm leading-6 text-gray-300">“{testimonial.text}”</p>
+                                </div>
+                                <div className="flex items-center justify-between mt-6">
+                                    <div className="flex text-yellow-400">
+                                        {[...Array(5)].map((_, i) => <svg key={i} className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>)}
+                                    </div>
+                                    <div className="text-[9px] font-bold uppercase tracking-widest text-green-400/60 bg-green-500/10 px-2 py-1 rounded-full border border-green-500/20">Cliente Verificado</div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+                 {renderTestimonialForm()}
+            </div>
+        </section>
+    );
+};
+
+const FaqSection = () => {
+    const [openFaq, setOpenFaq] = useState<number | null>(0);
+    const faqs = [
+        { q: "¿En qué se diferencia de otros bots de WhatsApp?", a: "Dominion no es un bot de flujos; es una infraestructura de calificación. Usamos IA avanzada (Google Gemini) para entender la intención real de compra, no solo para seguir un script predefinido." },
+        { q: "¿Es seguro para mi número? ¿Hay riesgo de bloqueo?", a: "Utilizamos el protocolo más seguro disponible (Baileys) que emula la web de WhatsApp. El riesgo de bloqueo es mínimo y está asociado a prácticas de spam, para las cuales la plataforma no está diseñada ni recomendada." },
+        { q: "¿Necesito conocimientos técnicos para usarlo?", a: "No. La configuración inicial es un proceso guiado paso a paso. Una vez que el 'Cerebro Neural' está configurado y el nodo está conectado, el sistema funciona de forma 100% autónoma." },
+        { q: "¿Qué significa 'BYOK' (Bring Your Own Key)?", a: "Significa que tú tienes el control total. Conectas tu propia clave de la API de Google Gemini, lo que asegura que tus datos, tus conversaciones y tus costos de IA son tuyos y de nadie más. Soberanía total." },
+        { q: "¿Qué pasa cuando mi plan expira?", a: "Tu bot no se apaga. Para evitar que pierdas leads, el sistema revierte a las funcionalidades básicas de respuesta (Plan Starter), dándote tiempo para renovar sin interrumpir el servicio." }
+    ];
+
+    return (
+        <section className="bg-brand-black py-20 sm:py-32">
+            <div className="mx-auto max-w-4xl px-6 lg:px-8">
+                <div className="mx-auto max-w-2xl text-center">
+                     <h2 className="text-base font-semibold leading-7 text-brand-gold uppercase tracking-widest">Protocolo de Claridad</h2>
+                     <p className="mt-2 text-3xl font-black tracking-tight text-white sm:text-4xl">Respuestas a Preguntas Estratégicas</p>
+                </div>
+                <div className="mt-16 space-y-4">
+                    {faqs.map((faq, index) => (
+                        <div key={index} className="border border-white/10 rounded-2xl bg-brand-surface overflow-hidden transition-all duration-300">
+                            <button onClick={() => setOpenFaq(openFaq === index ? null : index)} className="w-full flex justify-between items-center text-left p-6">
+                                <span className={`text-base font-semibold ${openFaq === index ? 'text-brand-gold' : 'text-white'}`}>{faq.q}</span>
+                                <svg className={`w-6 h-6 flex-shrink-0 transition-transform duration-300 ${openFaq === index ? 'rotate-45 text-brand-gold' : 'text-gray-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
+                            </button>
+                            <div className={`transition-all duration-500 ease-in-out ${openFaq === index ? 'max-h-96' : 'max-h-0'}`}>
+                                <div className="px-6 pb-6 text-gray-300 text-sm leading-relaxed">
+                                    {faq.a}
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </section>
+    );
+};
+
+// --- END: Landing Page Strategic Sections ---
+
+function LandingPage({ onAuth, onRegister, visibleMessages, isSimTyping, simScrollRef, onOpenLegal, isServerReady, isLoggedIn, token, showToast }: any) {
+    return (
+        <div className="relative flex-1 overflow-y-auto overflow-x-hidden bg-brand-black flex flex-col font-sans custom-scrollbar">
             <div className="absolute inset-0 neural-grid opacity-40 z-0"></div>
             
-            <section className="relative z-10 flex-1 flex flex-col items-center justify-center p-6 md:p-12 pt-24 pb-32">
+            {/* HERO SECTION - INTOCABLE */}
+            <section className="relative z-10 flex flex-col items-center justify-center p-6 md:p-12 pt-24 pb-32">
                 <div className="max-w-7xl w-full grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-24 items-center">
                     <div className="space-y-10 text-center lg:text-left">
                         <div className={`inline-flex items-center gap-3 px-4 py-1.5 border rounded-full text-[11px] font-black uppercase tracking-[0.3em] backdrop-blur-xl transition-all ${isServerReady ? 'border-green-500/30 bg-green-500/10 text-green-400 shadow-[0_0_20px_rgba(34,197,94,0.2)]' : 'border-red-500/30 bg-red-500/10 text-red-400'}`}>
@@ -386,7 +640,14 @@ function LandingPage({ onAuth, onRegister, visibleMessages, isSimTyping, simScro
                     </div>
                 </div>
             </section>
+            
+            {/* INICIO DE NUEVAS SECCIONES */}
+            <HowItWorksSection />
+            <TestimonialsSection isLoggedIn={isLoggedIn} token={token} showToast={showToast} />
+            <FaqSection />
+            {/* FIN DE NUEVAS SECCIONES */}
 
+            {/* FOOTER - INTOCABLE */}
             <footer className="relative z-10 w-full border-t border-white/5 bg-brand-black/95 backdrop-blur-2xl px-12 py-16 flex flex-col md:flex-row justify-between items-center gap-12">
                 <div className="text-center md:text-left space-y-4">
                     <p className="text-white font-black text-lg tracking-tight flex items-center justify-center md:justify-start gap-2">

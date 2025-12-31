@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { ConnectionStatus } from '../types';
+import { ConnectionStatus, User } from '../types';
 
 interface ConnectionPanelProps {
     status: ConnectionStatus;
@@ -8,6 +8,7 @@ interface ConnectionPanelProps {
     pairingCode?: string | null;
     onConnect: (phoneNumber?: string) => Promise<void>; 
     onDisconnect: () => void;
+    user: User | null;
 }
 
 const StatusIndicator: React.FC<{ status: ConnectionStatus }> = ({ status }) => {
@@ -25,16 +26,22 @@ const StatusIndicator: React.FC<{ status: ConnectionStatus }> = ({ status }) => 
     );
 };
 
-const ConnectionPanel: React.FC<ConnectionPanelProps> = ({ status, qrCode, pairingCode, onConnect, onDisconnect }) => {
+const ConnectionPanel: React.FC<ConnectionPanelProps> = ({ status, qrCode, pairingCode, onConnect, onDisconnect, user }) => {
     const [linkMode, setLinkMode] = useState<'QR' | 'NUMBER'>('QR');
     const [phoneNumber, setPhoneNumber] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+
+    useEffect(() => {
+        if (user?.whatsapp_number) {
+            setPhoneNumber(user.whatsapp_number);
+            setLinkMode('NUMBER');
+        }
+    }, [user]);
 
     const handleStartConnect = async () => {
         setIsLoading(true);
         try {
             await onConnect(linkMode === 'NUMBER' ? phoneNumber : undefined);
-            // Liberamos la UI tras 10s para permitir reintentos si falla
             setTimeout(() => setIsLoading(false), 10000); 
         } catch (e) {
             setIsLoading(false);
@@ -76,7 +83,7 @@ const ConnectionPanel: React.FC<ConnectionPanelProps> = ({ status, qrCode, pairi
 
                         {linkMode === 'NUMBER' ? (
                             <div className="space-y-4">
-                                <p className="text-gray-400 text-[11px] leading-relaxed">Ingresa el número <strong>con código de país</strong> (ej: 549261...)</p>
+                                <p className="text-gray-400 text-[11px] leading-relaxed">Tu número de WhatsApp registrado se usará para la conexión.</p>
                                 <div className="relative">
                                     <input 
                                         type="text" 

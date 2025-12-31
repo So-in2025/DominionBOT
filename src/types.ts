@@ -12,7 +12,7 @@ export enum View {
   CONNECTION = 'CONEXIÓN',
   SETTINGS = 'CONFIGURACIÓN',
   SANDBOX = 'SIMULADOR',
-  ADMIN_GLOBAL = 'ADMIN_GLOBAL',
+  ADMIN_GLOBAL = 'DASHBOARD_GLOBAL', // Renombrado para claridad
   AUDIT_MODE = 'AUDIT_MODE'
 }
 
@@ -45,6 +45,10 @@ export type IntendedUse =
   | 'VENTAS_CONSULTIVAS'
   | 'SOPORTE'
   | 'OTRO';
+
+export type PlanType = 'starter' | 'pro';
+export type PlanStatus = 'active' | 'expired' | 'suspended';
+export type LogLevel = 'INFO' | 'WARN' | 'ERROR' | 'AUDIT';
 
 export interface Message {
   id: string;
@@ -83,8 +87,8 @@ export interface BotSettings {
   priceText: string;
   freeTrialDays: number;
   ctaLink: string;
-  geminiApiKey?: string;
   proxyUrl?: string;
+  geminiApiKey?: string;
   isActive: boolean;
   disabledMessage: string;
   archetype: PromptArchetype;
@@ -99,14 +103,24 @@ export interface BotSettings {
   ignoredJids: string[];
 }
 
+// Renamed User to Client and expanded with SaaS fields
 export interface User {
-  id: string;
+  id: string; // client_id
   username: string; 
+  business_name: string;
+  whatsapp_number: string;
   password?: string;
   recoveryKey?: string;
   role: 'admin' | 'client' | 'super_admin';
+  
+  plan_type: PlanType;
+  plan_status: PlanStatus;
+  billing_start_date: string;
+  billing_end_date: string;
+  
   settings: BotSettings;
   conversations: Record<string, Conversation>;
+  
   governance: {
     systemState: SystemState;
     riskScore: number;
@@ -115,10 +129,21 @@ export interface User {
     auditLogs: { timestamp: string; adminId: string; action: string }[];
     humanDeviationScore: number;
   };
-  planType: 'TRIAL' | 'STARTER' | 'ENTERPRISE';
+  
   isSuspended?: boolean; 
-  lastSeen?: string;
+  last_activity_at?: string;
+  created_at: string;
   internalNotes?: string;
+}
+
+export interface LogEntry {
+  _id: string;
+  timestamp: string;
+  level: LogLevel;
+  message: string;
+  userId?: string;
+  username?: string;
+  metadata?: Record<string, any>;
 }
 
 export interface DashboardMetrics {
@@ -133,6 +158,19 @@ export interface DashboardMetrics {
   activeSessions: number;
   humanDeviationScore: number;
 }
+
+export interface GlobalDashboardMetrics {
+  totalClients: number;
+  mrr: number;
+  onlineNodes: number;
+  globalLeads: number;
+  hotLeads: number;
+  atRiskAccounts: number;
+  planDistribution: { pro: number; starter: number };
+  expiringSoon: User[];
+  topClients: { username: string; businessName: string; leadCount: number }[];
+}
+
 
 export interface GlobalMetrics {
     activeVendors: number;
@@ -150,4 +188,13 @@ export interface GlobalTelemetry {
     activeHotLeads: number;
     systemUptime: string;
     riskAccounts: number;
+}
+
+export interface Testimonial {
+  _id: string;
+  userId: string;
+  name: string;
+  location: string;
+  text: string;
+  createdAt: string;
 }

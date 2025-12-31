@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { IntendedUse } from '../types';
-import { BACKEND_URL, API_HEADERS } from '../config.js';
+import { BACKEND_URL, API_HEADERS } from '../config';
 
 interface AuthModalProps {
     isOpen: boolean;
@@ -13,7 +13,8 @@ interface AuthModalProps {
 
 const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onSuccess, onOpenLegal }) => {
     const [mode, setMode] = useState<'login' | 'register' | 'recovery' | 'registered_success'>(initialMode as any);
-    const [username, setUsername] = useState('');
+    const [whatsappNumber, setWhatsappNumber] = useState('');
+    const [businessName, setBusinessName] = useState('');
     const [password, setPassword] = useState('');
     const [intendedUse, setIntendedUse] = useState<IntendedUse>('HIGH_TICKET_AGENCY');
     const [recoveryKey, setRecoveryKey] = useState('');
@@ -35,7 +36,8 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
             setMode(initialMode as any);
             setError('');
             setSuccessMsg('');
-            setUsername('');
+            setWhatsappNumber('');
+            setBusinessName('');
             setPassword('');
             setRecoveryKey('');
             setNewPassword('');
@@ -65,7 +67,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
         }
 
         let endpoint = '';
-        let payload: any = { username };
+        let payload: any = { username: whatsappNumber };
 
         if (mode === 'login') {
             endpoint = '/api/login';
@@ -73,6 +75,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
         } else if (mode === 'register') {
             endpoint = '/api/register';
             payload.password = password;
+            payload.businessName = businessName;
             payload.intendedUse = intendedUse;
         } else if (mode === 'recovery') {
             endpoint = '/api/auth/reset';
@@ -84,7 +87,6 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-            // FIX: Inyección de headers Ngrok desde config.ts
             const res = await fetch(`${BACKEND_URL}${endpoint}`, {
                 method: 'POST',
                 headers: { ...API_HEADERS }, 
@@ -163,25 +165,14 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
 
                             <form onSubmit={handleSubmit} className="space-y-6">
                                 <div className="space-y-1.5">
-                                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Identificador del Nodo</label>
-                                    <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} className="w-full px-5 py-4 bg-black/40 border border-white/5 rounded-xl text-white focus:border-brand-gold outline-none transition-all placeholder-gray-800" placeholder="Ej: admin_mendoza" required />
+                                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">{mode === 'login' ? 'Número de WhatsApp' : 'Tu Número de WhatsApp'}</label>
+                                    <input type="text" value={whatsappNumber} onChange={(e) => setWhatsappNumber(e.target.value.replace(/[^0-9]/g, ''))} className="w-full px-5 py-4 bg-black/40 border border-white/5 rounded-xl text-white focus:border-brand-gold outline-none transition-all placeholder-gray-800 font-mono" placeholder="549261..." required />
                                 </div>
 
                                 {mode === 'register' && (
                                      <div className="space-y-1.5 animate-fade-in">
-                                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Estrategia Operativa</label>
-                                        <select 
-                                            value={intendedUse} 
-                                            onChange={(e) => setIntendedUse(e.target.value as IntendedUse)} 
-                                            className="w-full px-5 py-4 bg-black/40 border border-white/5 rounded-xl text-white focus:border-brand-gold outline-none transition-all text-xs font-bold appearance-none cursor-pointer"
-                                        >
-                                            <option value="HIGH_TICKET_AGENCY">Agencia High Ticket (Cierres)</option>
-                                            <option value="REAL_ESTATE">Inmobiliaria / Bienes Raíces</option>
-                                            <option value="ECOMMERCE_SUPPORT">E-commerce / Ventas Directas</option>
-                                            <option value="DIGITAL_LAUNCHES">Infoproductos & Lanzamientos</option>
-                                            <option value="PROFESSIONAL_SERVICES">Servicios Profesionales</option>
-                                            <option value="OTHER">Otro (Configuración manual)</option>
-                                        </select>
+                                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Tu Nombre o Nombre del Negocio</label>
+                                        <input type="text" value={businessName} onChange={(e) => setBusinessName(e.target.value)} className="w-full px-5 py-4 bg-black/40 border border-white/5 rounded-xl text-white focus:border-brand-gold outline-none transition-all placeholder-gray-800" placeholder="Ej: Agencia Dominion" required />
                                     </div>
                                 )}
 

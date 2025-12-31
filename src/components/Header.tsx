@@ -35,6 +35,19 @@ const Header: React.FC<HeaderProps> = ({
     setIsMenuOpen(false);
   };
 
+  const handleLogoClick = () => {
+      if (!isLoggedIn) return; // No action if not logged in
+      // This special view 'LANDING' is handled in App.tsx to show the landing page component
+      // We toggle between the landing and the default dashboard view.
+      if ((window as any).IS_LANDING_VIEW) {
+           onNavigate(isSuperAdmin ? View.ADMIN_GLOBAL : View.CHATS);
+      } else {
+           onNavigate(View.CHATS); // A bit of a hack, App.tsx will see this and switch to landing
+            (window as any).IS_LANDING_VIEW = true; // Set flag
+      }
+  };
+
+
   const navBtnClass = (view: View) => `
     px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all duration-200
     ${currentView === view 
@@ -47,9 +60,8 @@ const Header: React.FC<HeaderProps> = ({
     <header className="sticky top-0 z-[100] bg-brand-black/95 backdrop-blur-md border-b border-white/10 h-[70px] md:h-[80px] w-full">
       <div className="max-w-[1400px] mx-auto px-4 sm:px-6 h-full flex justify-between items-center">
         
-        {/* IZQUIERDA: LOGO Y TÍTULO */}
         <div className="flex items-center gap-2 sm:gap-4 overflow-hidden flex-shrink-0">
-            <div className="flex items-center gap-2 cursor-pointer group" onClick={() => onNavigate(isLoggedIn && isSuperAdmin ? View.ADMIN_GLOBAL : View.CHATS)}>
+            <div className="flex items-center gap-2 cursor-pointer group" onClick={handleLogoClick}>
                 <div className="w-9 h-9 md:w-10 md:h-10 rounded-lg bg-gradient-to-br from-brand-gold to-brand-gold-dark flex items-center justify-center text-black font-black text-xl shadow-lg">
                     D
                 </div>
@@ -62,13 +74,11 @@ const Header: React.FC<HeaderProps> = ({
             </div>
         </div>
 
-        {/* CENTRO: NAVEGACIÓN DESKTOP REORDENADA */}
         {isLoggedIn && (
             <nav className="hidden lg:flex items-center gap-1 p-1 bg-white/5 rounded-xl border border-white/5 mx-4">
                 {isSuperAdmin ? (
                     <>
-                        <button className={navBtnClass(View.ADMIN_GLOBAL)} onClick={() => handleNavClick(View.ADMIN_GLOBAL)}>Panel Global</button>
-                        <button className={navBtnClass(View.SETTINGS)} onClick={() => handleNavClick(View.SETTINGS)}>Seguridad</button>
+                        <button className={navBtnClass(View.ADMIN_GLOBAL)} onClick={() => handleNavClick(View.ADMIN_GLOBAL)}>Panel de Control</button>
                     </>
                 ) : (
                     <>
@@ -81,22 +91,23 @@ const Header: React.FC<HeaderProps> = ({
             </nav>
         )}
 
-        {/* DERECHA: IA STATUS + BOTONES */}
         <div className="flex items-center gap-2 sm:gap-4">
             {isLoggedIn ? (
                 <div className="flex items-center gap-2 sm:gap-4">
-                    <div className="flex items-center gap-2 bg-black/50 border border-white/10 px-2 sm:px-4 py-1.5 rounded-full">
-                        <div className={`w-1.5 h-1.5 rounded-full ${isBotGloballyActive ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
-                        <span className="text-[8px] md:text-[9px] font-black text-gray-300 uppercase tracking-widest hidden xs:block">
-                            {isBotGloballyActive ? 'IA ACTIVA' : 'IA PAUSADA'}
-                        </span>
-                        <button 
-                            onClick={onToggleBot}
-                            className={`w-7 h-3.5 md:w-8 md:h-4 rounded-full relative transition-colors duration-300 ${isBotGloballyActive ? 'bg-brand-gold' : 'bg-gray-700'}`}
-                        >
-                            <div className={`absolute top-0.5 w-2.5 h-2.5 md:w-3 md:h-3 bg-black rounded-full transition-all duration-300 ${isBotGloballyActive ? 'left-[14px] md:left-[18px]' : 'left-0.5'}`}></div>
-                        </button>
-                    </div>
+                    {!isSuperAdmin && (
+                        <div className="flex items-center gap-2 bg-black/50 border border-white/10 px-2 sm:px-4 py-1.5 rounded-full">
+                            <div className={`w-1.5 h-1.5 rounded-full ${isBotGloballyActive ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
+                            <span className="text-[8px] md:text-[9px] font-black text-gray-300 uppercase tracking-widest hidden xs:block">
+                                {isBotGloballyActive ? 'IA ACTIVA' : 'IA PAUSADA'}
+                            </span>
+                            <button 
+                                onClick={onToggleBot}
+                                className={`w-7 h-3.5 md:w-8 md:h-4 rounded-full relative transition-colors duration-300 ${isBotGloballyActive ? 'bg-brand-gold' : 'bg-gray-700'}`}
+                            >
+                                <div className={`absolute top-0.5 w-2.5 h-2.5 md:w-3 md:h-3 bg-black rounded-full transition-all duration-300 ${isBotGloballyActive ? 'left-[14px] md:left-[18px]' : 'left-0.5'}`}></div>
+                            </button>
+                        </div>
+                    )}
 
                     <button 
                         onClick={onLogoutClick}
@@ -106,7 +117,7 @@ const Header: React.FC<HeaderProps> = ({
                     </button>
 
                     <button 
-                        className="md:hidden flex items-center justify-center w-10 h-10 text-brand-gold bg-white/5 rounded-lg active:scale-90 transition-transform flex-shrink-0 border border-brand-gold/20"
+                        className="lg:hidden flex items-center justify-center w-10 h-10 text-brand-gold bg-white/5 rounded-lg active:scale-90 transition-transform flex-shrink-0 border border-brand-gold/20"
                         onClick={() => setIsMenuOpen(true)}
                     >
                         <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -124,9 +135,8 @@ const Header: React.FC<HeaderProps> = ({
       </div>
     </header>
 
-    {/* MENU LATERAL MÓVIL REORDENADO */}
     {isLoggedIn && isMenuOpen && (
-        <div className="fixed inset-0 z-[200] flex md:hidden">
+        <div className="fixed inset-0 z-[200] flex lg:hidden">
             <div className="absolute inset-0 bg-black/95 backdrop-blur-md" onClick={() => setIsMenuOpen(false)}></div>
             <div className="relative ml-auto w-[280px] bg-brand-surface border-l border-brand-gold/20 h-full flex flex-col shadow-2xl animate-slide-in-right">
                 <div className="p-6 border-b border-white/10 flex justify-between items-center bg-black/40">
@@ -140,22 +150,35 @@ const Header: React.FC<HeaderProps> = ({
                 </div>
                 
                 <div className="flex-1 overflow-y-auto p-4 space-y-2">
-                    <button onClick={() => handleNavClick(View.CHATS)} className={`w-full text-left px-4 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-3 ${currentView === View.CHATS ? 'bg-brand-gold text-black' : 'text-gray-400'}`}>
-                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
-                        Mensajes
-                    </button>
-                    <button onClick={() => handleNavClick(View.DASHBOARD)} className={`w-full text-left px-4 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-3 ${currentView === View.DASHBOARD ? 'bg-brand-gold text-black' : 'text-gray-400'}`}>
-                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
-                        Métricas
-                    </button>
-                    <button onClick={() => handleNavClick(View.CONNECTION)} className={`w-full text-left px-4 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-3 ${currentView === View.CONNECTION ? 'bg-brand-gold text-black' : 'text-gray-400'}`}>
-                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                        Conexión
-                    </button>
-                    <button onClick={() => handleNavClick(View.SETTINGS)} className={`w-full text-left px-4 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-3 ${currentView === View.SETTINGS ? 'bg-brand-gold text-black' : 'text-gray-400'}`}>
-                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /></svg>
-                        Configuración
-                    </button>
+                    {isSuperAdmin ? (
+                         <button onClick={() => handleNavClick(View.ADMIN_GLOBAL)} className={`w-full text-left px-4 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-3 ${currentView === View.ADMIN_GLOBAL ? 'bg-brand-gold text-black' : 'text-gray-400'}`}>
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9V3m0 18a9 9 0 009-9m-9 9a9 9 0 00-9-9" /></svg>
+                            Panel Global
+                        </button>
+                    ) : (
+                        <>
+                            <button onClick={() => handleNavClick(View.CHATS)} className={`w-full text-left px-4 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-3 ${currentView === View.CHATS ? 'bg-brand-gold text-black' : 'text-gray-400'}`}>
+                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
+                                Mensajes
+                            </button>
+                            <button onClick={() => handleNavClick(View.DASHBOARD)} className={`w-full text-left px-4 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-3 ${currentView === View.DASHBOARD ? 'bg-brand-gold text-black' : 'text-gray-400'}`}>
+                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+                                Métricas
+                            </button>
+                            <button onClick={() => handleNavClick(View.CONNECTION)} className={`w-full text-left px-4 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-3 ${currentView === View.CONNECTION ? 'bg-brand-gold text-black' : 'text-gray-400'}`}>
+                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                                Conexión
+                            </button>
+                            <button onClick={() => handleNavClick(View.SETTINGS)} className={`w-full text-left px-4 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-3 ${currentView === View.SETTINGS ? 'bg-brand-gold text-black' : 'text-gray-400'}`}>
+                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /></svg>
+                                Configuración
+                            </button>
+                             <button onClick={handleLogoClick} className={`w-full text-left px-4 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-3 text-gray-400`}>
+                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+                                Ver Landing
+                            </button>
+                        </>
+                    )}
                 </div>
 
                 <div className="p-6 border-t border-white/10 mt-auto bg-black/20">

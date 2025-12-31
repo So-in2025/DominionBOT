@@ -5,6 +5,7 @@ import { connectToWhatsApp, disconnectWhatsApp, sendMessage, getSessionStatus } 
 import { conversationService } from '../services/conversationService.js';
 import { Message } from '../types.js';
 import { db } from '../database.js';
+import { logService } from '../services/logService.js';
 
 const getUserId = (req: any) => req.user.id;
 
@@ -99,4 +100,36 @@ export const handleUpdateConversation = async (req: any, res: any) => {
   
   await db.saveUserConversation(userId, conversation);
   res.json(conversation);
+};
+
+// FIX: Changed res type from Response to any to avoid type conflicts.
+export const handleGetTestimonials = async (req: Request, res: any) => {
+  try {
+    const testimonials = await db.getTestimonials();
+    res.status(200).json(testimonials);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching testimonials.' });
+  }
+};
+
+// FIX: Changed res type from Response to any to avoid type conflicts.
+export const handlePostTestimonial = async (req: any, res: any) => {
+  const { id: userId, username } = req.user;
+  const { text } = req.body;
+
+  if (!text || text.trim().length === 0 || text.trim().length > 250) {
+    return res.status(400).json({ message: 'Testimonial text is invalid.' });
+  }
+
+  try {
+    const user = await db.getUser(userId);
+    if (!user) {
+        return res.status(404).json({ message: 'User not found.' });
+    }
+    const newTestimonial = await db.createTestimonial(userId, user.business_name, text);
+    logService.audit('Nuevo testimonio publicado', userId, username, { text });
+    res.status(201).json(newTestimonial);
+  } catch (error) {
+    res.status(500).json({ message: 'Error creating testimonial.' });
+  }
 };
