@@ -115,6 +115,23 @@ export default function App() {
   const [isSimTyping, setIsSimTyping] = useState(false);
   const simScrollRef = useRef<HTMLDivElement>(null);
 
+  // Efecto para inicializar el AudioContext en la primera interacción del usuario
+  useEffect(() => {
+      const initAudio = () => {
+          console.log("User interaction detected, attempting to initialize AudioContext.");
+          audioService.initContext();
+      };
+      
+      // El listener se elimina automáticamente después de ejecutarse una vez
+      document.addEventListener('click', initAudio, { once: true, capture: true });
+      document.addEventListener('keydown', initAudio, { once: true, capture: true });
+
+      return () => {
+          document.removeEventListener('click', initAudio, true);
+          document.removeEventListener('keydown', initAudio, true);
+      };
+  }, []);
+
   const showToast = (message: string, type: 'success' | 'error') => {
     if (type === 'error') audioService.play('alert_error_generic');
     setToast({ message, type });
