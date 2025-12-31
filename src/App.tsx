@@ -61,7 +61,7 @@ export default function App() {
       const checkServer = async () => {
           try {
               const controller = new AbortController();
-              const timeoutId = setTimeout(() => controller.abort(), 2000); // Rapido en local
+              const timeoutId = setTimeout(() => controller.abort(), 3000); 
               
               const res = await fetch(`${BACKEND_URL}/api/health`, { 
                   method: 'GET',
@@ -271,17 +271,19 @@ export default function App() {
       return (
         <div className="flex flex-col h-screen bg-brand-black text-white font-sans items-center justify-center p-6 relative overflow-hidden">
             <div className="absolute inset-0 bg-noise opacity-10 pointer-events-none"></div>
-            <div className="relative z-10 flex flex-col items-center">
-                <div className="w-20 h-20 border-4 border-brand-gold/20 border-t-brand-gold rounded-full animate-spin mb-8 shadow-[0_0_50px_rgba(212,175,55,0.2)]"></div>
-                <h1 className="text-2xl font-black uppercase tracking-widest text-white mb-2 animate-pulse">Iniciando Sistemas Neurales</h1>
+            <div className="relative z-10 flex flex-col items-center animate-fade-in">
+                <div className="w-24 h-24 border-4 border-brand-gold/20 border-t-brand-gold rounded-full animate-spin mb-8 shadow-[0_0_50px_rgba(212,175,55,0.2)]"></div>
+                <h1 className="text-2xl font-black uppercase tracking-widest text-white mb-2 animate-pulse">Iniciando Sistemas</h1>
                 <p className="text-[10px] text-brand-gold font-bold uppercase tracking-[0.3em]">
                     Buscando Nodo Local o Nube (Intento {serverCheckAttempts})
                 </p>
-                <div className="mt-8 max-w-md text-center">
-                    <p className="text-[10px] text-gray-500 leading-relaxed">
-                        Si estás corriendo en tu PC, asegúrate que la terminal diga "DOMINION CORE ONLINE".
+                <div className="mt-8 max-w-md text-center p-4 bg-black/40 border border-white/5 rounded-xl">
+                    <p className="text-[10px] text-gray-400 font-mono">
+                        Target: <span className="text-brand-gold">{BACKEND_URL}</span>
                     </p>
-                    <p className="text-[9px] text-gray-600 mt-2 font-mono">Target: {BACKEND_URL}</p>
+                    <p className="text-[9px] text-gray-600 mt-2 leading-relaxed">
+                        Asegúrate de ejecutar "npm start" en tu terminal.
+                    </p>
                 </div>
             </div>
         </div>
@@ -315,6 +317,7 @@ export default function App() {
                 isSimTyping={isSimTyping}
                 simScrollRef={simScrollRef}
                 onOpenLegal={setLegalModalType}
+                isServerReady={isServerReady}
             />
         ) : (
             <>
@@ -376,8 +379,7 @@ export default function App() {
   );
 }
 
-function LandingPage({ onAuth, onRegister, visibleMessages, isSimTyping, simScrollRef, onOpenLegal }: any) {
-    // (Sin cambios en LandingPage)
+function LandingPage({ onAuth, onRegister, visibleMessages, isSimTyping, simScrollRef, onOpenLegal, isServerReady }: any) {
     return (
         <div className="relative flex-1 overflow-y-auto overflow-x-hidden bg-brand-black flex flex-col font-sans">
             <div className="absolute inset-0 neural-grid opacity-40 z-0"></div>
@@ -385,10 +387,12 @@ function LandingPage({ onAuth, onRegister, visibleMessages, isSimTyping, simScro
             <section className="relative z-10 flex-1 flex flex-col items-center justify-center p-6 md:p-12 pt-24 pb-32">
                 <div className="max-w-7xl w-full grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-24 items-center">
                     <div className="space-y-10 text-center lg:text-left">
-                        <div className="inline-flex items-center gap-3 px-4 py-1.5 border border-brand-gold/30 rounded-full text-brand-gold text-[11px] font-black uppercase tracking-[0.3em] bg-brand-gold/5 backdrop-blur-xl">
-                            <span className="w-2 h-2 bg-brand-gold rounded-full animate-pulse shadow-[0_0_10px_rgba(212,175,55,0.8)]"></span>
-                            Dominion Bot v2.7.6 Elite
+                        {/* SYSTEM ONLINE BADGE */}
+                        <div className={`inline-flex items-center gap-3 px-4 py-1.5 border rounded-full text-[11px] font-black uppercase tracking-[0.3em] backdrop-blur-xl transition-all ${isServerReady ? 'border-green-500/30 bg-green-500/10 text-green-400 shadow-[0_0_20px_rgba(34,197,94,0.2)]' : 'border-brand-gold/30 bg-brand-gold/5 text-brand-gold'}`}>
+                            <span className={`w-2 h-2 rounded-full ${isServerReady ? 'bg-green-500 animate-pulse' : 'bg-brand-gold animate-pulse'}`}></span>
+                            {isServerReady ? 'SISTEMA ONLINE' : 'Conectando Nodo...'}
                         </div>
+                        
                         <h1 className="text-6xl md:text-8xl lg:text-[90px] font-black text-white leading-tight tracking-normal py-2">
                             Vender en <br />
                             <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-gold via-brand-gold-light to-brand-gold-dark">Piloto Automático</span>
