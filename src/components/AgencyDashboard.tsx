@@ -1,5 +1,4 @@
 
-
 import React, { useEffect, useState } from 'react';
 import { BotSettings, DashboardMetrics, User } from '../types.js';
 import { getAuthHeaders } from '../config';
@@ -157,6 +156,16 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
             <KpiCard label="Peticiones IA (Total)" value={metrics.totalMessages} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01" /></svg>} />
         </div>
 
+        {/* Client Test Bot Simulator - NEW POSITION: After KPI cards */}
+        {currentUser && (
+            <TestBotSimulator 
+                token={token} 
+                backendUrl={backendUrl} 
+                userId={currentUser.id} 
+                showToast={showToast} 
+            />
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 pb-20">
             <div className="lg:col-span-2 bg-brand-surface border border-white/5 rounded-[32px] p-10 shadow-2xl space-y-10 relative overflow-hidden">
                 <div className="flex justify-between items-center">
@@ -205,16 +214,6 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
                 </div>
             </div>
         </div>
-
-        {/* Client Test Bot Simulator */}
-        {currentUser && (
-            <TestBotSimulator 
-                token={token} 
-                backendUrl={backendUrl} 
-                userId={currentUser.id} 
-                showToast={showToast} 
-            />
-        )}
       </div>
     </div>
   );

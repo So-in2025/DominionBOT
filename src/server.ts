@@ -10,6 +10,7 @@ import { optionalAuthenticateToken } from './middleware/optionalAuth.js';
 import { logService } from './services/logService.js';
 import { ttsService } from './services/ttsService.js'; // Importar el nuevo servicio
 // import { sseService } from './services/sseService.js'; // Removed SSE service import
+import { connectToWhatsApp } from './whatsapp/client.js'; // Import connectToWhatsApp
 
 const app = express();
 
@@ -207,6 +208,29 @@ app.listen(Number(PORT), '0.0.0.0', async () => {
         await db.init();
         logService.info('El sistema backend se ha iniciado correctamente.');
         await ttsService.init(); // Inicializar el servicio TTS para pre-generar audios
+
+        // --- NUEVA LÓGICA DE RECONEXIÓN AUTOMÁTICA DE NODOS ---
+        logService.info('[SERVER] Iniciando reconexión automática de nodos de WhatsApp...');
+        const clients = await db.getAllClients();
+        for (const client of clients) {
+            // Solo intentar reconectar si el cliente tiene un plan activo o en trial, y su bot está activo.
+            const isActivePlan = client.plan_status === 'active' || client.plan_status === 'trial';
+            if (isActivePlan && client.settings.isActive) {
+                logService.info(`[SERVER] Intentando reconectar nodo para el cliente: ${client.username} (ID: ${client.id})`, client.id);
+                // No await here to allow connections to happen in parallel without blocking server startup.
+                // Errors will be logged within connectToWhatsApp.
+                connectToWhatsApp(client.id).catch(err => {
+                    logService.error(`[SERVER] Falló la reconexión inicial para el cliente ${client.username}`, err, client.id);
+                });
+                // Pequeña pausa para evitar saturar el sistema si hay muchos clientes
+                await new Promise(resolve => setTimeout(resolve, 500)); 
+            } else {
+                logService.info(`[SERVER] No se reconectará el nodo para el cliente: ${client.username} (plan_status: ${client.plan_status}, bot activo: ${client.settings.isActive})`, client.id);
+            }
+        }
+        logService.info('[SERVER] Proceso de reconexión de nodos iniciado para todos los clientes elegibles.');
+        // --- FIN LÓGICA DE RECONEXIÓN ---
+
     } catch(e) {
         logService.error('Fallo crítico al inicializar la base de datos o el servicio TTS', e);
     }

@@ -238,33 +238,42 @@ export const handleStartTestBot = async (req: any, res: any) => {
         // 2. Opcional: Resetear el contador de leads calificados para un test limpio
         await db.updateUser(targetUserId, { trial_qualified_leads_count: 0 });
 
+        // Responder al cliente inmediatamente para que el frontend pueda iniciar el polling
+        res.status(200).json({ message: 'Secuencia de prueba de bot élite iniciada en background.' });
 
-        // 3. Iniciar la secuencia de mensajes de prueba
-        logService.audit(`Iniciando prueba de bot élite para cliente: ${targetUser.username}`, admin.id, admin.username, { targetUserId });
+        // 3. Iniciar la secuencia de mensajes de prueba en segundo plano
+        (async () => {
+            logService.audit(`Iniciando prueba de bot élite para cliente: ${targetUser.username} en background`, admin.id, admin.username, { targetUserId });
 
-        for (const messageText of TEST_SCRIPT) {
-            // Añadir el mensaje del bot élite como si fuera un usuario al chat del cliente
-            const eliteBotMessage: Message = { 
-                id: `elite_bot_msg_${Date.now()}_${Math.random().toString(36).substring(7)}`, 
-                text: messageText, 
-                sender: 'elite_bot', 
-                timestamp: new Date() 
-            };
-            await conversationService.addMessage(targetUserId, ELITE_BOT_JID, eliteBotMessage, ELITE_BOT_NAME);
+            for (const messageText of TEST_SCRIPT) {
+                // Añadir el mensaje del bot élite como si fuera un usuario al chat del cliente
+                const eliteBotMessage: Message = { 
+                    id: `elite_bot_msg_${Date.now()}_${Math.random().toString(36).substring(7)}`, 
+                    text: messageText, 
+                    sender: 'elite_bot', 
+                    timestamp: new Date() 
+                };
+                await conversationService.addMessage(targetUserId, ELITE_BOT_JID, eliteBotMessage, ELITE_BOT_NAME);
 
-            // Trigger el procesamiento de la IA del cliente objetivo inmediatamente (sin debounce)
-            await processAiResponseForJid(targetUserId, ELITE_BOT_JID);
+                // Trigger el procesamiento de la IA del cliente objetivo inmediatamente (sin debounce)
+                await processAiResponseForJid(targetUserId, ELITE_BOT_JID);
 
-            // Pequeña pausa para simular una conversación
-            await new Promise(resolve => setTimeout(resolve, 3000));
-        }
+                // Pequeña pausa para simular una conversación
+                await new Promise(resolve => setTimeout(resolve, 3000));
+            }
 
-        logService.audit(`Prueba de bot élite finalizada para cliente: ${targetUser.username}`, admin.id, admin.username, { targetUserId });
-        res.status(200).json({ message: 'Secuencia de prueba de bot élite iniciada y completada.' });
+            logService.audit(`Prueba de bot élite finalizada para cliente: ${targetUser.username} en background`, admin.id, admin.username, { targetUserId });
+        })().catch(error => {
+            logService.error(`Error en la secuencia de prueba del bot élite en background para ${targetUserId}`, error, admin.id, admin.username);
+        });
 
     } catch (error: any) {
         logService.error(`Error al iniciar la prueba del bot élite para ${targetUserId}`, error, admin.id, admin.username);
-        res.status(500).json({ message: 'Error interno del servidor al iniciar la prueba.' });
+        // Si el error ocurre antes de enviar la respuesta HTTP, lo manejamos aquí.
+        // Si ya se envió la respuesta, este catch manejará los errores asíncronos en segundo plano.
+        if (!res.headersSent) { // Check if response has already been sent
+            res.status(500).json({ message: 'Error interno del servidor al iniciar la prueba.' });
+        }
     }
 };
 
