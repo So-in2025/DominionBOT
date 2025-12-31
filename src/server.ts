@@ -1,33 +1,28 @@
 
-import dotenv from 'dotenv';
-import path from 'path';
-import fs from 'fs';
-
-// Carga explicita de entorno
-const envPath = path.resolve(process.cwd(), '.env');
-const localEnvPath = path.resolve(process.cwd(), '.env.local');
-if (fs.existsSync(envPath)) dotenv.config({ path: envPath });
-else if (fs.existsSync(localEnvPath)) dotenv.config({ path: localEnvPath });
+// 1. CARGA DE ENTORNO CRÍTICA
+import { JWT_SECRET, PORT } from './env.js';
 
 import express from 'express';
 import cors from 'cors';
 import jwt from 'jsonwebtoken';
 import { db } from './database.js';
-import { authenticateToken } from './middleware/auth.js'; // Importación nombrada
+import { authenticateToken } from './middleware/auth.js';
 import { generateBotResponse } from './services/aiService.js'; 
-import { JWT_SECRET, PORT } from './env.js';
 
 const app = express();
 
-// 1. LOGGER
+// 1. LOGGER DE PRODUCCIÓN (Simple)
 app.use((req, res, next) => {
-    console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ${req.url} | IP: ${req.ip}`);
+    // Solo loguear endpoints API relevantes para no saturar logs
+    if (req.url.startsWith('/api')) {
+        console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} | IP: ${req.ip}`);
+    }
     next();
 });
 
-// 2. CORS
+// 2. CORS - Configurado para soportar preflight y credenciales
 const corsOptions = {
-    origin: '*', 
+    origin: '*', // En producción real, cambiar esto por el dominio del frontend
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Cache-Control', 'ngrok-skip-browser-warning'],
     credentials: true
@@ -36,7 +31,7 @@ const corsOptions = {
 app.use(cors(corsOptions) as any);
 app.options('*', cors(corsOptions) as any);
 
-app.use(express.json() as any);
+app.use(express.json({ limit: '10mb' }) as any); // Limite aumentado para cargas útiles grandes
 
 // ==========================================
 // API ROUTES
@@ -47,15 +42,16 @@ app.post('/api/login', async (req: any, res: any) => {
     try {
         const user = await db.validateUser(username, password);
         if (user) {
-            const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '30d' });
-            console.log(`[AUTH-SUCCESS] Token generado para: ${username}`);
+            const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+            console.log(`[AUTH] Token generado para: ${username}`);
             return res.json({ token, role: user.role });
         }
-        await new Promise(r => setTimeout(r, 500));
+        // Delay para mitigar ataques de fuerza bruta
+        await new Promise(r => setTimeout(r, 1000));
         res.status(401).json({ message: 'Credenciales inválidas.' });
     } catch (e: any) {
         console.error("[AUTH-ERROR]", e);
-        res.status(403).json({ message: e.message });
+        res.status(500).json({ message: "Error interno de servidor." });
     }
 });
 
@@ -65,8 +61,8 @@ app.post('/api/register', async (req: any, res: any) => {
         const newUser = await db.createUser(username, password, 'client', intendedUse);
         if (!newUser) return res.status(400).json({ message: 'El usuario ya existe.' });
         
-        const token = jwt.sign({ id: newUser.id, role: newUser.role }, JWT_SECRET, { expiresIn: '30d' });
-        console.log(`[REGISTER] New user ${username} created. Token issued.`);
+        const token = jwt.sign({ id: newUser.id, role: newUser.role }, JWT_SECRET, { expiresIn: '7d' });
+        console.log(`[REGISTER] New user ${username} created.`);
         res.status(201).json({ token, role: newUser.role, recoveryKey: newUser.recoveryKey });
     } catch (e) {
         res.status(500).json({ message: 'Error interno.' });
@@ -74,17 +70,20 @@ app.post('/api/register', async (req: any, res: any) => {
 });
 
 app.get('/api/settings', authenticateToken, async (req: any, res: any) => {
-    const user = db.getUser(req.user.id);
-    res.json(user?.settings || {});
+    const user = await db.getUser(req.user.id);
+    if (!user) return res.status(404).json({ message: "Usuario no encontrado" });
+    res.json(user.settings || {});
 });
 
 app.post('/api/settings/simulate', authenticateToken, async (req: any, res: any) => {
     const userId = req.user.id;
     const proposedSettings = req.body; 
-    const user = db.getUser(userId);
+    const user = await db.getUser(userId);
     if (!user) return res.status(404).json({ message: "Usuario no encontrado" });
 
-    const testCases = Object.values(user.conversations || {})
+    const conversations = Object.values(user.conversations || {});
+    // Filtrar conversaciones que tengan mensajes
+    const testCases = conversations
         .filter((c: any) => c.messages && c.messages.length > 0)
         .slice(0, 3);
 
@@ -119,9 +118,9 @@ app.post('/api/settings', authenticateToken, async (req: any, res: any) => {
     res.json(updated);
 });
 
-app.get('/api/metrics', authenticateToken, (req: any, res: any) => {
+app.get('/api/metrics', authenticateToken, async (req: any, res: any) => {
     const userId = req.user.id;
-    const user = db.getUser(userId);
+    const user = await db.getUser(userId);
     if (!user) return res.status(404).end();
 
     const convs = Object.values(user.conversations || {});
@@ -134,23 +133,23 @@ app.get('/api/metrics', authenticateToken, (req: any, res: any) => {
         hotLeads: hot,
         warmLeads: warm,
         coldLeads: cold,
-        totalMessages: 0,
-        conversionRate: 0,
-        revenueEstimated: hot * 100, 
+        totalMessages: 0, // Calcular real si es necesario
+        conversionRate: convs.length > 0 ? Math.round((hot / convs.length) * 100) : 0,
+        revenueEstimated: hot * 150, // Estimación mock
         avgEscalationTimeMinutes: 0,
         activeSessions: 1,
-        humanDeviationScore: 0
+        humanDeviationScore: user.governance.humanDeviationScore || 0
     });
 });
 
-app.get('/api/admin/metrics', authenticateToken, (req: any, res: any) => {
+app.get('/api/admin/metrics', authenticateToken, async (req: any, res: any) => {
     if (req.user.role !== 'super_admin') return res.status(403).json({ message: 'Forbidden' });
-    res.json(db.getGlobalMetrics());
+    res.json(await db.getGlobalMetrics());
 });
 
-app.get('/api/admin/users', authenticateToken, (req: any, res: any) => {
+app.get('/api/admin/users', authenticateToken, async (req: any, res: any) => {
     if (req.user.role !== 'super_admin') return res.status(403).json({ message: 'Forbidden' });
-    res.json(db.getAllClients());
+    res.json(await db.getAllClients());
 });
 
 import { 
@@ -167,23 +166,24 @@ app.get('/api/conversations', authenticateToken, handleGetConversations);
 
 app.get('/api/health', (req, res) => {
     const dbStatus = db.isReady() ? 'CONNECTED' : 'CONNECTING';
-    res.status(200).json({ status: 'DOMINION_LOCAL_HOST_ONLINE', dbStatus });
+    res.status(200).json({ status: 'DOMINION_ONLINE', dbStatus });
 });
 
 // Inicio del servidor
 app.listen(Number(PORT), '0.0.0.0', async () => {
     console.log(`=================================================`);
-    console.log(`🦅 DOMINION BACKEND (LOCAL) ACTIVO EN PUERTO ${PORT}`);
+    console.log(`🦅 DOMINION BACKEND (PROD) ACTIVO EN PUERTO ${PORT}`);
     console.log(`-------------------------------------------------`);
-    console.log(`1. Frontend: Gestionado por Vercel`);
-    console.log(`2. Backend: http://localhost:${PORT}`);
-    console.log(`3. Base de Datos: Local (MongoDB)`);
+    console.log(`1. Database: MongoDB Atlas (Direct Connection)`);
+    console.log(`2. Backend: http://0.0.0.0:${PORT}`);
     console.log(`=================================================`);
     
     try {
         await db.init();
-        console.log(`📊 Usuarios cargados en memoria: ${db.getCacheSize()}`);
+        const count = await db.getCacheSize(); // Ahora devuelve count de Mongo
+        console.log(`📊 Usuarios registrados en DB: ${count}`);
     } catch(e) {
-        console.error("DB Init Error:", e);
+        console.error("❌ ERROR CRÍTICO AL INICIAR DB:", e);
+        process.exit(1); // Fallar rápido en producción si no hay DB
     }
 });

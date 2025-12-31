@@ -2,7 +2,8 @@
 import makeWASocket, {
   DisconnectReason,
   makeCacheableSignalKeyStore,
-  WASocket
+  WASocket,
+  fetchLatestBaileysVersion
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import pino from 'pino';
@@ -21,138 +22,121 @@ const codeCache = new Map<string, string>();
 const messageDebounceMap = new Map<string, ReturnType<typeof setTimeout>>();
 const DEBOUNCE_TIME_MS = 6000; 
 
-const logger = pino({ level: 'info' }); 
+const logger = pino({ level: 'silent' }); 
 
 export function getSessionStatus(userId: string): { status: ConnectionStatus, qr?: string, pairingCode?: string } {
     const sock = sessions.get(userId);
     const qr = qrCache.get(userId);
     const code = codeCache.get(userId);
 
+    if (sock?.user) return { status: ConnectionStatus.CONNECTED };
     if (code) return { status: ConnectionStatus.AWAITING_SCAN, pairingCode: code };
     if (qr) return { status: ConnectionStatus.AWAITING_SCAN, qr };
-
-    if (sock && sock.user) {
-        return { status: ConnectionStatus.CONNECTED };
-    }
 
     return { status: ConnectionStatus.DISCONNECTED };
 }
 
 export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
-  console.log(`[WA-INIT] Iniciando secuencia de conexión para ${userId}`);
+  console.log(`[WA-INIT] Nodo ${userId} en secuencia de inicio.`);
   
-  const existingSock = sessions.get(userId);
-  if (existingSock) {
-      console.log(`[WA-INIT] Cerrando sesión anterior en memoria para ${userId}`);
-      existingSock.end(undefined);
+  // 1. Limpieza de procesos colgados
+  const oldSock = sessions.get(userId);
+  if (oldSock) {
+      oldSock.ev.removeAllListeners('connection.update');
+      oldSock.end(undefined);
       sessions.delete(userId);
+  }
+  qrCache.delete(userId);
+  codeCache.delete(userId);
+
+  // 2. Si hay teléfono, forzamos inicio limpio para el código de emparejamiento
+  if (phoneNumber) {
+      console.log(`[WA-PAIR] Modo código para ${phoneNumber}. Purgando base de datos previa.`);
+      await clearBindedSession(userId);
   }
 
   sseService.sendEvent(userId, 'status_update', { status: ConnectionStatus.GENERATING_QR });
   
   try {
-      // 1. Cargar Configuración del Usuario (Proxy)
-      const user = db.getUser(userId);
+      const { version } = await fetchLatestBaileysVersion();
+      const user = await db.getUser(userId);
       const proxyUrl = user?.settings?.proxyUrl;
-      let agent = undefined;
+      let agent = proxyUrl ? new HttpsProxyAgent(proxyUrl) : undefined;
 
-      if (proxyUrl && proxyUrl.trim().length > 0) {
-          console.log(`[WA-PROXY] Configurando agente proxy para ${userId}`);
-          try {
-            agent = new HttpsProxyAgent(proxyUrl);
-          } catch(e) {
-            console.error(`[WA-PROXY-ERR] Proxy inválido para ${userId}:`, e);
-          }
-      } else {
-          console.warn(`[WA-WARN] ${userId} intentando conectar SIN PROXY. Riesgo de bloqueo alto.`);
-      }
-
-      // 2. Cargar Credenciales
       const { state, saveCreds } = await useMongoDBAuthState(userId);
-      console.log(`[WA-AUTH] Credenciales cargadas desde Mongo para ${userId}`);
 
-      // 3. Crear Socket con Agente
       const sock = makeWASocket({
+        version,
         auth: {
           creds: state.creds,
           keys: makeCacheableSignalKeyStore(state.keys, logger),
         },
         printQRInTerminal: false,
         logger,
-        // INYECCIÓN DE AGENTE PROXY
         agent, 
-        // FIRMA DE NAVEGADOR ESTÁNDAR (UBUNTU/CHROME)
-        browser: ['Ubuntu', 'Chrome', '20.0.04'], 
-        syncFullHistory: false, 
-        generateHighQualityLinkPreview: true,
+        browser: ['Dominion OS', 'Chrome', '114.0.0.0'],
+        syncFullHistory: false,
         connectTimeoutMs: 60000,
-        defaultQueryTimeoutMs: 60000, 
-        keepAliveIntervalMs: 30000,
-        emitOwnEvents: false,
-        retryRequestDelayMs: 5000, // Aumentado para evitar rate limits
+        defaultQueryTimeoutMs: 60000,
+        retryRequestDelayMs: 5000,
       });
 
       sessions.set(userId, sock);
       sock.ev.on('creds.update', saveCreds);
 
-      // Pairing Code Logic
+      // 3. Manejo de Pairing Code
       if (phoneNumber && !sock.authState.creds.registered) {
-          console.log(`[WA-PAIR] Preparando solicitud de código para ${phoneNumber}`);
+          console.log(`[WA-PAIR] Solicitando código en 6 segundos...`);
           setTimeout(async () => {
               try {
-                  if (!sessions.has(userId)) return; 
+                  if (!sessions.has(userId)) return;
                   const cleanNumber = phoneNumber.replace(/[^0-9]/g, '');
                   const code = await sock.requestPairingCode(cleanNumber);
-                  console.log(`[WA-PAIR] Código generado para ${userId}: ${code}`);
+                  console.log(`[WA-PAIR] Código generado con éxito: ${code}`);
                   codeCache.set(userId, code);
-                  sseService.sendEvent(userId, 'pairing_code', { code }); 
                   sseService.sendEvent(userId, 'status_update', { status: ConnectionStatus.AWAITING_SCAN, pairingCode: code });
               } catch (err) {
-                  console.error("[WA-PAIR] Error solicitando código:", err);
+                  console.error("[WA-PAIR-ERR]", err);
                   sseService.sendEvent(userId, 'status_update', { status: ConnectionStatus.DISCONNECTED });
               }
-          }, 5000); 
+          }, 6000); 
       }
       
       sock.ev.on('connection.update', async (update) => {
           const { connection, lastDisconnect, qr } = update;
           
           if (qr && !phoneNumber) {
-            console.log(`[WA-QR] QR Recibido para ${userId}`);
             qrCache.set(userId, qr);
-            sseService.sendEvent(userId, 'qr', { qr });
             sseService.sendEvent(userId, 'status_update', { status: ConnectionStatus.AWAITING_SCAN, qr });
           }
 
           if (connection === 'close') {
             const error = (lastDisconnect?.error as Boom)?.output?.statusCode;
-            const reason = (lastDisconnect?.error as Boom)?.output?.payload?.message || (lastDisconnect?.error as any)?.message;
-            console.log(`[WA-CLOSE] Conexión cerrada ${userId}. Code: ${error}, Reason: ${reason}`);
+            const reason = (lastDisconnect?.error as any)?.message || 'Unknown';
             
-            qrCache.delete(userId);
-            codeCache.delete(userId);
+            console.log(`[WA-CLOSE] ${userId} Cerrado. Code: ${error}. Reason: ${reason}`);
 
-            // LOGICA DE RECONEXIÓN
-            if (error === DisconnectReason.loggedOut || error === 401 || error === 403 || error === 405) {
-                console.log(`[WA-CRITICAL] Error fatal (${error}). Purgando sesión.`);
-                // Si es 405/403, es probable que la IP/Proxy haya sido baneada
-                await disconnectWhatsApp(userId); 
-                sseService.sendEvent(userId, 'status_update', { status: ConnectionStatus.DISCONNECTED });
-            } else if (error === 428) {
-                console.log(`[WA-WARN] Rate Limit. Esperando 10s.`);
-                setTimeout(() => connectToWhatsApp(userId, phoneNumber), 10000);
-            } else {
-                console.log(`[WA-RETRY] Reconectando socket...`);
-                connectToWhatsApp(userId, phoneNumber);
+            // TRATAMIENTO DE ERRORES CRÍTICOS
+            if (error === 405 || error === 403 || error === 401 || reason.includes('Connection Failure')) {
+                console.error(`[WA-CRITICAL] Error fatal detectado. Purgando sesión por seguridad.`);
+                await disconnectWhatsApp(userId);
+                return;
+            }
+
+            // RECONEXIÓN AUTOMÁTICA PARA ERRORES TEMPORALES
+            if (error !== DisconnectReason.loggedOut) {
+                console.log(`[WA-RETRY] Intentando reconectar en 3s...`);
+                setTimeout(() => connectToWhatsApp(userId, phoneNumber), 3000);
             }
           } else if (connection === 'open') {
-            console.log(`[WA-OPEN] CONEXIÓN ESTABLECIDA ${userId}`);
+            console.log(`[WA-SUCCESS] Nodo ${userId} conectado y listo.`);
             qrCache.delete(userId);
             codeCache.delete(userId);
             sseService.sendEvent(userId, 'status_update', { status: ConnectionStatus.CONNECTED });
           }
       });
 
+      // 4. Procesamiento de Mensajes (IA)
       sock.ev.on('messages.upsert', async (m) => {
           const msg = m.messages[0];
           if (!msg.message || msg.key.fromMe || msg.key.remoteJid === 'status@broadcast') return;
@@ -161,24 +145,15 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
           const text = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
           if (!text) return;
 
-          const signal: Signal = {
-              id: msg.key.id!,
-              source: 'WHATSAPP',
-              senderId: jid,
-              senderName: msg.pushName || undefined,
-              content: text,
-              timestamp: new Date(Number(msg.messageTimestamp) * 1000)
-          };
-
           const userMessage: Message = {
-            id: signal.id,
-            text: signal.content,
+            id: msg.key.id!,
+            text,
             sender: 'user',
-            timestamp: signal.timestamp,
+            timestamp: new Date(Number(msg.messageTimestamp) * 1000),
           };
           
-          conversationService.addMessage(userId, jid, userMessage, signal.senderName);
-          sseService.sendEvent(userId, 'new_message', { from: jid.split('@')[0], name: signal.senderName || jid.split('@')[0], text: signal.content });
+          await conversationService.addMessage(userId, jid, userMessage, msg.pushName || undefined);
+          sseService.sendEvent(userId, 'new_message', { from: jid.split('@')[0], text });
 
           const debounceKey = `${userId}_${jid}`;
           if (messageDebounceMap.has(debounceKey)) clearTimeout(messageDebounceMap.get(debounceKey));
@@ -186,72 +161,61 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
           const timeout = setTimeout(async () => {
               messageDebounceMap.delete(debounceKey); 
               try {
-                const user = db.getUser(userId);
-                if(!user || user.governance.systemState !== 'ACTIVE') return;
-                const conversation = user.conversations[jid];
-                if (!conversation || conversation.isMuted) return;
+                const user = await db.getUser(userId);
+                if(!user || user.governance.systemState !== 'ACTIVE' || !user.settings.isActive) return;
                 
-                if (user.settings.isActive && conversation.isBotActive) {
-                    await sock.sendPresenceUpdate('composing', jid);
-                    const aiResult = await generateBotResponse(conversation.messages, user.settings);
-                    if (aiResult) {
-                        await sock.sendPresenceUpdate('paused', jid);
-                        conversation.status = aiResult.newStatus;
-                        if (aiResult.responseText) {
-                            await sock.sendMessage(jid, { text: aiResult.responseText });
-                            const botMessage: Message = { id: `bot-${Date.now()}`, text: aiResult.responseText, sender: 'bot', timestamp: new Date() };
-                            conversationService.addMessage(userId, jid, botMessage);
-                            sseService.sendEvent(userId, 'new_message', { from: jid.split('@')[0], name: 'Dominion Bot', text: aiResult.responseText });
-                        }
-                        
-                        if (aiResult.newStatus === LeadStatus.HOT) {
-                            conversation.isMuted = true;
-                            conversation.escalatedAt = new Date();
-                            if (aiResult.suggestedReplies && aiResult.suggestedReplies.length > 0) {
-                                conversation.suggestedReplies = aiResult.suggestedReplies;
-                            }
-                            const hotNote: InternalNote = {
-                              id: uuidv4(),
-                              author: 'AI',
-                              timestamp: new Date(),
-                              note: `🔥 SHADOW MODE ACTIVADO\n- Acción Sugerida: ${aiResult.recommendedAction || 'Cierre manual requerido.'}`
-                            };
-                            conversation.internalNotes = [...(conversation.internalNotes || []), hotNote];
-                        }
-                        db.saveUserConversation(userId, conversation);
+                const userConvs = await conversationService.getConversations(userId);
+                const conversation = userConvs.find(c => c.id === jid);
+                
+                if (!conversation || conversation.isMuted || !conversation.isBotActive) return;
+                
+                await sock.sendPresenceUpdate('composing', jid);
+                const aiResult = await generateBotResponse(conversation.messages, user.settings);
+                
+                if (aiResult) {
+                    await sock.sendPresenceUpdate('paused', jid);
+                    if (aiResult.responseText) {
+                        await sock.sendMessage(jid, { text: aiResult.responseText });
+                        const botMessage: Message = { id: `bot-${Date.now()}`, text: aiResult.responseText, sender: 'bot', timestamp: new Date() };
+                        await conversationService.addMessage(userId, jid, botMessage);
                     }
+                    
+                    // Actualizar status del lead según decisión IA
+                    conversation.status = aiResult.newStatus;
+                    if (aiResult.newStatus === LeadStatus.HOT) {
+                        conversation.isMuted = true;
+                        conversation.suggestedReplies = aiResult.suggestedReplies;
+                    }
+                    await db.saveUserConversation(userId, conversation);
                 }
-              } catch (err) { console.error(`Error processing msg:`, err); }
+              } catch (err) { console.error(`[AI-PROC-ERR]`, err); }
           }, DEBOUNCE_TIME_MS);
           messageDebounceMap.set(debounceKey, timeout);
       });
   } catch (err) {
-      console.error("[WA-FATAL] Fallo al crear socket:", err);
+      console.error("[WA-FATAL]", err);
       sseService.sendEvent(userId, 'status_update', { status: ConnectionStatus.DISCONNECTED });
   }
 }
 
 export async function disconnectWhatsApp(userId: string) {
-    console.log(`[WA-DISCONNECT] Solicitud de desconexión para ${userId}`);
+    console.log(`[WA-DISCONNECT] Desconectando nodo ${userId}`);
     const sock = sessions.get(userId);
-    
     if (sock) {
         try {
+            sock.ev.removeAllListeners('connection.update');
             sock.end(undefined);
         } catch(e) {}
     }
-    
     sessions.delete(userId);
     qrCache.delete(userId);
     codeCache.delete(userId);
-
     await clearBindedSession(userId);
-
     sseService.sendEvent(userId, 'status_update', { status: ConnectionStatus.DISCONNECTED });
 }
 
 export async function sendMessage(userId: string, jid: string, text: string) {
   const sock = sessions.get(userId);
-  if (!sock) throw new Error('Sesión no activa.');
+  if (!sock) throw new Error('Nodo no activo.');
   await sock.sendMessage(jid, { text });
 }

@@ -16,6 +16,7 @@ export const handleSse = (req: any, res: any) => {
       const base64Url = token.split('.')[1];
       const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
       const payload = JSON.parse(atob(base64));
+      // Asumimos que el token es válido si llega aquí, ya que SSE no manda headers standard
       sseService.addClient(payload.id, res);
   } catch(e) {
       res.status(401).end();
@@ -32,8 +33,13 @@ export const handleConnect = async (req: any, res: any) => {
   const userId = getUserId(req);
   const { phoneNumber } = req.body; 
   try {
-    await connectToWhatsApp(userId, phoneNumber);
-    res.status(200).json({ message: 'Proceso de vinculación iniciado.' });
+    // No esperamos await aquí para no bloquear el request http si tarda,
+    // pero idealmente deberíamos manejar errores de inicio.
+    // Para producción, mejor responder "Accepted" y dejar que el socket trabaje.
+    connectToWhatsApp(userId, phoneNumber).catch(err => {
+        console.error(`Error async connect ${userId}:`, err);
+    });
+    res.status(202).json({ message: 'Proceso de vinculación iniciado en background.' });
   } catch (error) {
     res.status(500).json({ message: 'Error al iniciar infraestructura de enlace.' });
   }
@@ -49,9 +55,9 @@ export const handleDisconnect = async (req: any, res: any) => {
   }
 };
 
-export const handleGetConversations = (req: any, res: any) => {
+export const handleGetConversations = async (req: any, res: any) => {
   const userId = getUserId(req);
-  const conversations = conversationService.getConversations(userId);
+  const conversations = await conversationService.getConversations(userId);
   res.status(200).json(conversations);
 };
 
@@ -70,10 +76,11 @@ export const handleSendMessage = async (req: any, res: any) => {
         text,
         timestamp: new Date()
     };
-    conversationService.addMessage(userId, jid, message);
+    await conversationService.addMessage(userId, jid, message);
 
     res.status(200).json({ message: 'Enviado.' });
   } catch (error) {
+    console.error(error);
     res.status(500).json({ message: 'Error enviando mensaje. ¿Está conectado?' });
   }
 };
@@ -82,24 +89,14 @@ export const handleUpdateConversation = async (req: any, res: any) => {
   const userId = getUserId(req);
   const { id, updates } = req.body;
   
-  const user = db.getUser(userId);
-  if (!user || !user.conversations[id]) return res.status(404).json({ message: 'Conversación no encontrada.' });
+  const user = await db.getUser(userId);
+  if (!user || !user.conversations || !user.conversations[id]) {
+      return res.status(404).json({ message: 'Conversación no encontrada.' });
+  }
 
   const conversation = user.conversations[id];
   Object.assign(conversation, updates);
   
   await db.saveUserConversation(userId, conversation);
   res.json(conversation);
-};
-
-export const handleGetSettings = (req: any, res: any) => {
-    const userId = getUserId(req);
-    const user = db.getUser(userId);
-    res.json(user?.settings || {});
-};
-
-export const handleUpdateSettings = (req: any, res: any) => {
-    const userId = getUserId(req);
-    const updated = db.updateUserSettings(userId, req.body);
-    res.json(updated);
 };

@@ -4,15 +4,17 @@ import { db } from '../database.js';
 
 class ConversationService {
   
-  getConversations(userId: string): Conversation[] {
-    return db.getUserConversations(userId);
+  async getConversations(userId: string): Promise<Conversation[]> {
+    return await db.getUserConversations(userId);
   }
 
-  addMessage(userId: string, jid: string, message: Message, leadName?: string) {
-    const user = db.getUser(userId);
+  async addMessage(userId: string, jid: string, message: Message, leadName?: string) {
+    const user = await db.getUser(userId);
     if(!user) return;
 
-    let conversation = user.conversations[jid];
+    // Asegurar que conversations existe
+    const conversations = user.conversations || {};
+    let conversation = conversations[jid];
 
     if (!conversation) {
       const leadIdentifier = jid.split('@')[0];
@@ -43,7 +45,7 @@ class ConversationService {
         conversation.status = LeadStatus.WARM;
     }
 
-    db.saveUserConversation(userId, conversation);
+    await db.saveUserConversation(userId, conversation);
   }
 }
 
