@@ -80,6 +80,11 @@ export default function App() {
   useEffect(() => {
     if (!token) return;
 
+    // AUTO REDIRECT FOR SUPER ADMIN
+    if (localStorage.getItem('saas_role') === 'super_admin') {
+        setCurrentView(View.ADMIN_GLOBAL);
+    }
+
     const loadData = async () => {
         setIsLoadingSettings(true);
         try {
@@ -89,6 +94,7 @@ export default function App() {
             ]);
             
             if (sRes.status === 403 || cRes.status === 403) {
+                console.warn("Token expired or invalid signature. Logging out.");
                 handleLogout();
                 return;
             }
@@ -109,9 +115,7 @@ export default function App() {
         try {
             const res = await fetch(`${BACKEND_URL}/api/status`, { headers: getAuthHeaders(token) });
             if (res.status === 403) {
-                console.log("Sesión expirada. Cerrando...");
-                clearInterval(intervalId);
-                handleLogout();
+                // Silently failing for status check to avoid aggressive logout loop on intermittent network issues
                 return;
             }
 
@@ -163,6 +167,9 @@ export default function App() {
       setUserRole(r);
       localStorage.setItem('saas_token', t);
       localStorage.setItem('saas_role', r);
+      if (r === 'super_admin') {
+          setCurrentView(View.ADMIN_GLOBAL);
+      }
       setAuthModal({ ...authModal, isOpen: false });
   };
 

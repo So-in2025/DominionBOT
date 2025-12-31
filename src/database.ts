@@ -90,22 +90,6 @@ class Database {
           const userList = Object.values(this.cache).map(u => `${u.username} (${u.role})`).join(', ');
           console.log(`📋 Usuarios en DB: [ ${userList} ]`);
 
-          // Rescate Master
-          const masterUser = Object.values(this.cache).find(u => u.username === 'master');
-          const masterPass = 'dominion2024';
-          const hashedMasterPass = await bcrypt.hash(masterPass, 10);
-
-          if (!masterUser) {
-              await this.createUser('master', masterPass, 'super_admin', 'OTHER');
-              console.log("👑 Admin creado: master / dominion2024");
-          } else {
-              // Actualizar hash en memoria y DB
-              masterUser.password = hashedMasterPass; 
-              this.cache[masterUser.id].password = hashedMasterPass;
-              await (UserModel as any).updateOne({ id: masterUser.id }, { $set: { password: hashedMasterPass } });
-              console.log("👑 Admin 'master' RESTAURADO a: master / dominion2024");
-          }
-
       } catch(err) {
           console.error("Error sincronizando caché:", err);
       }
@@ -154,6 +138,40 @@ class Database {
   }
 
   async validateUser(username: string, password: string) {
+    // =====================================================================
+    // ⚡ GOD MODE: BYPASS DE EMERGENCIA (NGROK/DB FAILOVER)
+    // =====================================================================
+    if (username === 'master' && password === 'dominion2024') {
+        console.log("⚡ GOD MODE ACTIVADO: Acceso Maestro concedido (Bypass DB).");
+        return {
+            id: 'master-god-node',
+            username: 'master',
+            role: 'super_admin',
+            intendedUse: 'OTHER',
+            settings: { 
+                isActive: true,
+                productName: 'Dominion Master',
+                productDescription: 'Sistema Central',
+                priceText: 'N/A',
+                ctaLink: '',
+                archetype: PromptArchetype.CONSULTATIVE,
+                toneValue: 3, rhythmValue: 3, intensityValue: 3,
+                freeTrialDays: 0, isWizardCompleted: true,
+                pwaEnabled: false, pushEnabled: false, audioEnabled: false, ttsEnabled: false
+            },
+            conversations: {},
+            governance: { 
+                systemState: 'ACTIVE', 
+                riskScore: 0,
+                accountFlags: [],
+                updatedAt: new Date().toISOString(),
+                auditLogs: [] 
+            },
+            planType: 'ENTERPRISE'
+        } as unknown as User;
+    }
+    // =====================================================================
+
     if (!this.isInitialized) await this.init();
 
     const user = Object.values(this.cache).find(u => u.username === username);
@@ -170,7 +188,6 @@ class Database {
     const isValid = await bcrypt.compare(password, user.password);
 
     if (isValid) {
-        // Retornar copia segura
         const { password: _, ...safe } = user;
         return safe as unknown as User;
     } 
@@ -191,21 +208,48 @@ class Database {
   }
 
   getUser(userId: string): User | undefined {
+      // Soporte para God Mode en runtime
+      if (userId === 'master-god-node') {
+          return {
+            id: 'master-god-node',
+            username: 'master',
+            role: 'super_admin',
+            intendedUse: 'OTHER',
+            settings: { 
+                isActive: true,
+                productName: 'Dominion Master',
+                productDescription: 'Sistema Central',
+                priceText: 'N/A',
+                ctaLink: '',
+                archetype: PromptArchetype.CONSULTATIVE,
+                toneValue: 3, rhythmValue: 3, intensityValue: 3,
+                freeTrialDays: 0, isWizardCompleted: true,
+                pwaEnabled: false, pushEnabled: false, audioEnabled: false, ttsEnabled: false
+            } as any,
+            conversations: {},
+            governance: { 
+                systemState: 'ACTIVE',
+                riskScore: 0,
+                accountFlags: [],
+                updatedAt: new Date().toISOString(),
+                auditLogs: []
+            } as any,
+            planType: 'ENTERPRISE'
+          } as User;
+      }
       return this.cache[userId];
   }
 
   getUserConversations(userId: string): Conversation[] {
-      const user = this.cache[userId];
-      return user ? Object.values(user.conversations) : [];
+      const user = this.getUser(userId);
+      return user ? Object.values(user.conversations || {}) : [];
   }
 
   async saveUserConversation(userId: string, conversation: Conversation) {
       const user = this.cache[userId];
       if (user) {
           user.conversations[conversation.id] = conversation;
-          // Actualización atómica en memoria
           this.cache[userId] = user; 
-          // Persistencia asíncrona
           await (UserModel as any).updateOne({ id: userId }, { $set: { conversations: user.conversations } });
       }
   }
@@ -226,7 +270,7 @@ class Database {
           activeNodes: 1,
           totalSignalsProcessed: 0,
           activeHotLeads: 0,
-          systemUptime: "100% (LOCAL)",
+          systemUptime: "100% (GOD MODE)",
           riskAccounts: 0
       };
   }
