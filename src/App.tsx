@@ -222,7 +222,7 @@ const TestimonialsSection = ({ isLoggedIn, token, showToast }: { isLoggedIn: boo
                 <h3 className="text-center font-bold text-brand-gold mb-4 uppercase text-xs tracking-widest">Comparte tu experiencia</h3>
                 <div className="relative">
                     <textarea value={newTestimonialText} onChange={(e) => setNewTestimonialText(e.target.value)} placeholder="Escribe tu reseña aquí..." className="w-full bg-brand-black border border-white/20 rounded-2xl py-4 px-6 text-white h-28 resize-none focus:border-brand-gold focus:ring-brand-gold/50 outline-none transition" maxLength={250} />
-                    <p className="absolute bottom-3 right-4 text-[10px] text-gray-500 font-mono">{newTestimonialText.length} / 250</p>
+                    <p className="absolute bottom-3 right-4 text-[10px] text-gray-500 font-mono">{newTestimonialText.length} / 250}</p>
                 </div>
                 <button type="submit" disabled={isSubmitting || !newTestimonialText.trim()} className="w-full mt-4 py-4 bg-brand-gold text-black rounded-xl font-black text-xs uppercase tracking-[0.2em] shadow-lg shadow-brand-gold/20 hover:scale-[1.02] transition-transform disabled:opacity-50 disabled:cursor-not-allowed">
                     {isSubmitting ? 'Publicando...' : 'Publicar Reseña'}
@@ -444,7 +444,7 @@ export default function App() {
   // Efecto para inicializar el AudioContext y reproducir el sonido de intro en la primera interacción.
   useEffect(() => {
       const initAudioAndPlayIntro = () => {
-          console.log("User interaction detected, initializing AudioContext.");
+          console.log("[AudioService] User interaction detected, initializing AudioContext.");
           audioService.initContext();
           
           // Si estamos en la landing page, reproducir el sonido de intro en la primera interacción.
@@ -509,20 +509,34 @@ export default function App() {
 
   // SSE Connection and Event Handling (Replaces Polling)
   useEffect(() => {
-    // Only connect if there's a token and it's not a super_admin (who doesn't need chat events)
-    if (!token || userRole === 'super_admin') { 
-        if (eventSourceRef.current) {
-            console.log("SSE: Closing existing connection (no token or super_admin).");
-            eventSourceRef.current.close();
-            eventSourceRef.current = null;
-        }
+    // Determine if an SSE connection is needed for the current user/role
+    const shouldConnect = !!token && userRole !== 'super_admin';
+
+    // If no connection is needed, ensure any existing connection is closed.
+    if (!shouldConnect) {
+      if (eventSourceRef.current) {
+        console.log("SSE: Closing existing connection (no token or super_admin needed).");
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
+      return; // Exit early as no connection is desired.
+    }
+
+    // At this point, shouldConnect is true.
+    // Check if an EventSource already exists and is OPEN.
+    // If it is, and we want a connection, then there's no need to create a new one.
+    if (eventSourceRef.current && eventSourceRef.current.readyState === EventSource.OPEN) {
+        console.log("SSE: Existing connection is already OPEN, skipping re-initialization.");
         return;
     }
 
-    // Close previous connection before opening a new one, in case token/role changed
-    if (eventSourceRef.current) {
-        console.log("SSE: Closing previous connection before re-initializing.");
-        eventSourceRef.current.close(); 
+    // If we reach here, shouldConnect is true AND there's no open EventSource.
+    // This means we need to either create a new one or re-initialize a closed/connecting one.
+    // First, ensure any non-OPEN existing connection is explicitly closed.
+    if (eventSourceRef.current) { // It might be in CONNECTING or CLOSED state
+        console.log(`SSE: Closing existing non-OPEN connection (readyState: ${eventSourceRef.current.readyState}) before re-initialization.`);
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
     }
     
     let eventSource: EventSource;
@@ -582,28 +596,31 @@ export default function App() {
 
         eventSource.onerror = async (error) => {
             console.error("SSE: EventSource failed:", error);
-            // FIX: Enhanced error handling to check backend health via fetch
-            try {
-                // Use non-authenticated health check if possible, or authenticated if needed.
-                // For a health check, API_HEADERS is sufficient as it includes ngrok-skip-browser-warning
-                const healthRes = await fetch(`${BACKEND_URL}/api/health`, { headers: API_HEADERS });
-                if (healthRes.ok) {
-                    const healthData = await healthRes.json();
-                    setBackendError(`Alerta: Fallo de conexión en tiempo real (SSE). Backend: ${healthData.status}.`);
-                } else {
-                    setBackendError(`Alerta: Fallo de conexión con el nodo central. Código: ${healthRes.status}.`);
+            // Only fetch health status and play audio if the EventSource is truly CLOSED
+            // This prevents false positives during transient network issues or when it's in a CONNECTING state.
+            if (eventSourceRef.current && eventSourceRef.current.readyState === EventSource.CLOSED) {
+                try {
+                    // Use non-authenticated health check if possible, or authenticated if needed.
+                    // For a health check, API_HEADERS is sufficient as it includes ngrok-skip-browser-warning
+                    const healthRes = await fetch(`${BACKEND_URL}/api/health`, { headers: API_HEADERS });
+                    if (healthRes.ok) {
+                        const healthData = await healthRes.json();
+                        setBackendError(`Alerta: Fallo de conexión en tiempo real (SSE). Backend: ${healthData.status}.`);
+                    } else {
+                        setBackendError(`Alerta: Fallo de conexión con el nodo central. Código: ${healthRes.status}.`);
+                    }
+                } catch (fetchError) {
+                    setBackendError("Alerta: Fallo de conexión con el nodo central (red inalcanzable).");
                 }
-            } catch (fetchError) {
-                setBackendError("Alerta: Fallo de conexión con el nodo central (red inalcanzable).");
+                
+                const now = Date.now();
+                const COOLDOWN_MS = 30000; // 30 seconds
+                if (now - lastSseErrorAudioPlayed > COOLDOWN_MS) {
+                    audioService.play('alert_error_connection');
+                    setLastSseErrorAudioPlayed(now);
+                }
             }
-            
-            const now = Date.now();
-            const COOLDOWN_MS = 30000; // 30 seconds
-            if (now - lastSseErrorAudioPlayed > COOLDOWN_MS) {
-                audioService.play('alert_error_connection');
-                setLastSseErrorAudioPlayed(now);
-            }
-            // EventSource automatically tries to reconnect, so no need for manual retry here.
+            // EventSource automatically tries to reconnect unless readyState is CLOSED.
         };
     } catch (e) {
         console.error("[SSE-CRITICAL] Error creating EventSource object:", e);
@@ -611,15 +628,14 @@ export default function App() {
         audioService.play('alert_error_connection');
     }
 
-
     return () => {
         if (eventSourceRef.current) {
-            console.log("SSE: Closing connection on component unmount/token change.");
+            console.log("SSE: Cleanup: Closing connection on component unmount or dependency change.");
             eventSourceRef.current.close();
             eventSourceRef.current = null;
         }
     };
-  }, [token, userRole]); // FIX: Simplified dependencies to prevent excessive reconnections
+  }, [token, userRole, lastSseErrorAudioPlayed]); // Removed connectionStatus from dependencies
 
   useEffect(() => {
     if (!token) {

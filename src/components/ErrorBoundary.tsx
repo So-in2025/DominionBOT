@@ -1,24 +1,23 @@
+
 import React, { ErrorInfo, ReactNode } from 'react';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
 }
 
-interface State {
+interface ErrorBoundaryState {
   hasError: boolean;
 }
 
-class ErrorBoundary extends React.Component<ErrorBoundaryProps, State> {
-  // FIX: Reverted the state initialization to use a constructor.
-  // Although class properties for state are modern, explicitly defining the constructor
-  // ensures `this.props` is correctly inferred and accessible in certain TypeScript setups,
-  // resolving the "Property 'props' does not exist" error.
-  constructor(props: ErrorBoundaryProps) {
-    super(props);
-    this.state = { hasError: false };
-  }
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  // FIX: Using a public class field for state initialization. This is a common and
+  // idiomatic pattern in modern React with TypeScript, which can help TypeScript
+  // correctly infer the `state` property and resolve related type errors.
+  public state: ErrorBoundaryState = {
+    hasError: false
+  };
 
-  static getDerivedStateFromError(_: Error): State {
+  static getDerivedStateFromError(_: Error): ErrorBoundaryState {
     return { hasError: true };
   }
 
