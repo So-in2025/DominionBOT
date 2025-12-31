@@ -1,4 +1,3 @@
-
 import { Response } from 'express';
 
 class SseService {
@@ -6,11 +5,13 @@ class SseService {
   private clients: Map<string, any> = new Map();
 
   addClient(userId: string, client: any) {
+    console.log(`[SSE-SERVICE] Attempting to add client ${userId} and set SSE headers.`);
     client.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Connection': 'keep-alive',
       'Cache-Control': 'no-cache'
     });
+    console.log(`[SSE-SERVICE] Headers sent for client ${userId}. Content-Type: text/event-stream.`);
     
     // If user already had a connection, close old one (or we could support arrays for multi-tab)
     // For simplicity, we replace.

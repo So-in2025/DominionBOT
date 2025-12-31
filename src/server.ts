@@ -124,9 +124,17 @@ app.post('/api/conversation/update', authenticateToken, handleUpdateConversation
 app.get('/api/conversations', authenticateToken, handleGetConversations);
 
 // SSE Endpoint for real-time updates (Phase 3)
-app.get('/api/events', authenticateToken, (req: any, res: any) => {
-    sseService.addClient(req.user.id, res);
-});
+app.get('/api/events', 
+    (req: any, res: any, next: any) => {
+        console.log(`[SERVER-SSE-DEBUG] Incoming request to /api/events. Path: ${req.path}, Query: ${JSON.stringify(req.query)}`);
+        next();
+    }, 
+    authenticateToken, 
+    (req: any, res: any) => {
+        console.log(`[SERVER-SSE-DEBUG] Handler for /api/events reached AFTER authentication. User ID: ${req.user.id}, Username: ${req.user.username}`);
+        sseService.addClient(req.user.id, res);
+    }
+);
 
 
 // Testimonial Routes
@@ -172,8 +180,9 @@ app.use('/api', (req: any, res) => {
     res.status(404).json({ message: 'Ruta de API no encontrada.' });
 });
 
-// General 404 for non-/api routes (typically caught by frontend's index.html rewrite in Vercel)
+// Global 404 for non-/api routes (typically caught by frontend's index.html rewrite in Vercel)
 app.use((req: any, res) => {
+    console.warn(`[SERVER-404-FALLBACK] Request fell through to global HTML 404 handler: ${req.method} ${req.originalUrl}`);
     logService.warn(`Ruta no encontrada: ${req.method} ${req.originalUrl}`, req.user?.id, req.user?.username);
     res.status(404).send('Página no encontrada.'); // Still send HTML for non-API paths for clarity
 });

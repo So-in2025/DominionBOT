@@ -3,7 +3,6 @@ import path from 'path';
 import fs from 'fs';
 
 // 1. Detectar qué archivo existe (.env o .env.local)
-// Fixed: Removed process.cwd() to resolve type errors; path.resolve defaults to the CWD when relative paths are used.
 const envPath = path.resolve('.env');
 const localEnvPath = path.resolve('.env.local');
 
@@ -23,6 +22,9 @@ if (fs.existsSync(envPath)) {
 export const JWT_SECRET = process.env.JWT_SECRET || 'dominion-local-secret-key';
 export const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://admin:C3WcIkonjZ4tnYUN@cluster0.rxgrwk7.mongodb.net/dominion_local?retryWrites=true&w=majority&appName=Cluster0';
 export const PORT = process.env.PORT || 3001;
+// Export Gemini API key. CRÍTICO: Asegúrate de que esta variable esté definida en tu archivo .env o .env.local
+// Ejemplo: API_KEY=TU_CLAVE_DE_GEMINI_AQUI
+export const API_KEY = process.env.API_KEY || ''; 
 
 // Debug de seguridad (solo muestra los últimos 4 caracteres)
 const secretDisplay = JWT_SECRET === 'dominion-local-secret-key' ? 'DEFAULT_DEV_KEY' : `...${JWT_SECRET.slice(-4)}`;

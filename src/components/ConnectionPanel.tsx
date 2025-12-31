@@ -29,7 +29,8 @@ const StatusIndicator: React.FC<{ status: ConnectionStatus }> = ({ status }) => 
 
 const ConnectionPanel: React.FC<ConnectionPanelProps> = ({ status, qrCode, pairingCode, onConnect, onDisconnect, onWipe, user }) => {
     const [linkMode, setLinkMode] = useState<'QR' | 'NUMBER'>('QR');
-    const [phoneNumber, setPhoneNumber] = useState('');
+    // FIX: Initialize phoneNumber with an empty string fallback
+    const [phoneNumber, setPhoneNumber] = useState(user?.whatsapp_number || '');
     
     const isLoading = status === ConnectionStatus.GENERATING_QR;
 
@@ -86,7 +87,7 @@ const ConnectionPanel: React.FC<ConnectionPanelProps> = ({ status, qrCode, pairi
                                 <p className="text-gray-400 text-[11px] leading-relaxed">Tu número de WhatsApp registrado se usará para la conexión.</p>
                                 <div className="relative">
                                     <input 
-                                        type="text" 
+                                        type="tel" // Changed to type="tel" for better mobile UX
                                         value={phoneNumber}
                                         onChange={(e) => setPhoneNumber(e.target.value)}
                                         placeholder="549..."

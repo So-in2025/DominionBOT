@@ -431,6 +431,9 @@ export default function App() {
   // New state to manage audio cooldown for SSE errors
   const [lastSseErrorAudioPlayed, setLastSseErrorAudioPlayed] = useState<number>(0);
 
+  // Added state for SSE connection status
+  const [sseReadyState, setSseReadyState] = useState<'CONNECTING' | 'OPEN' | 'CLOSED'>('CLOSED');
+
   // Removed isPollingStatus as SSE replaces polling
 
   // Simulación de Landing
@@ -498,6 +501,7 @@ export default function App() {
           eventSourceRef.current.close();
           eventSourceRef.current = null;
           console.log("SSE: Connection closed on logout.");
+          setSseReadyState('CLOSED'); // Update SSE status
       }
   };
 
@@ -509,133 +513,159 @@ export default function App() {
 
   // SSE Connection and Event Handling (Replaces Polling)
   useEffect(() => {
-    // Determine if an SSE connection is needed for the current user/role
     const shouldConnect = !!token && userRole !== 'super_admin';
 
-    // If no connection is needed, ensure any existing connection is closed.
-    if (!shouldConnect) {
-      if (eventSourceRef.current) {
-        console.log("SSE: Closing existing connection (no token or super_admin needed).");
+    // Cleanup existing connection if no longer needed or about to reconnect
+    if (eventSourceRef.current) {
+        console.log("SSE: Closing existing connection before potential re-initialization.");
         eventSourceRef.current.close();
         eventSourceRef.current = null;
-      }
-      return; // Exit early as no connection is desired.
+        setSseReadyState('CLOSED'); // Update SSE status
     }
 
-    // At this point, shouldConnect is true.
-    // Check if an EventSource already exists and is OPEN.
-    // If it is, and we want a connection, then there's no need to create a new one.
-    if (eventSourceRef.current && eventSourceRef.current.readyState === EventSource.OPEN) {
-        console.log("SSE: Existing connection is already OPEN, skipping re-initialization.");
+    if (!shouldConnect) {
+        setBackendError(null); // Clear error if no longer trying to connect
         return;
     }
 
-    // If we reach here, shouldConnect is true AND there's no open EventSource.
-    // This means we need to either create a new one or re-initialize a closed/connecting one.
-    // First, ensure any non-OPEN existing connection is explicitly closed.
-    if (eventSourceRef.current) { // It might be in CONNECTING or CLOSED state
-        console.log(`SSE: Closing existing non-OPEN connection (readyState: ${eventSourceRef.current.readyState}) before re-initialization.`);
-        eventSourceRef.current.close();
-        eventSourceRef.current = null;
-    }
-    
-    let eventSource: EventSource;
-    try {
-        // FIX: Add ngrok-skip-browser-warning as a query parameter for EventSource
-        const sseUrl = `${BACKEND_URL}/api/events?token=${token}&ngrok-skip-browser-warning=true`;
-        console.log(`[SSE-DEBUG] Attempting to connect to SSE endpoint: ${sseUrl}`);
-        eventSource = new EventSource(sseUrl, { withCredentials: false });
-        eventSourceRef.current = eventSource;
+    const establishSseConnection = async () => {
+        // Step 1: Proactive health check
+        try {
+            console.log(`[SSE-PROACTIVE-HEALTH] Checking backend health at ${BACKEND_URL}/api/health`);
+            const healthRes = await fetch(`${BACKEND_URL}/api/health`, { headers: API_HEADERS });
+            if (!healthRes.ok) {
+                const errorText = await healthRes.text(); // Get raw text to see if it's HTML
+                const msg = `Fallo de salud del backend (${healthRes.status}). Posiblemente el backend está inactivo o la URL es incorrecta.`;
+                console.error(`[SSE-PROACTIVE-HEALTH] Health check failed: ${msg}. Response snippet: ${errorText.substring(0, 100)}...`);
+                setBackendError(`Alerta: ${msg}`);
+                audioService.play('alert_error_connection');
+                return; // Stop here if health check fails
+            }
+            const healthData = await healthRes.json();
+            console.log(`[SSE-PROACTIVE-HEALTH] Backend health OK: ${healthData.status}`);
+            setBackendError(null); // Clear any previous backend error
+        } catch (fetchError) {
+            const msg = `Fallo de red al conectar con el backend en ${BACKEND_URL} (posiblemente URL incorrecta o servidor caído).`;
+            console.error(`[SSE-PROACTIVE-HEALTH] Network error during health check: ${msg}`, fetchError);
+            setBackendError(`Alerta: ${msg}`);
+            audioService.play('alert_error_connection');
+            return; // Stop here if network check fails
+        }
 
-        eventSource.onopen = () => {
-            console.log("SSE: Connection opened.");
-            setBackendError(null); // Clear backend error on successful SSE connection
-        };
+        // Step 2: Establish EventSource if health check passed
+        let eventSource: EventSource;
+        try {
+            const sseUrl = `${BACKEND_URL}/api/events?token=${token}&ngrok-skip-browser-warning=true`;
+            console.log(`[SSE-DEBUG] Attempting to connect to SSE endpoint: ${sseUrl}`);
+            eventSource = new EventSource(sseUrl, { withCredentials: false });
+            eventSourceRef.current = eventSource;
 
-        eventSource.onmessage = (event) => {
-            // Generic message for debugging, usually specific events are preferred
-            console.log("SSE: Generic message received", event.data);
-        };
+            setSseReadyState('CONNECTING'); // Set SSE status to connecting
 
-        eventSource.addEventListener('conversation_update', (event) => {
-            const updatedConversation: Conversation = JSON.parse(event.data);
-            console.log("SSE: Conversation update received", updatedConversation);
-            setConversations(prevConversations => {
-                const existingIndex = prevConversations.findIndex(c => c.id === updatedConversation.id);
-                let newConversations;
-                if (existingIndex > -1) {
-                    newConversations = prevConversations.map(c => c.id === updatedConversation.id ? updatedConversation : c);
-                } else {
-                    newConversations = [...prevConversations, updatedConversation];
-                }
-                // Sort by last activity to show most recent first
-                return newConversations.sort((a, b) => {
-                    const dateA = new Date(a.lastActivity || a.firstMessageAt || 0);
-                    const dateB = new Date(b.lastActivity || b.firstMessageAt || 0);
-                    return dateB.getTime() - dateA.getTime();
+            eventSource.onopen = () => {
+                console.log("SSE: Connection opened successfully.");
+                setBackendError(null); // Clear backend error on successful SSE connection
+                setSseReadyState('OPEN'); // Set SSE status to open
+            };
+
+            eventSource.onmessage = (event) => {
+                // Generic message for debugging, usually specific events are preferred
+                console.log("SSE: Generic message received", event.data);
+            };
+
+            eventSource.addEventListener('conversation_update', (event) => {
+                const updatedConversation: Conversation = JSON.parse(event.data);
+                console.log("SSE: Conversation update received", updatedConversation);
+                setConversations(prevConversations => {
+                    const existingIndex = prevConversations.findIndex(c => c.id === updatedConversation.id);
+                    let newConversations;
+                    if (existingIndex > -1) {
+                        newConversations = prevConversations.map(c => c.id === updatedConversation.id ? updatedConversation : c);
+                    } else {
+                        newConversations = [...prevConversations, updatedConversation];
+                    }
+                    // Sort by last activity to show most recent first
+                    return newConversations.sort((a, b) => {
+                        const dateA = new Date(a.lastActivity || a.firstMessageAt || 0);
+                        const dateB = new Date(b.lastActivity || b.firstMessageAt || 0);
+                        return dateB.getTime() - dateA.getTime();
+                    });
                 });
             });
-        });
 
-        eventSource.addEventListener('connection_status', (event) => {
-            const statusData = JSON.parse(event.data);
-            console.log("SSE: Connection status update received", statusData);
-            // Only update connection status if it's actually different
-            if (statusData.status !== connectionStatus) {
-                setConnectionStatus(statusData.status);
-                switch(statusData.status) {
-                    case ConnectionStatus.GENERATING_QR: audioService.play('connection_establishing'); break;
-                    case ConnectionStatus.AWAITING_SCAN: audioService.play('connection_pending'); break;
-                    case ConnectionStatus.CONNECTED: audioService.play('connection_success'); break;
-                    case ConnectionStatus.DISCONNECTED: audioService.play('connection_disconnected'); break;
-                }
-            }
-            setQrCode(statusData.qr || null);
-            setPairingCode(statusData.pairingCode || null);
-        });
-
-        eventSource.onerror = async (error) => {
-            console.error("SSE: EventSource failed:", error);
-            // Only fetch health status and play audio if the EventSource is truly CLOSED
-            // This prevents false positives during transient network issues or when it's in a CONNECTING state.
-            if (eventSourceRef.current && eventSourceRef.current.readyState === EventSource.CLOSED) {
-                try {
-                    // Use non-authenticated health check if possible, or authenticated if needed.
-                    // For a health check, API_HEADERS is sufficient as it includes ngrok-skip-browser-warning
-                    const healthRes = await fetch(`${BACKEND_URL}/api/health`, { headers: API_HEADERS });
-                    if (healthRes.ok) {
-                        const healthData = await healthRes.json();
-                        setBackendError(`Alerta: Fallo de conexión en tiempo real (SSE). Backend: ${healthData.status}.`);
-                    } else {
-                        setBackendError(`Alerta: Fallo de conexión con el nodo central. Código: ${healthRes.status}.`);
-                    }
-                } catch (fetchError) {
-                    setBackendError("Alerta: Fallo de conexión con el nodo central (red inalcanzable).");
-                }
+            eventSource.addEventListener('connection_status', (event) => {
+                const statusData = JSON.parse(event.data);
+                console.log("--- SSE CONNECTION STATUS UPDATE RECEIVED ---");
+                console.log("statusData received:", statusData);
                 
-                const now = Date.now();
-                const COOLDOWN_MS = 30000; // 30 seconds
-                if (now - lastSseErrorAudioPlayed > COOLDOWN_MS) {
-                    audioService.play('alert_error_connection');
-                    setLastSseErrorAudioPlayed(now);
+                // Only update connection status if it's actually different
+                if (statusData.status !== connectionStatus) { 
+                    setConnectionStatus(statusData.status);
+                    switch(statusData.status) {
+                        case ConnectionStatus.GENERATING_QR: audioService.play('connection_establishing'); break;
+                        case ConnectionStatus.AWAITING_SCAN: audioService.play('connection_pending'); break;
+                        case ConnectionStatus.CONNECTED: audioService.play('connection_success'); break;
+                        case ConnectionStatus.DISCONNECTED: audioService.play('connection_disconnected'); break;
+                    }
                 }
-            }
-            // EventSource automatically tries to reconnect unless readyState is CLOSED.
-        };
-    } catch (e) {
-        console.error("[SSE-CRITICAL] Error creating EventSource object:", e);
-        setBackendError("Error crítico al inicializar la conexión en tiempo real.");
-        audioService.play('alert_error_connection');
-    }
+                setQrCode(statusData.qr || null);
+                setPairingCode(statusData.pairingCode || null);
+                console.log(`Updated qrCode state: ${statusData.qr ? 'present' : 'null/undefined'}`);
+                console.log(`Updated pairingCode state: ${statusData.pairingCode ? 'present' : 'null/undefined'}`);
+                console.log("--- END SSE CONNECTION STATUS UPDATE ---");
+            });
 
+            eventSource.onerror = async (error) => {
+                console.error("SSE: EventSource failed:", error);
+                // Only fetch health status and play audio if the EventSource is truly CLOSED
+                if (eventSourceRef.current && eventSourceRef.current.readyState === EventSource.CLOSED) {
+                    setSseReadyState('CLOSED'); // Set SSE status to closed
+                    try {
+                        // Re-fetch the SSE URL to get the exact response body that caused the error
+                        const errRes = await fetch(sseUrl, { headers: getAuthHeaders(token!) });
+                        const contentType = errRes.headers.get('content-type');
+                        let errorDetails = `Status: ${errRes.status}`;
+                        if (contentType && contentType.includes('text/html')) {
+                            errorDetails += ` (respondió HTML, probablemente error de routing o Ngrok expirado)`;
+                        } else {
+                            const errText = await errRes.text();
+                            errorDetails += `, Contenido: ${errText.substring(0, 100)}...`;
+                        }
+                        
+                        console.error(`[SSE-ONERROR-DETAIL] Fallo de EventSource: ${errorDetails}`);
+                        setBackendError(`Alerta: Fallo de conexión en tiempo real. ${errorDetails}`);
+                    } catch (fetchErr) {
+                         setBackendError("Alerta: Fallo de conexión con el nodo central (red inalcanzable durante SSE).");
+                    }
+                    
+                    const now = Date.now();
+                    const COOLDOWN_MS = 30000; // 30 seconds
+                    if (now - lastSseErrorAudioPlayed > COOLDOWN_MS) {
+                        audioService.play('alert_error_connection');
+                        setLastSseErrorAudioPlayed(now);
+                    }
+                }
+            };
+        } catch (e) {
+            console.error("[SSE-CRITICAL] Error creating EventSource object:", e);
+            setBackendError("Error crítico al inicializar la conexión en tiempo real.");
+            audioService.play('alert_error_connection');
+            setSseReadyState('CLOSED'); // Set SSE status to closed on critical error
+        }
+    };
+
+    establishSseConnection();
+
+    // Cleanup function
     return () => {
         if (eventSourceRef.current) {
             console.log("SSE: Cleanup: Closing connection on component unmount or dependency change.");
             eventSourceRef.current.close();
             eventSourceRef.current = null;
+            setSseReadyState('CLOSED'); // Update SSE status on cleanup
         }
     };
-  }, [token, userRole, lastSseErrorAudioPlayed]); // Removed connectionStatus from dependencies
+  }, [token, userRole, lastSseErrorAudioPlayed]); // Removed connectionStatus and BACKEND_URL from dependencies
 
   useEffect(() => {
     if (!token) {
@@ -675,6 +705,13 @@ export default function App() {
                 setConnectionStatus(statusData.status);
                 setQrCode(statusData.qr || null);
                 setPairingCode(statusData.pairingCode || null);
+                
+                // CRÍTICO: Log explícito para el estado inicial de la conexión
+                console.log("--- INITIAL CONNECTION STATUS FETCH ---");
+                console.log("Initial statusData from /api/status:", statusData);
+                console.log(`Initial qrCode state: ${statusData.qr ? 'present' : 'null/undefined'}`);
+                console.log(`Initial pairingCode state: ${statusData.pairingCode ? 'present' : 'null/undefined'}`);
+                console.log("--- END INITIAL CONNECTION STATUS FETCH ---");
             }
 
             if (backendError) setBackendError(null);
@@ -847,6 +884,12 @@ export default function App() {
 
   const isAppView = !!token && !showLanding;
 
+  const sseStatusColor = {
+    'CONNECTING': 'bg-yellow-500',
+    'OPEN': 'bg-green-500',
+    'CLOSED': 'bg-red-500'
+  }[sseReadyState];
+
   return (
     <div className={`flex flex-col bg-brand-black text-white font-sans ${isAppView ? 'h-screen overflow-hidden' : 'min-h-screen'}`}>
       <Toast toast={toast} onClose={() => setToast(null)} />
@@ -874,11 +917,19 @@ export default function App() {
       {isAppView && <TrialBanner user={currentUser} />}
 
       <main className={`flex-1 flex relative ${isAppView ? 'overflow-hidden' : ''}`}>
-        {backendError && (
-            <div className="absolute top-0 left-0 right-0 bg-red-600/95 text-white text-[10px] font-black p-2 text-center z-[200] shadow-xl animate-pulse">
-                ⚠️ {backendError}
+        {(backendError || isAppView) && ( // Show SSE status only when logged in or if there's a backend error
+            <div className="absolute top-0 left-0 right-0 z-[200] flex items-center justify-center p-2 text-[10px] font-black shadow-xl animate-pulse
+                bg-red-600/95 text-white">
+                {backendError && <span>⚠️ {backendError}</span>}
+                {isAppView && (
+                    <span className="ml-4 flex items-center gap-2">
+                        <span className={`w-2 h-2 rounded-full ${sseStatusColor} animate-pulse`}></span>
+                        SSE: {sseReadyState}
+                    </span>
+                )}
             </div>
         )}
+        
 
         {(!token || showLanding) ? (
             <LandingPage 

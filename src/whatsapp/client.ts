@@ -42,26 +42,28 @@ export function getSessionStatus(userId: string): { status: ConnectionStatus, qr
 export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
   connectionAttempts.set(userId, true);
   logService.info('Iniciando conexión a WhatsApp', userId);
+  console.log(`[WA-CLIENT-DEBUG] Connect initiated for user ${userId}. Phone number provided: ${!!phoneNumber}`);
   
   const oldSock = sessions.get(userId);
   if (oldSock) {
+      logService.warn(`[WA-CLIENT-DEBUG] Existing session found for ${userId}. Attempting to clear.`, userId);
       try { 
-          // FIX: Passing undefined to satisfy a strict linter that expects an argument for an optional parameter.
           oldSock.ev.removeAllListeners(undefined); 
-          // FIX: The error "Expected 1 arguments, but got 0" likely has the counts reversed. Calling end() with no arguments.
-          // FIX: Passing undefined to satisfy a strict linter that expects an argument for an optional parameter.
           oldSock.end(undefined); 
-      } catch(e) {}
+      } catch(e) {
+          console.error(`[WA-CLIENT-DEBUG] Error clearing old socket for ${userId}:`, e);
+      }
       sessions.delete(userId);
   }
   qrCache.delete(userId);
   codeCache.delete(userId);
+  sseService.sendEvent(userId, 'connection_status', getSessionStatus(userId)); // Notify immediately of state change
 
   if (phoneNumber) {
+      logService.info(`[WA-CLIENT-DEBUG] Phone number ${phoneNumber} provided. Clearing binded session.`, userId);
       await clearBindedSession(userId);
   }
   
-  // FIX: Declaring user here to make it available in catch blocks and closures.
   let user: User | null = null;
   try {
       const { version } = await fetchLatestBaileysVersion();
@@ -88,56 +90,58 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
       sessions.set(userId, sock);
       sock.ev.on('creds.update', saveCreds);
 
+      // CRITICAL FIX: Request pairing code immediately if phone number is provided, without setTimeout.
       if (phoneNumber && !sock.authState.creds.registered) {
-          setTimeout(async () => {
-              // RACE CONDITION FIX: Check if the current session is still valid.
-              // If the user disconnected or reconnected, this request is obsolete.
-              if (sessions.get(userId) !== sock) {
-                  logService.info('Solicitud de código de emparejamiento abortada por cambio de sesión.', userId);
-                  return;
-              }
-              try {
-                  const code = await sock.requestPairingCode(phoneNumber.replace(/[^0-9]/g, ''));
-                  codeCache.set(userId, code);
-                  sseService.sendEvent(userId, 'connection_status', getSessionStatus(userId));
-              } catch (err) {
-                  // FIX: Added username to the logService.error call to match its signature (fixes error on line 112).
-                  logService.error('Error solicitando pairing code', err as Error, userId, user?.username);
-                  qrCache.delete(userId);
-                  codeCache.delete(userId);
-              }
-          }, 4000); 
+          logService.info(`[WA-CLIENT-DEBUG] Requesting pairing code for ${phoneNumber}...`, userId);
+          try {
+              const code = await sock.requestPairingCode(phoneNumber.replace(/[^0-9]/g, ''));
+              codeCache.set(userId, code);
+              logService.info(`[WA-CLIENT-DEBUG] Pairing code generated for ${userId}: ${code}`, userId);
+              sseService.sendEvent(userId, 'connection_status', getSessionStatus(userId));
+          } catch (err) {
+              logService.error('Error solicitando pairing code', err as Error, userId, user?.username);
+              qrCache.delete(userId);
+              codeCache.delete(userId);
+              sseService.sendEvent(userId, 'connection_status', getSessionStatus(userId));
+          }
       }
       
       sock.ev.on('connection.update', async (update) => {
           const { connection, lastDisconnect, qr } = update;
-          if (qr && !phoneNumber) {
+          // FIX: Safely access statusCode only if lastDisconnect.error is a Boom object.
+          const disconnectError = lastDisconnect?.error;
+          const error = disconnectError instanceof Boom ? disconnectError.output?.statusCode : undefined;
+          console.log(`[WA-CLIENT-DEBUG] Connection update for ${userId}: connection=${connection}, qr=${!!qr}, lastDisconnect=${error}`);
+          
+          if (qr && !phoneNumber) { // Only set QR if not using pairing code method
             const qrImage = await QRCode.toDataURL(qr);
             qrCache.set(userId, qrImage);
+            logService.info(`[WA-CLIENT-DEBUG] QR code generated for ${userId}.`, userId);
+            sseService.sendEvent(userId, 'connection_status', getSessionStatus(userId)); // Notify frontend of QR
           }
           if (connection === 'close') {
             qrCache.delete(userId);
             codeCache.delete(userId);
-            const error = (lastDisconnect?.error as Boom)?.output?.statusCode;
+            // Re-using the 'error' variable which already holds the safely extracted status code.
+
             if (error === DisconnectReason.loggedOut) {
-                // FIX: The 'audit' log requires a username, which was missing. This caused a type error because the function received 2 arguments instead of the expected 3.
                 logService.audit('Sesión de WhatsApp cerrada por el usuario', userId, user?.username || 'unknown');
-                await disconnectWhatsApp(userId);
+                await disconnectWhatsApp(userId); // Use existing disconnect logic
             } else {
                 if (connectionAttempts.get(userId)) {
                     logService.warn(`Conexión cerrada inesperadamente, reintentando en 5s...`, userId);
-                    // FIX: Wrapped in an anonymous function to resolve argument count mismatch error.
                     setTimeout(() => connectToWhatsApp(userId, phoneNumber), 5000);
                 } else {
                     logService.info(`Conexión cerrada, no se reintentará.`, userId);
                 }
             }
+            sseService.sendEvent(userId, 'connection_status', getSessionStatus(userId)); // Notify frontend of disconnection
           } else if (connection === 'open') {
             logService.info('Conexión a WhatsApp establecida', userId);
             qrCache.delete(userId);
             codeCache.delete(userId);
+            sseService.sendEvent(userId, 'connection_status', getSessionStatus(userId)); // Notify frontend of successful connection
           }
-          sseService.sendEvent(userId, 'connection_status', getSessionStatus(userId));
       });
 
       sock.ev.on('messages.upsert', async (m) => {
@@ -208,14 +212,14 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                     await db.saveUserConversation(userId, conversation);
                 }
               } catch (err) { 
-                // FIX: Added username to the logService.error call to match its signature.
                 logService.error('Error en procesamiento IA', err as Error, userId, user.username); }
           }, DEBOUNCE_TIME_MS);
           messageDebounceMap.set(debounceKey, timeout);
       });
   } catch (err) {
-      // FIX: Added username to the logService.error call to match its signature.
       logService.error('Fallo crítico en conexión a WhatsApp', err as Error, userId, user?.username);
+      // Ensure SSE event is sent even on critical failure
+      sseService.sendEvent(userId, 'connection_status', getSessionStatus(userId));
   }
 }
 
@@ -223,9 +227,10 @@ export async function disconnectWhatsApp(userId: string) {
     connectionAttempts.set(userId, false);
     const sock = sessions.get(userId);
     if (sock) {
-        // FIX: The error "Expected 1 arguments, but got 0" likely has the counts reversed. Calling end() with no arguments. This change mirrors the one in connectToWhatsApp.
-        // FIX: Passing undefined to satisfy a strict linter that expects an argument for an optional parameter.
-        try { sock.end(undefined); } catch(e) {}
+        logService.info(`[WA-CLIENT-DEBUG] Disconnecting socket for user ${userId}.`, userId);
+        try { sock.end(undefined); } catch(e) {
+            console.error(`[WA-CLIENT-DEBUG] Error ending socket for ${userId} during disconnect:`, e);
+        }
     }
     sessions.delete(userId);
     qrCache.delete(userId);
