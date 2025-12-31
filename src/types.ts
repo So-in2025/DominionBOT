@@ -1,4 +1,5 @@
 
+
 export enum LeadStatus {
   COLD = 'Frío',
   WARM = 'Tibio',
@@ -54,7 +55,7 @@ export type LogLevel = 'INFO' | 'WARN' | 'ERROR' | 'AUDIT';
 export interface Message {
   id: string;
   text: string;
-  sender: 'user' | 'bot' | 'owner';
+  sender: 'user' | 'bot' | 'owner' | 'elite_bot'; // Added elite_bot
   timestamp: Date | string; 
 }
 
@@ -96,7 +97,7 @@ export interface BotSettings {
   toneValue: number;
   rhythmValue: number;
   intensityValue: number;
-  isWizardCompleted: boolean;
+  isWizardCompleted: boolean; // Added for wizard state
   pwaEnabled: boolean;
   pushEnabled: boolean;
   audioEnabled: boolean;

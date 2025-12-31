@@ -1,3 +1,4 @@
+
 import makeWASocket, {
   DisconnectReason,
   makeCacheableSignalKeyStore,
@@ -8,7 +9,7 @@ import makeWASocket, {
 import { Boom } from '@hapi/boom';
 import pino from 'pino';
 import { HttpsProxyAgent } from 'https-proxy-agent';
-import { ConnectionStatus, Message, LeadStatus, User } from '../types.js';
+import { ConnectionStatus, Message, LeadStatus, User, Conversation } from '../types.js';
 import { conversationService } from '../services/conversationService.js';
 import { db } from '../database.js';
 import { generateBotResponse } from '../services/aiService.js';
@@ -26,6 +27,10 @@ const DEBOUNCE_TIME_MS = 6000;
 
 const logger = pino({ level: 'silent' }); 
 
+// --- Test Bot Specifics (re-declared here for clarity and to avoid circular deps) ---
+const ELITE_BOT_JID = '5491112345678@s.whatsapp.net';
+// --- END Test Bot Specifics ---
+
 export function getSessionStatus(userId: string): { status: ConnectionStatus, qr?: string, pairingCode?: string } {
     const sock = sessions.get(userId);
     const qr = qrCache.get(userId);
@@ -37,6 +42,106 @@ export function getSessionStatus(userId: string): { status: ConnectionStatus, qr
     if (connectionAttempts.get(userId)) return { status: ConnectionStatus.GENERATING_QR };
 
     return { status: ConnectionStatus.DISCONNECTED };
+}
+
+/**
+ * Procesa un mensaje entrante (ya añadido a la conversación) y genera una respuesta de IA.
+ * Esta función es llamada por el listener de `messages.upsert` (después de un debounce)
+ * y también puede ser llamada directamente por el Admin Panel para mensajes de prueba.
+ */
+export async function processAiResponseForJid(userId: string, jid: string) {
+    const user = await db.getUser(userId);
+    if (!user) {
+        logService.warn(`[WA-CLIENT] User ${userId} not found when processing AI response for JID ${jid}.`, userId);
+        return;
+    }
+
+    if (!user.settings.isActive || user.plan_status === 'suspended') {
+        logService.info(`[WA-CLIENT] AI processing skipped for ${userId} (bot inactive or plan suspended).`, userId);
+        // Special handling for expired/suspended: send generic message if not already muted.
+        const conversations = await conversationService.getConversations(userId);
+        const conversation = conversations.find(c => c.id === jid);
+        if (user.plan_status === 'expired' && conversation && !conversation.isMuted) {
+             const sock = sessions.get(userId);
+             if (sock) {
+                const expiredMessage = "Disculpa la demora, en breve te atenderemos."; // Default fallback message
+                await sock.sendMessage(jid, { text: expiredMessage });
+                const botMessage: Message = { id: `bot-${Date.now()}-expired`, text: expiredMessage, sender: 'bot', timestamp: new Date() };
+                await conversationService.addMessage(userId, jid, botMessage);
+             }
+        }
+        return;
+    }
+
+    const isIgnored = user.settings.ignoredJids?.some(id => id.includes(jid.split('@')[0]));
+    if (isIgnored) {
+        logService.info(`[WA-CLIENT] JID ${jid} ignored for user ${userId}.`, userId);
+        return;
+    }
+
+    const convs = await conversationService.getConversations(userId);
+    const conversation = convs.find(c => c.id === jid);
+
+    if (!conversation || conversation.isMuted || !conversation.isBotActive || conversation.status === LeadStatus.PERSONAL) {
+        logService.info(`[WA-CLIENT] AI processing skipped for JID ${jid} (muted, inactive, or personal).`, userId);
+        return;
+    }
+
+    const sock = sessions.get(userId);
+    if (!sock) {
+        logService.warn(`[WA-CLIENT] Socket not found for user ${userId}, cannot send response to JID ${jid}.`, userId);
+        return;
+    }
+
+    await sock.sendPresenceUpdate('composing', jid);
+    // Fetch latest messages from DB before generating response to ensure freshness.
+    const latestUser = await db.getUser(userId);
+    const latestConversation = latestUser?.conversations?.[jid];
+
+    if (!latestConversation) {
+        logService.error(`[WA-CLIENT] Latest conversation for JID ${jid} not found after message processing for user ${userId}.`, null, userId);
+        return;
+    }
+
+    const aiResult = await generateBotResponse(latestConversation.messages, user); // Use latest messages for AI
+
+    if (aiResult?.responseText) {
+        await sock.sendMessage(jid, { text: aiResult.responseText });
+        const botMessage: Message = { id: `bot-${Date.now()}`, text: aiResult.responseText, sender: 'bot', timestamp: new Date() };
+        await conversationService.addMessage(userId, jid, botMessage);
+    }
+    
+    if (aiResult) {
+        const previousStatus = conversation.status;
+        const updates: Partial<Conversation> = {
+            status: aiResult.newStatus,
+            tags: [...new Set([...(conversation.tags || []), ...(aiResult.tags || [])])],
+            suggestedReplies: undefined // Clear suggestions unless AI explicitly provides new ones
+        };
+
+        if (aiResult.newStatus === LeadStatus.HOT) {
+            updates.isMuted = true;
+            updates.suggestedReplies = aiResult.suggestedReplies;
+        }
+
+        // --- MODIFICACIÓN: EXCLUIR AL BOT DE PRUEBAS DEL CONTEO DE LEADS DEL TRIAL ---
+        if (user.plan_status === 'trial' && aiResult.newStatus === LeadStatus.HOT && previousStatus !== LeadStatus.HOT) {
+            if (jid === ELITE_BOT_JID) {
+                logService.info(`[WA-CLIENT] Lead calificado por bot élite no cuenta para el trial de ${userId}.`, userId);
+            } else {
+                const currentCount = (user.trial_qualified_leads_count || 0) + 1;
+                const maxLeads = 3; 
+                if (currentCount >= maxLeads) { 
+                    await db.updateUser(userId, { plan_status: 'expired', trial_qualified_leads_count: currentCount });
+                    logService.audit(`Prueba finalizada por alcanzar ${maxLeads} leads calificados`, userId, user.username);
+                } else {
+                    await db.updateUser(userId, { trial_qualified_leads_count: currentCount });
+                }
+            }
+        }
+        
+        await db.saveUserConversation(userId, { ...conversation, ...updates });
+    }
 }
 
 export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
@@ -146,73 +251,25 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
 
       sock.ev.on('messages.upsert', async (m) => {
           const msg = m.messages[0];
+          // Ignorar mensajes sin contenido, mensajes propios o de grupos
           if (!msg.message || msg.key.fromMe || msg.key.remoteJid?.endsWith('@g.us')) return;
           
           const jid = msg.key.remoteJid!;
           const text = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
           if (!text) return;
 
-          const user = await db.getUser(userId);
-          if(!user) return;
-          
-          // CRITICAL: Plan & Trial Expiration Check
-          if (new Date() > new Date(user.billing_end_date) && (user.plan_status === 'active' || user.plan_status === 'trial')) {
-              user.plan_status = 'expired';
-              await db.updateUser(userId, { plan_status: 'expired' });
-              logService.audit('Plan/Prueba expirado, downgrade automático', userId, user.username);
-          }
-
+          // Añadir el mensaje de usuario a la conversación inmediatamente
           const userMessage: Message = { id: msg.key.id!, text, sender: 'user', timestamp: new Date() };
           await conversationService.addMessage(userId, jid, userMessage, msg.pushName);
 
           const debounceKey = `${userId}_${jid}`;
+          // Limpiar cualquier debounce anterior para este JID para evitar respuestas dobles
           if (messageDebounceMap.has(debounceKey)) clearTimeout(messageDebounceMap.get(debounceKey));
 
+          // Retrasar el procesamiento de la IA para simular un comportamiento humano y evitar saturación
           const timeout = setTimeout(async () => {
               messageDebounceMap.delete(debounceKey); 
-              try {
-                if(!user.settings.isActive || user.plan_status === 'suspended') return;
-                
-                const isIgnored = user.settings.ignoredJids?.some(id => id.includes(jid.split('@')[0]));
-                if (isIgnored) return;
-
-                const convs = await conversationService.getConversations(userId);
-                const conversation = convs.find(c => c.id === jid);
-                if (!conversation || conversation.isMuted || !conversation.isBotActive || conversation.status === LeadStatus.PERSONAL) return;
-                
-                await sock.sendPresenceUpdate('composing', jid);
-                const aiResult = await generateBotResponse(conversation.messages, user);
-                
-                if (aiResult?.responseText) {
-                    await sock.sendMessage(jid, { text: aiResult.responseText });
-                    const botMessage: Message = { id: `bot-${Date.now()}`, text: aiResult.responseText, sender: 'bot', timestamp: new Date() };
-                    await conversationService.addMessage(userId, jid, botMessage);
-                }
-                
-                if (aiResult) {
-                    const previousStatus = conversation.status;
-                    conversation.status = aiResult.newStatus;
-                    conversation.tags = [...new Set([...(conversation.tags || []), ...(aiResult.tags || [])])];
-                    if (aiResult.newStatus === LeadStatus.HOT) {
-                        conversation.isMuted = true;
-                        conversation.suggestedReplies = aiResult.suggestedReplies;
-                    }
-
-                    // PHASE 2 LOGIC: Trial by result (LIMITADO A 3 LEADS)
-                    if (user.plan_status === 'trial' && aiResult.newStatus === LeadStatus.HOT && previousStatus !== LeadStatus.HOT) {
-                        const currentCount = (user.trial_qualified_leads_count || 0) + 1;
-                        if (currentCount >= 3) { // Changed from 2 to 3
-                            await db.updateUser(userId, { plan_status: 'expired', trial_qualified_leads_count: currentCount });
-                            logService.audit(`Prueba finalizada por alcanzar 3 leads calificados`, userId, user.username);
-                        } else {
-                            await db.updateUser(userId, { trial_qualified_leads_count: currentCount });
-                        }
-                    }
-                    
-                    await db.saveUserConversation(userId, conversation);
-                }
-              } catch (err) { 
-                logService.error('Error en procesamiento IA', err as Error, userId, user.username); }
+              await processAiResponseForJid(userId, jid);
           }, DEBOUNCE_TIME_MS);
           messageDebounceMap.set(debounceKey, timeout);
       });

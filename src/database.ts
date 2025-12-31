@@ -1,3 +1,4 @@
+
 import bcrypt from 'bcrypt';
 import mongoose, { Schema, Model } from 'mongoose';
 import { User, BotSettings, PromptArchetype, GlobalMetrics, GlobalTelemetry, Conversation, IntendedUse, LogEntry, Testimonial, SystemSettings } from './types.js';
@@ -57,6 +58,7 @@ const UserSchema = new Schema({
         toneValue: { type: Number, default: 3 },
         rhythmValue: { type: Number, default: 3 },
         intensityValue: { type: Number, default: 3 },
+        isWizardCompleted: { type: Boolean, default: false }, // Added for wizard state
         ignoredJids: { type: Array, default: [] }
     },
     conversations: { type: Map, of: Object, default: {} },
@@ -146,6 +148,7 @@ class Database {
             toneValue: 3, 
             rhythmValue: 3, 
             intensityValue: 3,
+            isWizardCompleted: false, // Default to false for new users
             ignoredJids: []
         },
         conversations: {},

@@ -1,5 +1,6 @@
 
-import React from 'react';
+
+import React, { useState, useEffect } from 'react';
 import { BotSettings, PromptArchetype } from '../types';
 import { GoogleGenAI } from '@google/genai';
 
@@ -167,15 +168,68 @@ interface WizardState {
     rules: string;
 }
 
+// Utility function to parse the combined productDescription string back into wizardState
+const parseProductDescription = (description: string): WizardState => {
+    const sections: Record<string, string> = {};
+    const sectionHeaders = [
+        "## MISIÓN PRINCIPAL",
+        "## CLIENTE IDEAL",
+        "## DESCRIPCIÓN DETALLADA DEL SERVICIO",
+        "## MANEJO DE OBJECIONES FRECUENTES",
+        "## REGLAS DE ORO Y LÍMITES"
+    ];
+
+    let currentSection: string | null = null;
+    let currentContent: string[] = [];
+
+    const lines = description.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+
+    for (const line of lines) {
+        if (sectionHeaders.includes(line)) {
+            if (currentSection) {
+                sections[currentSection] = currentContent.join('\n').trim();
+            }
+            currentSection = line;
+            currentContent = [];
+        } else {
+            currentContent.push(line);
+        }
+    }
+    if (currentSection) {
+        sections[currentSection] = currentContent.join('\n').trim();
+    }
+
+    const objectionsRaw = sections["## MANEJO DE OBJECIONES FRECUENTES"] || '';
+    const objections: { id: number; objection: string; response: string }[] = [];
+    const objectionLines = objectionsRaw.split('\n').filter(line => line.startsWith('- Sobre "'));
+
+    objectionLines.forEach((line, index) => {
+        const match = line.match(/- Sobre "(.*?)": Respondo: "(.*?)"/);
+        if (match && match[1] && match[2]) {
+            objections.push({ id: index, objection: match[1], response: match[2] });
+        }
+    });
+
+    return {
+        mission: sections["## MISIÓN PRINCIPAL"] || '',
+        idealCustomer: sections["## CLIENTE IDEAL"] || '',
+        detailedDescription: sections["## DESCRIPCIÓN DETALLADA DEL SERVICIO"] || '',
+        objections: objections.length > 0 ? objections : [{ id: 1, objection: '', response: '' }], // Ensure at least one empty objection
+        rules: sections["## REGLAS DE ORO Y LÍMITES"] || '- Tono: Profesional, directo, experto.\n- Prohibido: Usar emojis, tutear, hacer chistes, ofrecer descuentos.\n- Finalidad: Mi trabajo termina cuando el lead está listo para hablar con un humano.'
+    };
+};
+
+
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUpdateSettings, onOpenLegal }) => {
-  const [current, setCurrent] = React.useState<BotSettings | null>(null);
-  const [isSaved, setIsSaved] = React.useState(false);
-  const [wizardStep, setWizardStep] = React.useState(0); 
-  const [newIgnored, setNewIgnored] = React.useState('');
-  const [isEnhancing, setIsEnhancing] = React.useState<keyof WizardState | null>(null);
-  const [sessionTokenCount, setSessionTokenCount] = React.useState(0);
+  const [current, setCurrent] = useState<BotSettings | null>(null);
+  const [isSaved, setIsSaved] = useState(false);
+  const [wizardStep, setWizardStep] = useState(0); 
+  const [newIgnored, setNewIgnored] = useState('');
+  const [isEnhancing, setIsEnhancing] = useState<keyof WizardState | null>(null);
+  const [sessionTokenCount, setSessionTokenCount] = useState(0);
+  const [isSavingApiKey, setIsSavingApiKey] = useState(false);
   
-  const [wizardState, setWizardState] = React.useState<WizardState>({
+  const [wizardState, setWizardState] = useState<WizardState>({
       mission: '',
       idealCustomer: '',
       detailedDescription: '',
@@ -183,39 +237,42 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
       rules: '- Tono: Profesional, directo, experto.\n- Prohibido: Usar emojis, tutear, hacer chistes, ofrecer descuentos.\n- Finalidad: Mi trabajo termina cuando el lead está listo para hablar con un humano.'
   });
 
-  React.useEffect(() => {
-    if (!current) return;
-    const objectionsText = wizardState.objections
-        .filter(o => o.objection && o.response)
-        .map(o => `- Sobre "${o.objection}": Respondo: "${o.response}"`)
-        .join('\n');
-    const combinedDescription = `
-## MISIÓN PRINCIPAL
-${wizardState.mission}
-## CLIENTE IDEAL
-${wizardState.idealCustomer}
-## DESCRIPCIÓN DETALLADA DEL SERVICIO
-${wizardState.detailedDescription}
-## MANEJO DE OBJECIONES FRECUENTES
-${objectionsText}
-## REGLAS DE ORO Y LÍMITES
-${wizardState.rules}
-    `.trim();
-    if (current.productDescription !== combinedDescription) {
-        setCurrent(prev => prev ? ({ ...prev, productDescription: combinedDescription }) : null);
-    }
-  }, [wizardState, current?.productName]);
-
-  React.useEffect(() => {
+  // Effect to initialize current settings and parse productDescription for wizardState
+  useEffect(() => {
     if (settings) {
         const validatedSettings = { ...settings, ignoredJids: settings.ignoredJids || [] };
         setCurrent(validatedSettings);
+        if (settings.productDescription) {
+            setWizardState(parseProductDescription(settings.productDescription));
+        }
     }
   }, [settings]);
 
-  const save = () => {
+  // Combined productDescription generator
+  const getCombinedProductDescription = (state: WizardState, productName: string) => {
+    const objectionsText = state.objections
+        .filter(o => o.objection && o.response)
+        .map(o => `- Sobre "${o.objection}": Respondo: "${o.response}"`)
+        .join('\n');
+    
+    return `
+## MISIÓN PRINCIPAL
+${state.mission}
+## CLIENTE IDEAL
+${state.idealCustomer}
+## DESCRIPCIÓN DETALLADA DEL SERVICIO
+${state.detailedDescription}
+## MANEJO DE OBJECIONES FRECUENTES
+${objectionsText}
+## REGLAS DE ORO Y LÍMITES
+${state.rules}
+    `.trim();
+  };
+
+  const saveAllSettings = () => {
     if (current) {
-        onUpdateSettings(current);
+        const combinedDescription = getCombinedProductDescription(wizardState, current.productName);
+        onUpdateSettings({ ...current, productDescription: combinedDescription });
         setIsSaved(true);
         setTimeout(() => setIsSaved(false), 2000);
     }
@@ -233,7 +290,7 @@ ${wizardState.rules}
     if (!template || !template.data) return;
     setWizardState(prev => ({ ...prev, ...template.data }));
     if (current) {
-        setCurrent({ ...current, priceText: template.data.priceText || '', ctaLink: template.data.ctaLink || '' });
+        setCurrent(prev => prev ? ({ ...prev, productName: template.name, priceText: template.data?.priceText || '', ctaLink: template.data?.ctaLink || '' }) : null);
     }
   };
 
@@ -259,11 +316,13 @@ ${wizardState.rules}
         
         const response = await ai.models.generateContent({
             model: 'gemini-3-flash-preview',
-            contents: prompt
+            contents: [{ parts: [{ text: prompt }] }], // Use contents with parts for text-only input
+            config: {
+                // Ensure systemInstruction is not used here directly as prompt already contains all instructions
+                // The prompt variable itself serves as the main instruction for this call
+            },
         });
 
-        // Although usageMetadata is not in the public type, some models return it.
-        // We defensively check for it to provide token usage feedback.
         const usage = (response as any).usageMetadata;
         if (usage && typeof usage.totalTokenCount === 'number') {
             setSessionTokenCount(prev => prev + usage.totalTokenCount);
@@ -308,6 +367,25 @@ ${wizardState.rules}
 
   const removeIgnored = (num: string) => { if(!current) return; setCurrent({ ...current, ignoredJids: current.ignoredJids.filter(n => n !== num) }); };
 
+  const handleSaveApiKey = async () => {
+    if (!current?.geminiApiKey || !current.geminiApiKey.trim()) {
+        alert("La API Key no puede estar vacía.");
+        return;
+    }
+    setIsSavingApiKey(true);
+    try {
+        await onUpdateSettings({ ...current, geminiApiKey: current.geminiApiKey.trim() });
+        // No need for separate isSaved state, onUpdateSettings handles toast generally
+        // For specific feedback on API key, an alert can be used or a more specific toast
+        alert('API Key de Gemini guardada y lista para usar.');
+    } catch (error) {
+        console.error("Error saving API key:", error);
+        alert("Error al guardar la API Key.");
+    } finally {
+        setIsSavingApiKey(false);
+    }
+  };
+
   if (isLoading || !current) {
     return (
         <div className="flex-1 flex flex-col items-center justify-center bg-brand-black p-10">
@@ -331,7 +409,7 @@ ${wizardState.rules}
   );
 
   const AiEnhanceButton: React.FC<{ field: keyof Pick<WizardState, 'mission' | 'idealCustomer' | 'detailedDescription'> }> = ({ field }) => (
-    <button type="button" onClick={() => enhanceWithAI(field)} disabled={isEnhancing !== null} className="flex items-center justify-center gap-2 text-[10px] text-brand-gold font-bold hover:underline disabled:opacity-50">
+    <button type="button" onClick={() => enhanceWithAI(field)} disabled={isEnhancing !== null || !current?.geminiApiKey?.trim()} className="flex items-center justify-center gap-2 text-[10px] text-brand-gold font-bold hover:underline disabled:opacity-50">
         {isEnhancing === field ? (
             <><div className="w-3 h-3 border-2 border-brand-gold/30 border-t-brand-gold rounded-full animate-spin"></div> Mejorando...</>
         ) : (
@@ -339,6 +417,18 @@ ${wizardState.rules}
         )}
     </button>
   );
+
+  const handleCompleteWizard = () => {
+    const combinedDescription = getCombinedProductDescription(wizardState, current.productName);
+    onUpdateSettings({ ...current, productDescription: combinedDescription, isWizardCompleted: true });
+    setWizardStep(0); // Reset wizard to first step in case of re-edit
+    setIsSaved(true);
+    setTimeout(() => setIsSaved(false), 2000);
+  };
+
+  const handleEditWizard = () => {
+    onUpdateSettings({ ...current, isWizardCompleted: false });
+  };
 
   return (
     <div className="flex-1 bg-brand-black p-4 md:p-10 overflow-y-auto h-full custom-scrollbar animate-fade-in font-sans">
@@ -348,7 +438,7 @@ ${wizardState.rules}
                 <h2 className="text-3xl font-black text-white tracking-tighter uppercase">Cerebro <span className="text-brand-gold">Neural</span></h2>
                 <p className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.3em]">Configuración de Red Inferencia v3.2</p>
             </div>
-            <button onClick={save} className={`px-12 py-5 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all duration-500 shadow-2xl ${isSaved ? 'bg-green-600 text-white scale-95' : 'bg-brand-gold text-black hover:scale-105 active:opacity-80'}`}>{isSaved ? "SINCRONIZACIÓN EXITOSA ✓" : "Sincronizar IA"}</button>
+            <button onClick={saveAllSettings} className={`px-12 py-5 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all duration-500 shadow-2xl ${isSaved ? 'bg-green-600 text-white scale-95' : 'bg-brand-gold text-black hover:scale-105 active:opacity-80'}`}>{isSaved ? "SINCRONIZACIÓN EXITOSA ✓" : "Sincronizar IA"}</button>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
@@ -356,44 +446,61 @@ ${wizardState.rules}
                 <section className="bg-brand-surface border border-white/5 rounded-[40px] p-0 shadow-2xl overflow-hidden min-h-[650px] flex flex-col relative">
                     <div className="p-8 border-b border-white/5 bg-black/40 flex justify-between items-center backdrop-blur-md">
                         <h3 className="text-sm font-black text-white uppercase tracking-widest flex items-center gap-3"><span className="w-8 h-8 rounded-lg bg-brand-gold/20 border border-brand-gold/40 flex items-center justify-center text-brand-gold text-[11px]">IA</span>Protocolo de Calibración</h3>
-                        <div className="flex gap-1.5">{[0, 1, 2].map(s => (<div key={s} className={`w-10 h-1.5 rounded-full transition-all duration-500 ${wizardStep === s ? 'bg-brand-gold shadow-[0_0_10px_rgba(212,175,55,0.5)]' : (wizardStep > s ? 'bg-brand-gold/40' : 'bg-white/5')}`}></div>))}</div>
+                        {current.isWizardCompleted && (
+                             <button onClick={handleEditWizard} className="px-4 py-2 bg-brand-gold/10 text-brand-gold border border-brand-gold/20 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-brand-gold hover:text-black transition-all">Editar Cerebro</button>
+                        )}
+                        {!current.isWizardCompleted && (
+                            <div className="flex gap-1.5">{[0, 1, 2].map(s => (<div key={s} className={`w-10 h-1.5 rounded-full transition-all duration-500 ${wizardStep === s ? 'bg-brand-gold shadow-[0_0_10px_rgba(212,175,55,0.5)]' : (wizardStep > s ? 'bg-brand-gold/40' : 'bg-white/5')}`}></div>))}</div>
+                        )}
                     </div>
 
-                    <div className="flex-1 p-10 flex flex-col justify-center">
-                        {wizardStep === 0 && (
-                            <div className="space-y-6 animate-fade-in">
-                                <div className="space-y-3 mb-8"><label className="text-[12px] font-black text-brand-gold uppercase tracking-[0.3em]">FASE 1: LA MISIÓN</label><h4 className="text-2xl font-black text-white tracking-tighter">Define tu Identidad y Cliente Ideal</h4><p className="text-sm text-gray-400 leading-relaxed font-medium">La IA necesita saber quién es y para quién trabaja. Esto define el 80% de su éxito.</p></div>
-                                <div className="space-y-4">
-                                    <input value={current.productName} onChange={e => setCurrent({...current, productName: e.target.value})} className="w-full bg-black/60 border border-white/10 rounded-xl p-4 text-sm font-bold text-white focus:border-brand-gold outline-none" placeholder="Nombre de tu Negocio/Producto" />
-                                    <div><textarea value={wizardState.mission} onChange={e => handleWizardStateChange('mission', e.target.value)} className="w-full bg-black/60 border border-white/10 rounded-xl p-4 text-sm text-gray-300 h-24 resize-none focus:border-brand-gold outline-none" placeholder="Misión: Mi propósito es..."/><div className="text-right mt-1"><AiEnhanceButton field="mission"/></div></div>
-                                    <div><textarea value={wizardState.idealCustomer} onChange={e => handleWizardStateChange('idealCustomer', e.target.value)} className="w-full bg-black/60 border border-white/10 rounded-xl p-4 text-sm text-gray-300 h-24 resize-none focus:border-brand-gold outline-none" placeholder="Cliente Ideal: Agencias que facturan..."/><div className="text-right mt-1"><AiEnhanceButton field="idealCustomer"/></div></div>
-                                </div>
-                                <div className="pt-4"><button onClick={() => setWizardStep(1)} disabled={!current.productName || !wizardState.mission || !wizardState.idealCustomer} className="w-full py-5 bg-white/5 hover:bg-white/10 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest disabled:opacity-20 transition-all border border-white/10">Siguiente: Arsenal &rarr;</button></div>
+                    {current.isWizardCompleted ? (
+                        <div className="flex-1 flex flex-col items-center justify-center p-10 text-center space-y-8 animate-fade-in">
+                            <div className="w-24 h-24 bg-green-500/10 text-green-500 rounded-full flex items-center justify-center mx-auto border-4 border-green-500/20 mb-6 shadow-[0_0_40px_rgba(34,197,94,0.3)]">
+                                <svg className="w-12 h-12" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                             </div>
-                        )}
-                        {wizardStep === 1 && (
-                             <div className="space-y-6 animate-fade-in">
-                                <div className="space-y-3 mb-8"><label className="text-[12px] font-black text-brand-gold uppercase tracking-[0.3em]">FASE 2: EL ARSENAL</label><h4 className="text-2xl font-black text-white tracking-tighter">Detalla tu Oferta y Cierre</h4><p className="text-sm text-gray-400 leading-relaxed font-medium">Qué vendes, cuánto cuesta y cuál es el siguiente paso para el cliente.</p></div>
-                                <div className="space-y-4">
-                                    <div><textarea value={wizardState.detailedDescription} onChange={e => handleWizardStateChange('detailedDescription', e.target.value)} className="w-full bg-black/60 border border-white/10 rounded-xl p-4 text-sm text-gray-300 h-32 resize-none focus:border-brand-gold outline-none" placeholder="Descripción detallada del producto/servicio..."/><div className="text-right mt-1"><AiEnhanceButton field="detailedDescription"/></div></div>
-                                    <input value={current.priceText} onChange={e => setCurrent({...current, priceText: e.target.value})} className="w-full bg-black/60 border border-white/10 rounded-xl p-4 text-sm text-white focus:border-brand-gold outline-none" placeholder="Inversión / Precio. Ej: $1.000 USD" />
-                                    <textarea value={current.ctaLink} onChange={e => setCurrent({...current, ctaLink: e.target.value})} className="w-full bg-black/60 border border-white/10 rounded-xl p-4 text-sm text-gray-300 h-24 resize-none focus:border-brand-gold outline-none" placeholder="Llamada a la acción. Ej: 'Excelente, agenda una llamada aquí: [link]'"/>
+                            <h3 className="text-2xl font-black text-white uppercase tracking-widest">Cerebro Desplegado</h3>
+                            <p className="text-sm text-gray-400 max-w-sm">
+                                Tu inteligencia artificial está activa y operando con la configuración más reciente. Puedes ajustar la personalidad o editar el cerebro cuando quieras.
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="flex-1 p-10 flex flex-col justify-center">
+                            {wizardStep === 0 && (
+                                <div className="space-y-6 animate-fade-in">
+                                    <div className="space-y-3 mb-8"><label className="text-[12px] font-black text-brand-gold uppercase tracking-[0.3em]">FASE 1: LA MISIÓN</label><h4 className="text-2xl font-black text-white tracking-tighter">Define tu Identidad y Cliente Ideal</h4><p className="text-sm text-gray-400 leading-relaxed font-medium">La IA necesita saber quién es y para quién trabaja. Esto define el 80% de su éxito.</p></div>
+                                    <div className="space-y-4">
+                                        <input value={current.productName} onChange={e => setCurrent({...current, productName: e.target.value})} className="w-full bg-black/60 border border-white/10 rounded-xl p-4 text-sm font-bold text-white focus:border-brand-gold outline-none" placeholder="Nombre de tu Negocio/Producto" />
+                                        <div><textarea value={wizardState.mission} onChange={e => handleWizardStateChange('mission', e.target.value)} className="w-full bg-black/60 border border-white/10 rounded-xl p-4 text-sm text-gray-300 h-24 resize-none focus:border-brand-gold outline-none" placeholder="Misión: Mi propósito es..."/><div className="text-right mt-1"><AiEnhanceButton field="mission"/></div></div>
+                                        <div><textarea value={wizardState.idealCustomer} onChange={e => handleWizardStateChange('idealCustomer', e.target.value)} className="w-full bg-black/60 border border-white/10 rounded-xl p-4 text-sm text-gray-300 h-24 resize-none focus:border-brand-gold outline-none" placeholder="Cliente Ideal: Agencias que facturan..."/><div className="text-right mt-1"><AiEnhanceButton field="idealCustomer"/></div></div>
+                                    </div>
+                                    <div className="pt-4"><button onClick={() => setWizardStep(1)} disabled={!current.productName || !wizardState.mission || !wizardState.idealCustomer} className="w-full py-5 bg-white/5 hover:bg-white/10 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest disabled:opacity-20 transition-all border border-white/10">Siguiente: Arsenal &rarr;</button></div>
                                 </div>
-                                <div className="flex gap-4 pt-4"><button onClick={() => setWizardStep(0)} className="flex-1 py-5 text-gray-500 font-black text-[11px] uppercase tracking-widest hover:text-white transition-colors">Atrás</button><button onClick={() => setWizardStep(2)} disabled={!wizardState.detailedDescription || !current.priceText || !current.ctaLink} className="flex-[2] py-5 bg-white/5 hover:bg-white/10 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest disabled:opacity-20 transition-all border border-white/10">Siguiente: Playbook &rarr;</button></div>
-                            </div>
-                        )}
-                        {wizardStep === 2 && (
-                            <div className="space-y-6 animate-fade-in">
-                                <div className="space-y-3"><label className="text-[12px] font-black text-brand-gold uppercase tracking-[0.3em]">FASE 3: EL PLAYBOOK</label><h4 className="text-2xl font-black text-white tracking-tighter">Manejo de Objeciones y Reglas</h4><p className="text-sm text-gray-400 leading-relaxed font-medium">Enséñale a la IA cómo pensar como tú. Define cómo manejar las dudas y qué tiene prohibido hacer.</p></div>
-                                <div className="space-y-4 max-h-56 overflow-y-auto custom-scrollbar pr-2">
-                                    {wizardState.objections.map(o => (<div key={o.id} className="p-4 bg-black/60 border border-white/10 rounded-xl space-y-2 relative"><button onClick={() => removeObjection(o.id)} className="absolute top-2 right-2 text-red-500 text-xs">✕</button><input value={o.objection} onChange={e => handleObjectionChange(o.id, 'objection', e.target.value)} className="w-full bg-transparent text-white text-xs font-bold" placeholder="Objeción del cliente..."/><textarea value={o.response} onChange={e => handleObjectionChange(o.id, 'response', e.target.value)} className="w-full bg-transparent text-gray-400 text-xs h-12 resize-none" placeholder="Respuesta de la IA..."/></div>))}
-                                    <button onClick={addObjection} className="w-full text-center text-xs text-brand-gold font-bold py-2">+ Añadir Objeción</button>
+                            )}
+                            {wizardStep === 1 && (
+                                <div className="space-y-6 animate-fade-in">
+                                    <div className="space-y-3 mb-8"><label className="text-[12px] font-black text-brand-gold uppercase tracking-[0.3em]">FASE 2: EL ARSENAL</label><h4 className="text-2xl font-black text-white tracking-tighter">Detalla tu Oferta y Cierre</h4><p className="text-sm text-gray-400 leading-relaxed font-medium">Qué vendes, cuánto cuesta y cuál es el siguiente paso para el cliente.</p></div>
+                                    <div className="space-y-4">
+                                        <div><textarea value={wizardState.detailedDescription} onChange={e => handleWizardStateChange('detailedDescription', e.target.value)} className="w-full bg-black/60 border border-white/10 rounded-xl p-4 text-sm text-gray-300 h-32 resize-none focus:border-brand-gold outline-none" placeholder="Descripción detallada del producto/servicio..."/><div className="text-right mt-1"><AiEnhanceButton field="detailedDescription"/></div></div>
+                                        <input value={current.priceText} onChange={e => setCurrent({...current, priceText: e.target.value})} className="w-full bg-black/60 border border-white/10 rounded-xl p-4 text-sm text-white focus:border-brand-gold outline-none" placeholder="Inversión / Precio. Ej: $1.000 USD" />
+                                        <textarea value={current.ctaLink} onChange={e => setCurrent({...current, ctaLink: e.target.value})} className="w-full bg-black/60 border border-white/10 rounded-xl p-4 text-sm text-gray-300 h-24 resize-none focus:border-brand-gold outline-none" placeholder="Llamada a la acción. Ej: 'Excelente, agenda una llamada aquí: [link]'"/>
+                                    </div>
+                                    <div className="flex gap-4 pt-4"><button onClick={() => setWizardStep(0)} className="flex-1 py-5 text-gray-500 font-black text-[11px] uppercase tracking-widest hover:text-white transition-colors">Atrás</button><button onClick={() => setWizardStep(2)} disabled={!wizardState.detailedDescription || !current.priceText || !current.ctaLink} className="flex-[2] py-5 bg-white/5 hover:bg-white/10 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest disabled:opacity-20 transition-all border border-white/10">Siguiente: Playbook &rarr;</button></div>
                                 </div>
-                                <textarea value={wizardState.rules} onChange={e => handleWizardStateChange('rules', e.target.value)} className="w-full bg-black/60 border border-white/10 rounded-xl p-4 text-sm text-gray-300 h-24 resize-none focus:border-brand-gold outline-none" placeholder="Reglas de Oro y Límites..."/>
-                                <div className="flex gap-4 pt-4"><button onClick={() => setWizardStep(1)} className="flex-1 py-5 text-gray-500 font-black text-[11px] uppercase tracking-widest hover:text-white">Atrás</button><button onClick={() => { setWizardStep(0); save(); }} className="flex-[2] py-5 bg-brand-gold text-black rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-[0_15px_40px_rgba(212,175,55,0.3)] hover:scale-[1.02] transition-all">Desplegar Cerebro</button></div>
-                            </div>
-                        )}
-                    </div>
+                            )}
+                            {wizardStep === 2 && (
+                                <div className="space-y-6 animate-fade-in">
+                                    <div className="space-y-3"><label className="text-[12px] font-black text-brand-gold uppercase tracking-[0.3em]">FASE 3: EL PLAYBOOK</label><h4 className="text-2xl font-black text-white tracking-tighter">Manejo de Objeciones y Reglas</h4><p className="text-sm text-gray-400 leading-relaxed font-medium">Enséñale a la IA cómo pensar como tú. Define cómo manejar las dudas y qué tiene prohibido hacer.</p></div>
+                                    <div className="space-y-4 max-h-56 overflow-y-auto custom-scrollbar pr-2">
+                                        {wizardState.objections.map(o => (<div key={o.id} className="p-4 bg-black/60 border border-white/10 rounded-xl space-y-2 relative"><button onClick={() => removeObjection(o.id)} className="absolute top-2 right-2 text-red-500 text-xs">✕</button><input value={o.objection} onChange={e => handleObjectionChange(o.id, 'objection', e.target.value)} className="w-full bg-transparent text-white text-xs font-bold" placeholder="Objeción del cliente..."/><textarea value={o.response} onChange={e => handleObjectionChange(o.id, 'response', e.target.value)} className="w-full bg-transparent text-gray-400 text-xs h-12 resize-none" placeholder="Respuesta de la IA..."/></div>))}
+                                        <button onClick={addObjection} className="w-full text-center text-xs text-brand-gold font-bold py-2">+ Añadir Objeción</button>
+                                    </div>
+                                    <textarea value={wizardState.rules} onChange={e => handleWizardStateChange('rules', e.target.value)} className="w-full bg-black/60 border border-white/10 rounded-xl p-4 text-sm text-gray-300 h-24 resize-none focus:border-brand-gold outline-none" placeholder="Reglas de Oro y Límites..."/>
+                                    <div className="flex gap-4 pt-4"><button onClick={() => setWizardStep(1)} className="flex-1 py-5 text-gray-500 font-black text-[11px] uppercase tracking-widest hover:text-white">Atrás</button><button onClick={handleCompleteWizard} className="flex-[2] py-5 bg-brand-gold text-black rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-[0_15px_40px_rgba(212,175,55,0.3)] hover:scale-[1.02] transition-all">Desplegar Cerebro</button></div>
+                                </div>
+                            )}
+                        </div>
+                    )}
                     <div className="p-4 text-center border-t border-white/5"><select onChange={(e) => loadTemplate(e.target.value)} className="w-full bg-transparent text-center text-[10px] font-bold text-brand-gold uppercase tracking-widest hover:underline cursor-pointer outline-none"><option value="DEFAULT">Cargar Plantilla Táctica...</option>{Object.entries(TEMPLATES).filter(([key]) => key !== 'DEFAULT').map(([key, { name }]) => (<option key={key} value={key}>{name}</option>))}</select></div>
                 </section>
             </div>
@@ -415,11 +522,18 @@ ${wizardState.rules}
                     <h3 className="text-sm font-black text-white uppercase tracking-widest mb-2">Panel de Control de Gemini</h3>
                      <p className="text-[10px] text-gray-400 uppercase font-bold mb-4 tracking-widest">El motor neural de la IA. <a href="https://aistudio.google.com/app/apikey" target="_blank"  rel="noopener noreferrer" className="text-brand-gold underline">Obtener API Key aquí</a>.</p>
                      
-                     <div className="flex gap-2 mb-6">
+                     <div className="flex gap-2">
                         <input type="password" value={current.geminiApiKey || ''} onChange={e => {setCurrent({...current, geminiApiKey: e.target.value});}} className="flex-1 bg-black/60 border border-white/10 rounded-xl p-4 text-sm text-brand-gold font-mono focus:border-brand-gold outline-none" placeholder="AIzaSy..." />
+                        <button 
+                            onClick={handleSaveApiKey} 
+                            disabled={isSavingApiKey || !current.geminiApiKey?.trim()}
+                            className="px-6 py-4 bg-brand-gold text-black rounded-xl font-black text-[10px] uppercase tracking-widest hover:scale-[1.02] active:scale-95 transition-all shadow-lg shadow-brand-gold/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {isSavingApiKey ? 'Guardando...' : 'Guardar Key'}
+                        </button>
                      </div>
 
-                    <div className="bg-black/40 border border-white/5 rounded-2xl p-4 text-center">
+                    <div className="bg-black/40 border border-white/5 rounded-2xl p-4 text-center mt-6">
                         <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest mb-2">Asistente de Calibración</p>
                         <p className="text-2xl font-black text-brand-gold">{sessionTokenCount.toLocaleString()}</p>
                         <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">Tokens Usados (Sesión)</p>

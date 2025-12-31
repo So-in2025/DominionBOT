@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { User, LogEntry, GlobalDashboardMetrics, SystemSettings } from '../../types';
 import { getAuthHeaders } from '../../config';
@@ -10,7 +11,7 @@ interface AdminDashboardProps {
     onLogout: () => void;
 }
 
-type AdminView = 'dashboard' | 'clients' | 'logs';
+type AdminView = 'dashboard' | 'clients' | 'logs' | 'test_bot';
 
 const KpiCard: React.FC<{ label: string; value: string | number; icon: React.ReactNode; isCurrency?: boolean; }> = ({ label, value, icon, isCurrency }) => (
     <div className="bg-brand-surface border border-white/5 rounded-2xl p-6 flex items-center gap-6 group hover:bg-white/5 transition-all">
@@ -37,6 +38,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
     const [isResetArmed, setIsResetArmed] = useState(false);
     const [resetConfirmation, setResetConfirmation] = useState('');
     const [supportNumberInput, setSupportNumberInput] = useState('');
+
+    // State for Test Bot section
+    const [selectedTestClient, setSelectedTestClient] = useState<string | null>(null);
+    const [isTestBotRunning, setIsTestBotRunning] = useState(false);
 
     const fetchData = async () => {
         setLoading(true);
@@ -133,6 +138,57 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
         }
     };
 
+    const handleStartTestBot = async () => {
+        if (!selectedTestClient) {
+            showToast('Por favor, selecciona un cliente para iniciar la prueba.', 'error');
+            return;
+        }
+        setIsTestBotRunning(true);
+        try {
+            const res = await fetch(`${backendUrl}/api/admin/test-bot/start`, {
+                method: 'POST',
+                headers: getAuthHeaders(token),
+                body: JSON.stringify({ targetUserId: selectedTestClient })
+            });
+            if (res.ok) {
+                showToast('Secuencia de prueba iniciada.', 'success');
+            } else {
+                const data = await res.json();
+                showToast(data.message || 'Error al iniciar la prueba del bot.', 'error');
+            }
+        } catch (e) {
+            console.error("Error starting test bot:", e);
+            showToast('Error de red al iniciar la prueba del bot.', 'error');
+        } finally {
+            setIsTestBotRunning(false);
+        }
+    };
+
+    const handleClearTestBotConversation = async () => {
+        if (!selectedTestClient) {
+            showToast('Por favor, selecciona un cliente para limpiar la conversación de prueba.', 'error');
+            return;
+        }
+        if (!window.confirm('¿Estás seguro de que quieres eliminar la conversación de prueba de este cliente?')) return;
+
+        try {
+            const res = await fetch(`${backendUrl}/api/admin/test-bot/clear`, {
+                method: 'POST',
+                headers: getAuthHeaders(token),
+                body: JSON.stringify({ targetUserId: selectedTestClient })
+            });
+            if (res.ok) {
+                showToast('Conversación de prueba eliminada.', 'success');
+            } else {
+                const data = await res.json();
+                showToast(data.message || 'Error al limpiar la conversación de prueba.', 'error');
+            }
+        } catch (e) {
+            console.error("Error clearing test bot conversation:", e);
+            showToast('Error de red al limpiar la conversación de prueba.', 'error');
+        }
+    };
+
     const getPlanPill = (status: string, type: string) => {
         const colors: Record<string, string> = {
             active: 'bg-green-500/10 text-green-400 border-green-500/20',
@@ -210,6 +266,56 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
                 return <ClientTable clients={clients} getPlanPill={getPlanPill} onAudit={onAudit} />;
             case 'logs':
                 return <LogTable logs={logs} getLogLevelPill={getLogLevelPill} />;
+            case 'test_bot':
+                return (
+                    <section className="bg-brand-surface border border-white/5 rounded-2xl p-6 shadow-2xl">
+                        <h3 className="text-sm font-black text-white uppercase tracking-widest mb-2">Bot de Pruebas "Elite"</h3>
+                        <p className="text-[10px] text-gray-400 uppercase font-bold mb-6 tracking-widest">
+                            Simula interacciones con el bot de un cliente para testear su configuración en tiempo real.
+                        </p>
+
+                        <div className="space-y-6">
+                            <div>
+                                <label htmlFor="testClientSelect" className="block text-xs font-bold text-gray-400 mb-2">Seleccionar Cliente Objetivo</label>
+                                <select
+                                    id="testClientSelect"
+                                    value={selectedTestClient || ''}
+                                    onChange={(e) => setSelectedTestClient(e.target.value)}
+                                    className="w-full bg-black/50 border border-white/10 rounded-lg py-2.5 px-4 text-sm text-white focus:border-brand-gold outline-none"
+                                >
+                                    <option value="" disabled>-- Selecciona un cliente --</option>
+                                    {clients.map(client => (
+                                        <option key={client.id} value={client.id}>{client.business_name} ({client.username})</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <button
+                                    onClick={handleStartTestBot}
+                                    disabled={!selectedTestClient || isTestBotRunning}
+                                    className="w-full py-3 bg-brand-gold text-black rounded-xl font-black text-xs uppercase tracking-[0.2em] hover:scale-[1.02] transition-transform disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-brand-gold/20"
+                                >
+                                    {isTestBotRunning ? 'Ejecutando Prueba...' : 'Iniciar Prueba del Bot'}
+                                </button>
+                                <button
+                                    onClick={handleClearTestBotConversation}
+                                    disabled={!selectedTestClient || isTestBotRunning}
+                                    className="w-full py-3 bg-red-500/10 text-red-400 border border-red-500/20 rounded-xl font-black text-xs uppercase tracking-[0.2em] hover:bg-red-500 hover:text-white transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    Limpiar Conversación de Prueba
+                                </button>
+                            </div>
+
+                            {isTestBotRunning && (
+                                <div className="mt-4 p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-xl text-yellow-400 text-xs text-center flex items-center justify-center gap-2 animate-pulse">
+                                    <div className="w-3 h-3 border-2 border-yellow-400/30 border-t-yellow-400 rounded-full animate-spin"></div>
+                                    Ejecutando secuencia de prueba...
+                                </div>
+                            )}
+                        </div>
+                    </section>
+                );
             default:
                 return null;
         }
@@ -227,6 +333,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
                     <button onClick={() => setView('dashboard')} className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${view === 'dashboard' ? 'bg-brand-gold text-black' : 'text-gray-500 hover:bg-white/5'}`}>Visión General</button>
                     <button onClick={() => setView('clients')} className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${view === 'clients' ? 'bg-brand-gold text-black' : 'text-gray-500 hover:bg-white/5'}`}>Clientes ({clients.length})</button>
                     <button onClick={() => setView('logs')} className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${view === 'logs' ? 'bg-brand-gold text-black' : 'text-gray-500 hover:bg-white/5'}`}>Telemetría</button>
+                    <button onClick={() => setView('test_bot')} className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${view === 'test_bot' ? 'bg-brand-gold text-black' : 'text-gray-500 hover:bg-white/5'}`}>Test Bot</button>
                 </div>
 
                 {renderContent()}
@@ -283,7 +390,7 @@ const DashboardView: React.FC<{metrics: GlobalDashboardMetrics | null, onAudit: 
                 <KpiCard label="MRR Estimado" value={metrics.mrr.toLocaleString()} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>} isCurrency />
                 <KpiCard label="Clientes Activos" value={metrics.totalClients} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857" /></svg>} />
                 <KpiCard label="Nodos Online" value={metrics.onlineNodes} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>} />
-                <KpiCard label="Leads Globales" value={metrics.globalLeads} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>} />
+                <KpiCard label="Leads Globales" value={metrics.globalLeads} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>} />
                 <KpiCard label="Leads Calientes" value={metrics.hotLeads} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.657 7.343A8 8 0 0117.657 18.657z" /></svg>} />
                 <KpiCard label="Cuentas en Riesgo" value={metrics.atRiskAccounts} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>} />
             </div>

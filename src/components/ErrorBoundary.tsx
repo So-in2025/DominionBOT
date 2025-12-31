@@ -42,12 +42,10 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
       );
     }
 
-    // FIX: The error "Property 'props' does not exist on type 'ErrorBoundary'" on this line
-    // is highly unusual for a standard React class component. `this.props.children` is
-    // the correct way to access props. If this error persists, it suggests a deeper
-    // TypeScript configuration or `@types/react` version mismatch in the project environment,
-    // rather than an issue with this specific line of code. No direct code modification is typically needed here.
-    return this.props.children;
+    // FIX: Explicitly cast 'this' to its full React Component type to ensure 'props' is recognized,
+    // addressing the "Property 'props' does not exist on type 'ErrorBoundary'" error.
+    const { children } = (this as React.Component<ErrorBoundaryProps, ErrorBoundaryState>).props;
+    return children;
   }
 }
 

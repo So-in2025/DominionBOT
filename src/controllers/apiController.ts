@@ -1,16 +1,31 @@
+
 import { Request, Response } from 'express';
 // FIX: Import Buffer to resolve 'Cannot find name Buffer' error.
 import { Buffer } from 'buffer';
-import { connectToWhatsApp, disconnectWhatsApp, sendMessage, getSessionStatus } from '../whatsapp/client.js';
+import { connectToWhatsApp, disconnectWhatsApp, sendMessage, getSessionStatus, processAiResponseForJid } from '../whatsapp/client.js'; // Import processAiResponseForJid
 import { conversationService } from '../services/conversationService.js';
-import { Message } from '../types.js';
+import { Message, LeadStatus, User } from '../types.js';
 import { db } from '../database.js';
 import { logService } from '../services/logService.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+// --- Test Bot Specifics ---
+const ELITE_BOT_JID = '5491112345678@s.whatsapp.net'; // Consistent JID for the elite test bot
+const ELITE_BOT_NAME = 'Dominion Elite Test Bot';
+
+const TEST_SCRIPT = [
+    "Hola, estoy interesado en tus servicios. ¿Cómo funciona?",
+    "¿Podrías explicarme un poco más sobre el plan PRO?",
+    "¿Cuál es el costo mensual?",
+    "¿Ofrecen alguna garantía o prueba?",
+    "Suena interesante. Creo que estoy listo para ver una demo o empezar. ¿Qué debo hacer ahora?",
+];
+
 const getUserId = (req: any) => req.user.id;
+const getUser = (req: any) => req.user;
+
 
 export const handleGetStatus = (req: any, res: any) => {
     const userId = getUserId(req);
@@ -146,5 +161,86 @@ export const handleGetTtsAudio = async (req: any, res: any) => {
         const userIdForLog = req.user ? req.user.id : 'unauthenticated';
         logService.warn(`[TTS] Archivo de audio no encontrado para el evento: ${eventName}`, userIdForLog);
         return res.status(404).send('Audio no encontrado.');
+    }
+};
+
+/**
+ * Inicia una secuencia de mensajes de prueba desde el "bot de pruebas" hacia el bot del cliente actual.
+ */
+export const handleStartClientTestBot = async (req: any, res: any) => {
+    const userId = getUserId(req);
+    const user = getUser(req); // User object from JWT
+
+    try {
+        let targetUser = await db.getUser(userId);
+        if (!targetUser) {
+            return res.status(404).json({ message: 'Cliente objetivo no encontrado.' });
+        }
+
+        // 1. Asegurarse de que el bot del cliente esté activo
+        if (!targetUser.settings.isActive) {
+            targetUser.settings.isActive = true;
+            await db.updateUserSettings(userId, { isActive: true });
+            logService.audit(`Bot del cliente ${targetUser.username} activado para prueba (por cliente).`, userId, user.username);
+        }
+        // 2. Opcional: Resetear el contador de leads calificados para un test limpio
+        await db.updateUser(userId, { trial_qualified_leads_count: 0 });
+
+
+        // 3. Iniciar la secuencia de mensajes de prueba
+        logService.audit(`Iniciando prueba de bot élite para cliente (autodirigida): ${targetUser.username}`, userId, user.username);
+
+        for (const messageText of TEST_SCRIPT) {
+            // Añadir el mensaje del bot élite como si fuera un usuario al chat del cliente
+            const eliteBotMessage: Message = { 
+                id: `elite_bot_msg_${Date.now()}_${Math.random().toString(36).substring(7)}`, 
+                text: messageText, 
+                sender: 'elite_bot', 
+                timestamp: new Date() 
+            };
+            await conversationService.addMessage(userId, ELITE_BOT_JID, eliteBotMessage, ELITE_BOT_NAME);
+
+            // Trigger el procesamiento de la IA del cliente objetivo inmediatamente (sin debounce)
+            await processAiResponseForJid(userId, ELITE_BOT_JID);
+
+            // Pequeña pausa para simular una conversación
+            await new Promise(resolve => setTimeout(resolve, 3000));
+        }
+
+        logService.audit(`Prueba de bot élite finalizada para cliente (autodirigida): ${targetUser.username}`, userId, user.username);
+        res.status(200).json({ message: 'Secuencia de prueba de bot élite iniciada y completada.' });
+
+    } catch (error: any) {
+        logService.error(`Error al iniciar la prueba del bot élite para ${userId} (autodirigida)`, error, userId, user.username);
+        res.status(500).json({ message: 'Error interno del servidor al iniciar la prueba.' });
+    }
+};
+
+/**
+ * Elimina la conversación del "bot de pruebas" para el cliente actual.
+ */
+export const handleClearClientTestBotConversation = async (req: any, res: any) => {
+    const userId = getUserId(req);
+    const user = getUser(req);
+
+    try {
+        const targetUser = await db.getUser(userId);
+        if (!targetUser) {
+            return res.status(404).json({ message: 'Cliente objetivo no encontrado.' });
+        }
+
+        if (targetUser.conversations && targetUser.conversations[ELITE_BOT_JID]) {
+            delete targetUser.conversations[ELITE_BOT_JID];
+            await db.updateUser(userId, { conversations: targetUser.conversations });
+            logService.audit(`Conversación de bot élite eliminada para cliente (autodirigida): ${targetUser.username}`, userId, user.username);
+        } else {
+            logService.info(`No se encontró conversación de bot élite para eliminar en cliente (autodirigida): ${targetUser.username}`, userId, user.username);
+        }
+
+        res.status(200).json({ message: 'Conversación de prueba de bot élite eliminada.' });
+
+    } catch (error: any) {
+        logService.error(`Error al limpiar la conversación del bot élite para ${userId} (autodirigida)`, error, userId, user.username);
+        res.status(500).json({ message: 'Error interno del servidor al limpiar la conversación.' });
     }
 };

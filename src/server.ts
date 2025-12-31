@@ -1,3 +1,4 @@
+
 // 1. CARGA DE ENTORNO CRÍTICA
 import { JWT_SECRET, PORT } from './env.js';
 import express from 'express';
@@ -111,9 +112,9 @@ app.get('/api/metrics', authenticateToken, async (req: any, res: any) => {
 });
 
 import { 
-    handleConnect, handleDisconnect, handleSendMessage, handleUpdateConversation, handleGetStatus, handleGetConversations, handleGetTestimonials, handlePostTestimonial, handleGetTtsAudio
+    handleConnect, handleDisconnect, handleSendMessage, handleUpdateConversation, handleGetStatus, handleGetConversations, handleGetTestimonials, handlePostTestimonial, handleGetTtsAudio, handleStartClientTestBot, handleClearClientTestBotConversation
 } from './controllers/apiController.js';
-import { handleGetAllClients, handleUpdateClient, handleRenewClient, handleGetLogs, handleGetDashboardMetrics, handleActivateClient, handleGetSystemSettings, handleUpdateSystemSettings, handleDeleteClient } from './controllers/adminController.js';
+import { handleGetAllClients, handleUpdateClient, handleRenewClient, handleGetLogs, handleGetDashboardMetrics, handleActivateClient, handleGetSystemSettings, handleUpdateSystemSettings, handleDeleteClient, handleStartTestBot, handleClearTestBotConversation } from './controllers/adminController.js';
 
 // Standard Client Routes
 app.get('/api/status', authenticateToken, handleGetStatus); 
@@ -122,6 +123,10 @@ app.get('/api/disconnect', authenticateToken, handleDisconnect);
 app.post('/api/send', authenticateToken, handleSendMessage);
 app.post('/api/conversation/update', authenticateToken, handleUpdateConversation);
 app.get('/api/conversations', authenticateToken, handleGetConversations);
+
+// Client Test Bot Routes
+app.post('/api/client/test-bot/start', authenticateToken, handleStartClientTestBot);
+app.post('/api/client/test-bot/clear', authenticateToken, handleClearClientTestBotConversation);
 
 // Public/Shared Routes
 app.get('/api/system/settings', authenticateToken, handleGetSystemSettings); // Clients need this for support number
@@ -150,6 +155,10 @@ adminRouter.get('/logs', handleGetLogs);
 // Admin System Settings
 adminRouter.get('/system/settings', handleGetSystemSettings);
 adminRouter.put('/system/settings', handleUpdateSystemSettings);
+
+// Admin Test Bot Routes
+adminRouter.post('/test-bot/start', handleStartTestBot);
+adminRouter.post('/test-bot/clear', handleClearTestBotConversation);
 
 adminRouter.post('/system/reset', async (req: any, res: any) => {
     logService.audit('HARD RESET DEL SISTEMA INICIADO', req.user.id, req.user.username);

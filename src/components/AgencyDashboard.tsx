@@ -1,14 +1,18 @@
 
+
 import React, { useEffect, useState } from 'react';
 import { BotSettings, DashboardMetrics, User } from '../types.js';
 import { getAuthHeaders } from '../config';
 import { GoogleGenAI } from '@google/genai';
+import TestBotSimulator from './Client/TestBotSimulator.js'; // Import the new component
 
 interface AgencyDashboardProps {
   token: string;
   backendUrl: string;
   settings: BotSettings;
   onUpdateSettings: (newSettings: BotSettings) => void | Promise<void>;
+  currentUser: User | null; // Pass currentUser to get ID for test bot
+  showToast: (message: string, type: 'success' | 'error') => void; // Pass showToast
 }
 
 const KpiCard: React.FC<{ 
@@ -63,7 +67,7 @@ const FunnelStep: React.FC<{ label: string; value: number; total: number; color:
     );
 };
 
-const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, settings, onUpdateSettings }) => {
+const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, settings, onUpdateSettings, currentUser, showToast }) => {
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -77,7 +81,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
     setApiKeyStatus('VERIFYING');
     try {
         const ai = new GoogleGenAI({ apiKey: settings.geminiApiKey });
-        await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: 'test' });
+        await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: [{text: 'test'}] }); // Use contents with parts for text-only input
         setApiKeyStatus('VALID');
         alert('API Key verificada y operativa.');
     } catch (error) {
@@ -201,6 +205,16 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
                 </div>
             </div>
         </div>
+
+        {/* Client Test Bot Simulator */}
+        {currentUser && (
+            <TestBotSimulator 
+                token={token} 
+                backendUrl={backendUrl} 
+                userId={currentUser.id} 
+                showToast={showToast} 
+            />
+        )}
       </div>
     </div>
   );
