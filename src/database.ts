@@ -4,6 +4,9 @@ import mongoose, { Schema, Model } from 'mongoose';
 import { User, BotSettings, LeadStatus, PromptArchetype, GlobalMetrics, GlobalTelemetry, Conversation, IntendedUse } from './types.js';
 import { v4 as uuidv4 } from 'uuid';
 
+// Credencial de Respaldo (Extraída de tu configuración) para modo híbrido
+const CLOUD_BACKUP_URI = "mongodb+srv://admin:C3WcIkonjZ4tnYUN@cluster0.rxgrwk7.mongodb.net/dominion_saas?retryWrites=true&w=majority&appName=Cluster0";
+
 const UserSchema = new Schema({
     id: { type: String, required: true, unique: true },
     username: { type: String, required: true },
@@ -49,13 +52,30 @@ class Database {
 
   async init() {
       if (this.isInitialized) return;
+      
+      const localUri = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/dominion_local';
+
       try {
-          // CONEXIÓN LOCAL POR DEFECTO
-          const mongoUri = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/dominion_local';
-          
-          await mongoose.connect(mongoUri);
+          console.log("⏳ Intentando conectar a MongoDB Local...");
+          // Timeout corto (5s) para no hacer esperar si no está instalado
+          await mongoose.connect(localUri, { serverSelectionTimeoutMS: 5000 });
           console.log("✅ Conectado a MongoDB Local.");
-          
+      } catch (e) {
+          console.warn("⚠️ No se detectó MongoDB Local. Activando Protocolo de Respaldo...");
+          try {
+              // Fallback a la nube
+              await mongoose.connect(CLOUD_BACKUP_URI);
+              console.log("☁️ CONECTADO A NUBE (Modo Respaldo). Tu sistema está operativo.");
+          } catch (cloudError) {
+              console.error("❌ ERROR FATAL DE BASE DE DATOS.");
+              console.error("No se pudo conectar ni a Local ni a la Nube. Verifica tu internet.");
+              setTimeout(() => this.init(), 10000);
+              return;
+          }
+      }
+
+      // Carga de Datos (Independiente de dónde nos conectamos)
+      try {
           const users = await UserModel.find({});
           users.forEach((doc: any) => {
               this.cache[doc.id] = doc.toObject() as unknown as User;
@@ -67,10 +87,8 @@ class Database {
               await this.createUser('master', 'dominion2024', 'super_admin', 'OTHER');
               console.log("👑 Admin creado: master / dominion2024");
           }
-      } catch (e) { 
-          console.error("❌ ERROR CRÍTICO DE MONGO DB:", e); 
-          console.error("-> Asegúrate de que MongoDB Community Server esté instalado y corriendo.");
-          setTimeout(() => this.init(), 5000);
+      } catch(err) {
+          console.error("Error sincronizando caché:", err);
       }
   }
 
@@ -110,7 +128,7 @@ class Database {
     try {
         await (UserModel as any).create(newUser);
     } catch (err) {
-        console.error("Error guardando usuario en disco:", err);
+        console.error("Error guardando usuario:", err);
     }
     return newUser;
   }
@@ -131,7 +149,6 @@ class Database {
   }
 
   async resetPassword(username: string, recoveryKey: string, newPassword: string) {
-      // (Simplificado)
       return false; 
   }
 
@@ -173,7 +190,7 @@ class Database {
           activeNodes: 1,
           totalSignalsProcessed: 0,
           activeHotLeads: 0,
-          systemUptime: "100% (LOCAL)",
+          systemUptime: "100% (HYBRID)",
           riskAccounts: 0
       };
   }
