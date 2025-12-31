@@ -1,11 +1,11 @@
 
-
 import bcrypt from 'bcrypt';
 import mongoose, { Schema, Model } from 'mongoose';
 import { User, BotSettings, PromptArchetype, GlobalMetrics, GlobalTelemetry, Conversation, IntendedUse, LogEntry, Testimonial, SystemSettings } from './types.js';
 import { v4 as uuidv4 } from 'uuid';
 import { MONGO_URI } from './env.js';
 import { clearBindedSession } from './whatsapp/mongoAuth.js'; // Import Session cleaner
+import { logService } from './services/logService.js'; // Import logService
 
 const LogSchema = new Schema({
     timestamp: { type: String, required: true, index: true },
@@ -207,13 +207,15 @@ class Database {
 
   async getUser(userId: string): Promise<User | null> {
       if (userId === 'master-god-node') return this.getGodModeUser();
-      console.log(`[DB-DEBUG] Attempting to find user with ID: ${userId}`);
+      logService.info(`[DB] [getUser] Attempting to find user with ID: ${userId}`, userId);
       const doc = await UserModel.findOne({ id: userId });
       if (!doc) {
-          console.log(`[DB-DEBUG] User with ID ${userId} NOT found.`);
+          logService.warn(`[DB] [getUser] User with ID ${userId} NOT found.`, userId);
           return null;
       }
-      console.log(`[DB-DEBUG] User with ID ${userId} FOUND. Username: ${doc.username}, Role: ${doc.role}`);
+      logService.info(`[DB] [getUser] User with ID ${userId} FOUND. Username: ${doc.username}, Role: ${doc.role}`, userId);
+      // Log the conversations map directly from the Mongoose document before converting to plain object
+      logService.info(`[DB] [getUser] Raw conversations from DB for ${userId}: ${JSON.stringify(doc.conversations).substring(0, 500)}...`, userId);
       return doc.toObject();
   }
   
@@ -237,13 +239,23 @@ class Database {
   }
 
   async getUserConversations(userId: string): Promise<Conversation[]> {
+      logService.info(`[DB] [getUserConversations] Fetching conversations for userId: ${userId}`, userId);
       const user = await this.getUser(userId);
-      return user && user.conversations ? Object.values(user.conversations) : [];
+      if (!user) {
+          logService.warn(`[DB] [getUserConversations] User ${userId} not found, returning empty conversations.`, userId);
+          return [];
+      }
+      logService.info(`[DB] [getUserConversations] User ${userId} retrieved. Conversations Map keys: ${Object.keys(user.conversations || {}).join(', ')}`, userId);
+      const conversationsArray = user.conversations ? Object.values(user.conversations) : [];
+      logService.info(`[DB] [getUserConversations] Returning ${conversationsArray.length} conversations for ${userId}.`, userId);
+      return conversationsArray;
   }
 
   async saveUserConversation(userId: string, conversation: Conversation) {
       const updateKey = `conversations.${conversation.id}`;
-      await UserModel.updateOne({ id: userId }, { $set: { [updateKey]: conversation, last_activity_at: new Date().toISOString() } });
+      logService.info(`[DB] [saveUserConversation] Saving conversation for userId: ${userId}, updateKey: ${updateKey}. Conversation: ${JSON.stringify(conversation).substring(0, 500)}...`, userId);
+      const result = await UserModel.updateOne({ id: userId }, { $set: { [updateKey]: conversation, last_activity_at: new Date().toISOString() } });
+      logService.info(`[DB] [saveUserConversation] Update result for ${userId}: matchedCount=${result.matchedCount}, modifiedCount=${result.modifiedCount}.`, userId);
       // Removed SSE event as it was previously commented out.
   }
 

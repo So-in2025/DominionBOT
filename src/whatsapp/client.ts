@@ -150,10 +150,10 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
         sock.ev.on('messages.upsert', async ({ messages, type }) => {
             // Process ALL messages. 'type' can be 'notify' (new message) or 'append' (history).
             for (const msg of messages) {
-                // Ignore status messages and messages from self (unless it helps context, but for now ignoring self to keep simple)
+                // Ignore status messages and messages without content
                 if (!msg.message || msg.key.remoteJid === 'status@broadcast') continue;
 
-                // Basic Filtering
+                // Basic Filtering & Extraction
                 const jid = msg.key.remoteJid;
                 const isFromMe = msg.key.fromMe;
                 const contactName = msg.pushName || jid?.split('@')[0];
@@ -170,7 +170,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                 const userMessage: Message = {
                     id: msg.key.id || Date.now().toString(),
                     text: messageText,
-                    sender: isFromMe ? 'owner' : 'user',
+                    sender: isFromMe ? 'owner' : 'user', // Determine sender role
                     timestamp: new Date(msgTimestamp * 1000)
                 };
 
@@ -193,8 +193,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                         messageDebounceMap.delete(jid);
                     }, DEBOUNCE_TIME_MS));
                 } else if (isHistory) {
-                    // Log that history message was ingested, but AI was not triggered.
-                    // console.log(`[WA-CLIENT] History message ingested for ${jid} (timestamp: ${msgTimestamp}). AI not triggered.`);
+                    logService.info(`[WA-CLIENT] History message ingested for ${jid} (timestamp: ${new Date(msgTimestamp * 1000).toLocaleString()}). AI not triggered.`, userId);
                 }
             }
         });
