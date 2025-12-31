@@ -1,12 +1,29 @@
 
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 
-// Load .env from root
-dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+// 1. Detectar qué archivo existe (.env o .env.local)
+const envPath = path.resolve(process.cwd(), '.env');
+const localEnvPath = path.resolve(process.cwd(), '.env.local');
 
+// 2. Cargar configuración
+if (fs.existsSync(envPath)) {
+    dotenv.config({ path: envPath });
+    console.log(`[ENV] Cargado desde .env`);
+} else if (fs.existsSync(localEnvPath)) {
+    dotenv.config({ path: localEnvPath });
+    console.log(`[ENV] Cargado desde .env.local`);
+} else {
+    console.log(`[ENV] No se encontraron archivos de entorno. Usando valores por defecto.`);
+}
+
+// 3. Exportar constantes ÚNICAS para toda la app
+// Si no existe la variable, usa 'dominion-local-secret-key' SIEMPRE.
 export const JWT_SECRET = process.env.JWT_SECRET || 'dominion-local-secret-key';
 export const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/dominion_local';
 export const PORT = process.env.PORT || 3001;
 
-console.log(`[ENV] Config Loaded. Secret Hash: ${JWT_SECRET.length > 5 ? '***' + JWT_SECRET.slice(-4) : 'WEAK'}`);
+// Debug de seguridad (solo muestra los últimos 4 caracteres)
+const secretDisplay = JWT_SECRET === 'dominion-local-secret-key' ? 'DEFAULT_DEV_KEY' : `...${JWT_SECRET.slice(-4)}`;
+console.log(`[ENV] JWT Key Hash: [${secretDisplay}]`);

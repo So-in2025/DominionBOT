@@ -1,15 +1,23 @@
 
+import dotenv from 'dotenv';
+import path from 'path';
+import fs from 'fs';
+
+// Carga explicita de entorno
+const envPath = path.resolve(process.cwd(), '.env');
+const localEnvPath = path.resolve(process.cwd(), '.env.local');
+if (fs.existsSync(envPath)) dotenv.config({ path: envPath });
+else if (fs.existsSync(localEnvPath)) dotenv.config({ path: localEnvPath });
+
 import express from 'express';
 import cors from 'cors';
 import jwt from 'jsonwebtoken';
 import { db } from './database.js';
-import { authenticateToken } from './middleware/auth.js';
+import { authenticateToken } from './middleware/auth.js'; // Importación nombrada
 import { generateBotResponse } from './services/aiService.js'; 
-import { JWT_SECRET, PORT } from './env.js'; // Import centralized config
+import { JWT_SECRET, PORT } from './env.js';
 
 const app = express();
-
-console.log(`[BOOT] JWT_SECRET Source: ${JWT_SECRET === 'dominion-local-secret-key' ? 'DEFAULT' : 'ENV'}`);
 
 // 1. LOGGER
 app.use((req, res, next) => {
@@ -17,7 +25,7 @@ app.use((req, res, next) => {
     next();
 });
 
-// 2. CORS - Permisivo para aceptar peticiones desde Vercel y Ngrok
+// 2. CORS
 const corsOptions = {
     origin: '*', 
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -39,7 +47,6 @@ app.post('/api/login', async (req: any, res: any) => {
     try {
         const user = await db.validateUser(username, password);
         if (user) {
-            // Use centralized JWT_SECRET
             const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '30d' });
             console.log(`[AUTH-SUCCESS] Token generado para: ${username}`);
             return res.json({ token, role: user.role });
@@ -58,7 +65,6 @@ app.post('/api/register', async (req: any, res: any) => {
         const newUser = await db.createUser(username, password, 'client', intendedUse);
         if (!newUser) return res.status(400).json({ message: 'El usuario ya existe.' });
         
-        // Use centralized JWT_SECRET
         const token = jwt.sign({ id: newUser.id, role: newUser.role }, JWT_SECRET, { expiresIn: '30d' });
         console.log(`[REGISTER] New user ${username} created. Token issued.`);
         res.status(201).json({ token, role: newUser.role, recoveryKey: newUser.recoveryKey });
@@ -123,7 +129,6 @@ app.get('/api/metrics', authenticateToken, (req: any, res: any) => {
     const warm = convs.filter((c: any) => c.status === 'Tibio').length;
     const cold = convs.filter((c: any) => c.status === 'Frío').length;
     
-    // Métricas simplificadas para evitar errores de cálculo
     res.json({
         totalLeads: convs.length,
         hotLeads: hot,
