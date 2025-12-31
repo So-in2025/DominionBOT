@@ -62,12 +62,15 @@ class AudioService {
         try {
             console.log(`[AudioService] Fetching audio for ${eventName} from ${BACKEND_URL}...`);
             const token = localStorage.getItem('saas_token');
-            if (!token && eventName !== 'landing_intro') {
-                console.log(`[AudioService] No token, skipping non-intro sound: ${eventName}`);
-                return;
+
+            // Build headers specifically for an audio file request, not JSON
+            const headers: Record<string, string> = {
+                'ngrok-skip-browser-warning': 'true',
+            };
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
             }
 
-            const headers = token ? getAuthHeaders(token) : API_HEADERS;
             const response = await fetch(`${BACKEND_URL}/api/tts/${eventName}`, { headers });
             
             console.log(`[AudioService] Fetch response for ${eventName}: Status ${response.status}`);

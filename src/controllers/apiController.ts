@@ -131,6 +131,11 @@ export const handleGetTtsAudio = async (req: any, res: any) => {
     if (!eventName || !/^[a-zA-Z0-9_]+$/.test(eventName)) {
         return res.status(400).send('Nombre de evento inválido.');
     }
+
+    // SECURITY FIX: Only landing_intro is public. All other sounds require auth.
+    if (eventName !== 'landing_intro' && !req.user) {
+        return res.status(401).send('Autenticación requerida para este recurso de audio.');
+    }
     
     const audioDir = path.resolve(__dirname, '..', '..', 'public', 'audio');
     const audioPath = path.join(audioDir, `${eventName}.mp3`);

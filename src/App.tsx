@@ -276,6 +276,10 @@ const FaqSection = () => {
         { q: "¿Qué pasa cuando mi plan expira?", a: "Tu bot no se apaga. Para evitar que pierdas leads, el sistema revierte a las funcionalidades básicas de respuesta (Plan Starter), dándote tiempo para renovar sin interrumpir el servicio." }
     ];
 
+    const toggleFaq = (index: number) => {
+        setOpenFaq(prev => (prev === index ? null : index));
+    };
+
     return (
         <section className="bg-brand-black py-20 sm:py-32">
             <div className="mx-auto max-w-4xl px-6 lg:px-8">
@@ -286,7 +290,7 @@ const FaqSection = () => {
                 <div className="mt-16 space-y-4">
                     {faqs.map((faq, index) => (
                         <div key={index} className="border border-white/10 rounded-2xl bg-brand-surface overflow-hidden transition-all duration-300">
-                            <button onClick={() => setOpenFaq(openFaq === index ? null : index)} className="w-full flex justify-between items-center text-left p-6">
+                            <button onClick={() => toggleFaq(index)} className="w-full flex justify-between items-center text-left p-6">
                                 <span className={`text-base font-semibold ${openFaq === index ? 'text-brand-gold' : 'text-white'}`}>{faq.q}</span>
                                 <svg className={`w-6 h-6 flex-shrink-0 transition-transform duration-300 ${openFaq === index ? 'rotate-45 text-brand-gold' : 'text-gray-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
                             </button>
@@ -306,7 +310,7 @@ const FaqSection = () => {
 function LandingPage({ onAuth, onRegister, visibleMessages, isSimTyping, simScrollRef, onOpenLegal, isServerReady, isLoggedIn, token, showToast }: any) {
     return (
         <div className="relative flex-1 bg-brand-black flex flex-col font-sans">
-            <div className="absolute inset-0 neural-grid opacity-40 z-0"></div>
+            <div className="absolute inset-0 neural-grid opacity-40 z-0 pointer-events-none"></div>
             
             {/* HERO SECTION - INTOCABLE */}
             <section className="relative z-10 flex flex-col items-center justify-center p-6 md:p-12 pt-24 pb-32">
