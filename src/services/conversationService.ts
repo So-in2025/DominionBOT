@@ -36,7 +36,8 @@ class ConversationService {
       
       // LOGIC: If it's a history import, default isBotActive to FALSE.
       // If it's a live message (new conversation), default isBotActive to TRUE.
-      const initialBotState = isHistoryImport ? false : true;
+      // NEW: Explicitly set isBotActive true and isMuted false for Elite Bot JID
+      const initialBotState = isEliteBotJid ? true : (isHistoryImport ? false : true);
 
       conversation = {
         id: jid,
@@ -44,18 +45,28 @@ class ConversationService {
         leadName: leadName || leadIdentifier,
         status: LeadStatus.COLD,
         messages: [],
-        isBotActive: isEliteBotJid ? true : initialBotState, // Elite bot always active, others depend on history
-        lastActivity: new Date(message.timestamp), // Use message timestamp
-        isMuted: false,
-        firstMessageAt: new Date(message.timestamp),
+        isBotActive: initialBotState, 
+        isMuted: isEliteBotJid ? false : false, // NEW: Elite bot should never be muted by default
+        firstMessageAt: new Date(message.timestamp), // Use message timestamp
         tags: [],
         internalNotes: [],
         isAiSignalsEnabled: true,
         isTestBotConversation: isEliteBotJid, 
       };
-    } else if (isEliteBotJid && !conversation.isTestBotConversation) {
-        logService.info(`[ConversationService] [addMessage] Marking existing conversation ${jid} as test bot conversation.`, userId);
-        conversation.isTestBotConversation = true;
+    } else if (isEliteBotJid) { // Only update these flags if it's explicitly the Elite Bot
+        // NEW: Ensure existing Elite Bot conversations are marked as active and not muted
+        if (!conversation.isTestBotConversation) { // Mark if not already marked
+            logService.info(`[ConversationService] [addMessage] Marking existing conversation ${jid} as test bot conversation.`, userId);
+            conversation.isTestBotConversation = true;
+        }
+        if (!conversation.isBotActive) { // Ensure bot is active for test convos
+            logService.info(`[ConversationService] [addMessage] Activating bot for existing Elite Bot conversation ${jid}.`, userId);
+            conversation.isBotActive = true;
+        }
+        if (conversation.isMuted) { // Ensure bot is not muted for test convos
+            logService.info(`[ConversationService] [addMessage] Unmuting existing Elite Bot conversation ${jid}.`, userId);
+            conversation.isMuted = false;
+        }
     }
     
     logService.info(`[ConversationService] [addMessage] Conversation BEFORE adding message for ${jid}: ${JSON.stringify(conversation.messages.map(m => m.id)).substring(0, 200)}...`, userId);

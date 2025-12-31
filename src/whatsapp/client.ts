@@ -350,11 +350,16 @@ export async function processAiResponseForJid(userId: string, jid: string) {
     const convs = await conversationService.getConversations(userId);
     const conversation = convs.find(c => c.id === jid);
 
+    // NEW LOG: Debug Elite Bot conversation flags right before bypass logic
+    if (jid === ELITE_BOT_JID) {
+        logService.info(`[WA-CLIENT-DEBUG-ELITE] Elite Bot convo ${jid} state: isTestBotConversation=${conversation?.isTestBotConversation}, isMuted=${conversation?.isMuted}, isBotActive=${conversation?.isBotActive}, status=${conversation?.status}`, userId);
+    }
+
     // --- ELITE BOT SPECIFIC BYPASS ---
     // If it's a test bot conversation (explicitly flagged in DB), and it passed global checks,
     // then we should *always* proceed to AI generation, bypassing conversation-specific rules.
-    if (conversation?.isTestBotConversation) { // NEW: Use the explicit flag
-        logService.info(`[WA-CLIENT] ELITE_BOT_JID ${jid} detected via conversation flag and global checks passed. Proceeding directly to AI generation.`, userId);
+    if (conversation?.isTestBotConversation) { 
+        logService.info(`[WA-CLIENT] ELITE_BOT_JID ${jid} detected via conversation flag. Proceeding directly to AI generation.`, userId);
         return _commonAiProcessingLogic(userId, jid, user, '[WA-CLIENT-ELITE-TEST]'); // Call common logic and return
     }
     

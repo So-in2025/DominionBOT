@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { BotSettings, DashboardMetrics, User } from '../types.js';
 import { getAuthHeaders } from '../config';
@@ -11,7 +10,7 @@ interface AgencyDashboardProps {
   settings: BotSettings;
   onUpdateSettings: (newSettings: BotSettings) => void | Promise<void>;
   currentUser: User | null; // Pass currentUser to get ID for test bot
-  showToast: (message: string, type: 'success' | 'error') => void; // Pass showToast
+  showToast: (message: string, type: 'success' | 'error' | 'info') => void; // Pass showToast
 }
 
 const KpiCard: React.FC<{ 

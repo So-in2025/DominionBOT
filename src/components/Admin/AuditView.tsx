@@ -7,7 +7,7 @@ interface ClientManagementViewProps {
     user: User;
     onClose: () => void;
     onUpdate: (updatedUser: User) => void;
-    showToast: (message: string, type: 'success' | 'error') => void;
+    showToast: (message: string, type: 'success' | 'error' | 'info') => void;
 }
 
 const ClientManagementView: React.FC<ClientManagementViewProps> = ({ user, onClose, onUpdate, showToast }) => {

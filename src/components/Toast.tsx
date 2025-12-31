@@ -1,9 +1,8 @@
-
 import React, { useEffect } from 'react';
 
 export interface ToastData {
   message: string;
-  type: 'success' | 'error';
+  type: 'success' | 'error' | 'info'; // Added 'info' as a valid type
 }
 
 interface ToastProps {
@@ -23,16 +22,34 @@ const Toast: React.FC<ToastProps> = ({ toast, onClose }) => {
 
   if (!toast) return null;
 
-  const isSuccess = toast.type === 'success';
+  // Define dynamic classes and icon based on type
+  let backgroundColor = '';
+  let borderColor = '';
+  let icon = '';
+  const iconBgColor = 'bg-white/20'; // Consistent icon background
+
+  if (toast.type === 'success') {
+    backgroundColor = 'bg-green-600/95';
+    borderColor = 'border-green-400/30';
+    icon = '✓';
+  } else if (toast.type === 'info') { // Handle 'info' type
+    backgroundColor = 'bg-blue-600/95';
+    borderColor = 'border-blue-400/30';
+    icon = 'ℹ';
+  } else { // 'error'
+    backgroundColor = 'bg-red-600/95';
+    borderColor = 'border-red-400/30';
+    icon = '✕';
+  }
 
   return (
     <div
       className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-[20000] flex items-center gap-4 px-6 py-4 rounded-xl shadow-2xl animate-fade-in
-        ${isSuccess ? 'bg-green-600/95 border border-green-400/30' : 'bg-red-600/95 border border-red-400/30'}
+        ${backgroundColor} ${borderColor}
         backdrop-blur-md`}
     >
-      <div className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center ${isSuccess ? 'bg-white/20' : 'bg-white/20'}`}>
-        {isSuccess ? '✓' : '✕'}
+      <div className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center ${iconBgColor}`}>
+        {icon}
       </div>
       <p className="text-sm font-bold text-white">{toast.message}</p>
       <button onClick={onClose} className="ml-4 text-white/50 hover:text-white transition-colors">&times;</button>

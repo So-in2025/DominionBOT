@@ -1,5 +1,4 @@
 
-
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Message, LeadStatus, Conversation } from '../../types';
 import { getAuthHeaders } from '../../config';
@@ -9,7 +8,7 @@ interface TestBotSimulatorProps {
   token: string;
   backendUrl: string;
   userId: string;
-  showToast: (message: string, type: 'success' | 'error') => void;
+  showToast: (message: string, type: 'success' | 'error' | 'info') => void;
 }
 
 // --- Test Bot Specifics (Duplicated from Backend for Frontend Logic) ---
@@ -97,7 +96,7 @@ const TestBotSimulator: React.FC<TestBotSimulatorProps> = ({ token, backendUrl, 
       if (res.ok) {
         showToast('Simulación iniciada. Las interacciones se mostrarán en breve.', 'success');
         // Initial fetch to get first message/status quickly
-        setTimeout(fetchConversation, 1000);
+        setTimeout(fetchConversation, 1000); // Explicit fetch after starting
       } else {
         const data = await res.json();
         showToast(data.message || 'Error al iniciar la simulación.', 'error');
@@ -124,6 +123,7 @@ const TestBotSimulator: React.FC<TestBotSimulatorProps> = ({ token, backendUrl, 
         setMessages([]);
         setCurrentLeadStatus(null);
         setCurrentTags([]);
+        setTimeout(fetchConversation, 500); // Explicit fetch after clearing
       } else {
         const data = await res.json();
         showToast(data.message || 'Error al limpiar la conversación de prueba.', 'error');
@@ -177,7 +177,7 @@ const TestBotSimulator: React.FC<TestBotSimulatorProps> = ({ token, backendUrl, 
             <div className="flex-1 overflow-y-auto custom-scrollbar space-y-4" ref={scrollRef}>
                 {messages.length === 0 && !isSimulating ? (
                     <div className="h-full flex flex-col items-center justify-center text-center text-gray-500">
-                        <svg className="w-12 h-12 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
+                        <svg className="w-12 h-12 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
                         <p className="text-xs font-bold uppercase tracking-widest">Aún no hay interacciones de prueba</p>
                         <p className="text-[10px] mt-1">Inicia la simulación para ver tu bot en acción.</p>
                     </div>

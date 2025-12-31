@@ -77,6 +77,10 @@ const LogModel = (mongoose.models.LogEntry || mongoose.model('LogEntry', LogSche
 const TestimonialModel = (mongoose.models.Testimonial || mongoose.model('Testimonial', TestimonialSchema)) as Model<Testimonial>;
 const SystemSettingsModel = (mongoose.models.SystemSettings || mongoose.model('SystemSettings', SystemSettingsSchema)) as Model<any>;
 
+// --- Test Bot Specifics (Duplicated for clarity) ---
+const ELITE_BOT_JID = '5491112345678@s.whatsapp.net';
+// --- END Test Bot Specifics ---
+
 class Database {
   private isInitialized = false;
 
@@ -216,6 +220,12 @@ class Database {
       logService.info(`[DB] [getUser] User with ID ${userId} FOUND. Username: ${doc.username}, Role: ${doc.role}`, userId);
       // Log the conversations map directly from the Mongoose document before converting to plain object
       logService.info(`[DB] [getUser] Raw conversations from DB for ${userId}: ${JSON.stringify(doc.conversations).substring(0, 500)}...`, userId);
+      
+      // NEW LOG: Explicitly check Elite Bot conversation flags from DB
+      if (doc.conversations && doc.conversations[ELITE_BOT_JID]) {
+          logService.info(`[DB] [getUser] Elite Bot convo for ${userId} from DB: isTestBotConversation=${doc.conversations[ELITE_BOT_JID].isTestBotConversation}, isMuted=${doc.conversations[ELITE_BOT_JID].isMuted}, isBotActive=${doc.conversations[ELITE_BOT_JID].isBotActive}, status=${doc.conversations[ELITE_BOT_JID].status}`, userId);
+      }
+
       return doc.toObject();
   }
   

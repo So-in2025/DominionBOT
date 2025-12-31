@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { Conversation, LeadStatus } from '../types';
+import { Conversation, LeadStatus, ConnectionStatus } from '../types';
 import ConversationListItem from './ConversationListItem';
 
 interface ConversationListProps {
@@ -8,11 +8,28 @@ interface ConversationListProps {
   selectedConversationId: string | null;
   onSelectConversation: (id: string) => void;
   backendError: string | null;
+  onRequestHistory: () => Promise<void>; // NEW: Callback to request history
+  isRequestingHistory: boolean; // NEW: Loading state for history request
+  connectionStatus: ConnectionStatus; // NEW: To show button based on connection
 }
 
-const ConversationList: React.FC<ConversationListProps> = ({ conversations, selectedConversationId, onSelectConversation, backendError }) => {
+const ConversationList: React.FC<ConversationListProps> = ({ 
+    conversations, 
+    selectedConversationId, 
+    onSelectConversation, 
+    backendError,
+    onRequestHistory, // NEW
+    isRequestingHistory, // NEW
+    connectionStatus // NEW
+}) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<LeadStatus | 'ALL'>('ALL');
+
+  // NEW LOG: Check conversations received as prop
+  console.log(`[ConversationList.tsx] Received ${conversations.length} conversations as prop.`);
+  if (conversations.length > 0) {
+      console.log(`[ConversationList.tsx] First 2 conversation IDs from props: ${conversations.slice(0, 2).map((c: any) => c.id).join(', ')}`);
+  }
 
   const filteredConversations = useMemo(() => {
       return conversations.filter(c => {
@@ -23,6 +40,8 @@ const ConversationList: React.FC<ConversationListProps> = ({ conversations, sele
           return matchesSearch && matchesStatus;
       });
   }, [conversations, searchTerm, statusFilter]);
+
+  const showHistoryButton = connectionStatus === ConnectionStatus.CONNECTED || connectionStatus === ConnectionStatus.DISCONNECTED;
 
   return (
     // SE ELIMINÓ 'hidden md:flex' para permitir visualización en móviles (controlado por App.tsx)
@@ -75,6 +94,25 @@ const ConversationList: React.FC<ConversationListProps> = ({ conversations, sele
               <div className="text-3xl mb-2">⚠️</div>
               <h3 className="text-sm font-bold">Sin Conexión</h3>
               <p className="text-xs mt-1 opacity-70">{backendError}</p>
+              {showHistoryButton && (
+                  <button 
+                      onClick={onRequestHistory} 
+                      disabled={isRequestingHistory} 
+                      className="mt-6 px-6 py-2 bg-white/10 border border-white/20 text-gray-400 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-white/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                      {isRequestingHistory ? (
+                          <>
+                              <div className="w-3 h-3 border-2 border-gray-400/30 border-t-gray-400 rounded-full animate-spin"></div>
+                              Solicitando...
+                          </>
+                      ) : (
+                          <>
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004 12c0 2.972 1.15 5.727 3.09 7.707L4 20h5.582m4.542-16H9.418M19 4v5h-.582M5 15a8.001 8.001 0 0015.414 2H20v-5.582m0 0C18.356 5.727 15.54 4 12 4z" /></svg>
+                              Solicitar Historial
+                          </>
+                      )}
+                  </button>
+              )}
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center h-full p-8 text-center text-gray-500">
@@ -82,6 +120,25 @@ const ConversationList: React.FC<ConversationListProps> = ({ conversations, sele
                 <svg className="w-6 h-6 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
              </div>
             <p className="text-sm font-medium">No hay señales filtradas.</p>
+            {showHistoryButton && (
+                <button 
+                    onClick={onRequestHistory} 
+                    disabled={isRequestingHistory} 
+                    className="mt-6 px-6 py-2 bg-white/10 border border-white/20 text-gray-400 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-white/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                    {isRequestingHistory ? (
+                        <>
+                            <div className="w-3 h-3 border-2 border-gray-400/30 border-t-gray-400 rounded-full animate-spin"></div>
+                            Solicitando...
+                        </>
+                    ) : (
+                        <>
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004 12c0 2.972 1.15 5.727 3.09 7.707L4 20h5.582m4.542-16H9.418M19 4v5h-.582M5 15a8.001 8.001 0 0015.414 2H20v-5.582m0 0C18.356 5.727 15.54 4 12 4z" /></svg>
+                            Solicitar Historial
+                        </>
+                    )}
+                </button>
+            )}
           </div>
         )}
       </div>

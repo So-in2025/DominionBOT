@@ -1,5 +1,4 @@
 
-
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Conversation, BotSettings, Message, View, ConnectionStatus, User, LeadStatus, PromptArchetype, Testimonial } from './types';
 import Header from './components/Header';
@@ -111,7 +110,7 @@ const TrialBanner: React.FC<{ user: User | null, supportNumber: string | null }>
 
 // --- START: Landing Page Strategic Sections ---
 
-const TestimonialsSection = ({ isLoggedIn, token, showToast }: { isLoggedIn: boolean, token: string | null, showToast: (message: string, type: 'success' | 'error') => void }) => {
+const TestimonialsSection = ({ isLoggedIn, token, showToast }: { isLoggedIn: boolean, token: string | null, showToast: (message: string, type: 'success' | 'error' | 'info') => void }) => {
     const [simulatedTestimonials, setSimulatedTestimonials] = useState<any[]>([]);
     const [realTestimonials, setRealTestimonials] = useState<Testimonial[]>([]);
     const [newTestimonialText, setNewTestimonialText] = useState('');
@@ -278,7 +277,7 @@ const TestimonialsSection = ({ isLoggedIn, token, showToast }: { isLoggedIn: boo
                                 </div>
                                 <div className="flex items-center justify-between mt-6">
                                     <div className="flex text-yellow-400">
-                                        {[...Array(5)].map((_, i) => <svg key={i} className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>)}
+                                        {[...Array(5)].map((_, i) => <svg key={i} className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>)}
                                     </div>
                                     <div className="text-[9px] font-bold uppercase tracking-widest text-green-400/60 bg-green-500/10 px-2 py-1 rounded-full border border-green-500/20">Cliente Verificado</div>
                                 </div>
@@ -331,7 +330,7 @@ const FaqSection = () => {
             </div>
         </section>
     );
-};
+}
 
 function LandingPage({ onAuth, onRegister, visibleMessages, isSimTyping, simScrollRef, onOpenLegal, isServerReady, isLoggedIn, token, showToast }: any) {
     return (
@@ -415,7 +414,7 @@ function LandingPage({ onAuth, onRegister, visibleMessages, isSimTyping, simScro
                     <p className="text-gray-600 text-[10px] font-black uppercase tracking-[0.3em]">Neural Infrastructure Division • Mendoza, ARG</p>
                 </div>
                 <div className="flex flex-col items-center md:items-end gap-6">
-                    <div className="flex gap-8 text-[10px] font-black text-gray-500 uppercase tracking-widest">
+                    <div className="flex gap-8 text-[10px] font-gray-500 uppercase tracking-widest font-black">
                         <button onClick={() => onOpenLegal('privacy')} className="hover:text-brand-gold transition-colors">Privacidad</button>
                         <button onClick={() => onOpenLegal('terms')} className="hover:text-brand-gold transition-colors">Términos</button>
                         <button onClick={() => onOpenLegal('manifesto')} className="hover:text-brand-gold transition-colors">Manifiesto</button>
@@ -453,6 +452,7 @@ export default function App() {
   const [isTyping, setIsTyping] = useState(false);
   const [isLoadingSettings, setIsLoadingSettings] = useState(false);
   const [toast, setToast] = useState<ToastData | null>(null);
+  const [isRequestingHistory, setIsRequestingHistory] = useState(false); // NEW: State for history request
 
   // Polling interval refs
   const statusPollingIntervalRef = useRef<number | null>(null);
@@ -490,7 +490,8 @@ export default function App() {
       };
   }, []); // El array vacío asegura que este efecto se ejecute solo una vez.
 
-  const showToast = (message: string, type: 'success' | 'error') => {
+  // FIX: Updated `showToast` type to include 'info'.
+  const showToast = (message: string, type: 'success' | 'error' | 'info') => {
     if (type === 'error') audioService.play('alert_error_generic');
     setToast({ message, type });
   };
@@ -585,6 +586,12 @@ export default function App() {
           const res = await fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) });
           if (res.ok) {
               const latestConversations = await res.json();
+              // NEW LOG: Check what's received from the API
+              console.log(`[App.tsx] Fetched ${latestConversations.length} conversations from API.`);
+              if (latestConversations.length > 0) {
+                  console.log(`[App.tsx] First 2 conversation IDs: ${latestConversations.slice(0, 2).map((c: any) => c.id).join(', ')}`);
+              }
+
               setConversations(latestConversations.sort((a: Conversation, b: Conversation) => {
                   const dateA = new Date(a.lastActivity || a.firstMessageAt || 0);
                   const dateB = new Date(b.lastActivity || b.firstMessageAt || 0);
@@ -780,6 +787,41 @@ export default function App() {
           audioService.play('alert_error_connection');
       }
   };
+  
+  // NEW: Handler for requesting history
+  const handleRequestHistory = async () => {
+    if (!token || isRequestingHistory) return;
+
+    setIsRequestingHistory(true);
+    showToast('Solicitando historial de mensajes. Esto reiniciará su conexión temporalmente.', 'info'); // 'info' type is new, just visually distinct
+    audioService.play('connection_establishing'); // Use existing audio for connection process
+
+    try {
+        // Disconnect first
+        await fetch(`${BACKEND_URL}/api/disconnect`, { headers: getAuthHeaders(token!) });
+        setConnectionStatus(ConnectionStatus.RESETTING);
+        setQrCode(null);
+        setPairingCode(null);
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Visual pause
+
+        // Then connect again, which should trigger full history sync
+        await handleConnect(); // This will internally call fetchStatus
+        
+        // After re-connect is initiated, force fetch conversations
+        await new Promise(resolve => setTimeout(resolve, 3000)); // Give time for Baileys to start sending history
+        await fetchConversations();
+
+        showToast('Historial solicitado y conexión restablecida.', 'success');
+        audioService.play('action_success');
+
+    } catch (e: any) {
+        console.error("Error requesting history:", e);
+        showToast('Error al solicitar historial. Intente nuevamente.', 'error');
+        audioService.play('alert_error_generic');
+    } finally {
+        setIsRequestingHistory(false);
+    }
+  };
 
   const selectedConversation = conversations.find(c => c.id === selectedConversationId) || null;
   const isFunctionalityDisabled = currentUser?.plan_status === 'expired' || (currentUser?.plan_status === 'trial' && new Date() > new Date(currentUser.billing_end_date));
@@ -842,7 +884,15 @@ export default function App() {
             return (
                 <div className="flex-1 flex overflow-hidden relative">
                     <div className={`${selectedConversationId ? 'hidden md:flex' : 'flex'} w-full md:w-auto h-full`}>
-                        <ConversationList conversations={conversations} selectedConversationId={selectedConversationId} onSelectConversation={setSelectedConversationId} backendError={backendError} />
+                        <ConversationList 
+                            conversations={conversations} 
+                            selectedConversationId={selectedConversationId} 
+                            onSelectConversation={setSelectedConversationId} 
+                            backendError={backendError} 
+                            onRequestHistory={handleRequestHistory} // NEW PROP
+                            isRequestingHistory={isRequestingHistory} // NEW PROP
+                            connectionStatus={connectionStatus} // NEW PROP
+                        />
                     </div>
                     <div className={`${!selectedConversationId ? 'hidden md:flex' : 'flex'} flex-1 h-full`}>
                         <ChatWindow 
