@@ -1,10 +1,10 @@
 
+
 import bcrypt from 'bcrypt';
 import mongoose, { Schema, Model } from 'mongoose';
 import { User, BotSettings, PromptArchetype, GlobalMetrics, GlobalTelemetry, Conversation, IntendedUse, LogEntry, Testimonial, SystemSettings } from './types.js';
 import { v4 as uuidv4 } from 'uuid';
 import { MONGO_URI } from './env.js';
-// import { sseService } from './services/sseService.js'; // Removed SSE service import
 import { clearBindedSession } from './whatsapp/mongoAuth.js'; // Import Session cleaner
 
 const LogSchema = new Schema({
@@ -244,7 +244,7 @@ class Database {
   async saveUserConversation(userId: string, conversation: Conversation) {
       const updateKey = `conversations.${conversation.id}`;
       await UserModel.updateOne({ id: userId }, { $set: { [updateKey]: conversation, last_activity_at: new Date().toISOString() } });
-      // sseService.sendEvent(userId, 'conversation_update', conversation); // Removed SSE event
+      // Removed SSE event as it was previously commented out.
   }
 
   async updateUserSettings(userId: string, settings: Partial<BotSettings>) {

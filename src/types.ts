@@ -1,5 +1,4 @@
 
-
 export enum LeadStatus {
   COLD = 'Frío',
   WARM = 'Tibio',
@@ -81,6 +80,7 @@ export interface Conversation {
   firstMessageAt?: Date | string;
   escalatedAt?: Date | string;
   suggestedReplies?: string[];
+  isTestBotConversation?: boolean; // NEW: Flag to identify test bot conversations
 }
 
 export interface BotSettings {

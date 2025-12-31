@@ -1,12 +1,11 @@
 
-
 import { Request, Response } from 'express';
 // FIX: Import Buffer to resolve 'Cannot find name Buffer' error.
 import { Buffer } from 'buffer';
 // FIX: Import connectToWhatsApp, disconnectWhatsApp, sendMessage as they are now exported.
 import { connectToWhatsApp, disconnectWhatsApp, sendMessage, getSessionStatus, processAiResponseForJid } from '../whatsapp/client.js'; // Import processAiResponseForJid
 import { conversationService } from '../services/conversationService.js';
-import { Message, LeadStatus, User } from '../types.js';
+import { Message, LeadStatus, User, Conversation } from '../types.js';
 import { db } from '../database.js';
 import { logService } from '../services/logService.js';
 import fs from 'fs';
@@ -188,10 +187,29 @@ export const handleStartClientTestBot = async (req: any, res: any) => {
         // 2. Opcional: Resetear el contador de leads calificados para un test limpio
         await db.updateUser(userId, { trial_qualified_leads_count: 0 });
 
+        // 3. FORCE RESET CONVERSATION STATE (CRITICAL FIX)
+        // Eliminamos residuos anteriores (estado muted, hot, etc) para que el bot responda sí o sí.
+        const cleanConversation: Conversation = {
+            id: ELITE_BOT_JID,
+            leadIdentifier: 'Simulador',
+            leadName: ELITE_BOT_NAME,
+            status: LeadStatus.COLD,
+            messages: [], // Limpiamos historial para que se vea limpio en el frontend
+            isBotActive: true,
+            isMuted: false, // IMPORTANT: Ensure not muted
+            isTestBotConversation: true, // IMPORTANT: Flag for bypass
+            tags: [],
+            internalNotes: [],
+            isAiSignalsEnabled: true,
+            lastActivity: new Date()
+        };
+        await db.saveUserConversation(userId, cleanConversation);
+        logService.info(`[TEST-BOT] Conversación reseteada forzosamente para ${userId}`, userId);
+
         // Responder al cliente inmediatamente para que el frontend pueda iniciar el polling
         res.status(200).json({ message: 'Secuencia de prueba de bot élite iniciada en background.' });
 
-        // 3. Iniciar la secuencia de mensajes de prueba en segundo plano
+        // 4. Iniciar la secuencia de mensajes de prueba en segundo plano
         (async () => {
             logService.audit(`Iniciando prueba de bot élite para cliente (autodirigida): ${targetUser.username} en background`, userId, user.username);
 

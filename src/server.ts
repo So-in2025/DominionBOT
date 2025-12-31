@@ -1,4 +1,5 @@
 
+
 // 1. CARGA DE ENTORNO CRÍTICA
 import { JWT_SECRET, PORT } from './env.js';
 import express from 'express';
@@ -9,7 +10,6 @@ import { authenticateToken } from './middleware/auth.js';
 import { optionalAuthenticateToken } from './middleware/optionalAuth.js';
 import { logService } from './services/logService.js';
 import { ttsService } from './services/ttsService.js'; // Importar el nuevo servicio
-// import { sseService } from './services/sseService.js'; // Removed SSE service import
 import { connectToWhatsApp } from './whatsapp/client.js'; // Import connectToWhatsApp
 
 const app = express();

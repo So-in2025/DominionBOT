@@ -1,4 +1,5 @@
 
+
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Conversation, BotSettings, Message, View, ConnectionStatus, User, LeadStatus, PromptArchetype, Testimonial } from './types';
 import Header from './components/Header';
@@ -456,6 +457,7 @@ export default function App() {
   // Polling interval refs
   const statusPollingIntervalRef = useRef<number | null>(null);
   const convoPollingIntervalRef = useRef<number | null>(null);
+  const lastErrorSoundTime = useRef<number>(0);
 
   // Simulación de Landing
   const [visibleMessages, setVisibleMessages] = useState<any[]>([]);
@@ -532,6 +534,18 @@ export default function App() {
     }
   }, [currentView, userRole]);
 
+  // Helper to prevent audio spam during server downtime
+  const triggerErrorAlert = useCallback((message: string, details?: string) => {
+      const now = Date.now();
+      // Throttle: Only play sound once every 45 seconds max
+      if (now - lastErrorSoundTime.current > 45000) {
+          audioService.play('alert_error_connection');
+          lastErrorSoundTime.current = now;
+      }
+      // Update the visual message regardless of audio throttling
+      setBackendError(`${message} ${details ? `(${details})` : ''}`);
+  }, []);
+
   // Define fetchStatus and fetchConversations as useCallback hooks
   const fetchStatus = useCallback(async () => {
       if (!token || userRole === 'super_admin') {
@@ -551,19 +565,16 @@ export default function App() {
               if (backendError) setBackendError(null);
           } else {
               const errorText = await res.text();
-              const msg = `Fallo al obtener estado del nodo (${res.status}). Posiblemente el backend está inactivo.`;
-              setBackendError(`Alerta: ${msg}. Detalles: ${errorText.substring(0, 100)}`);
-              audioService.play('alert_error_connection');
+              triggerErrorAlert(`Fallo al obtener estado del nodo (${res.status}).`, errorText.substring(0, 50));
           }
       } catch (e: any) {
           if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
-              setBackendError("Alerta: Error de red al obtener estado. Verifique su conexión y que el servidor backend esté activo y accesible (Ej: Ngrok funcionando).");
+              triggerErrorAlert("Error de red. Verifique conexión y backend.");
           } else {
-              setBackendError("Alerta: Fallo de conexión con el nodo central al obtener estado.");
+              triggerErrorAlert("Fallo de conexión con el nodo central.");
           }
-          audioService.play('alert_error_connection');
       }
-  }, [token, userRole, backendError]); // Dependencies for useCallback
+  }, [token, userRole, backendError, triggerErrorAlert]); 
 
   const fetchConversations = useCallback(async () => {
       if (!token || userRole === 'super_admin') {
@@ -582,19 +593,16 @@ export default function App() {
               if (backendError) setBackendError(null);
           } else {
               const errorText = await res.text();
-              const msg = `Fallo al obtener conversaciones (${res.status}).`;
-              setBackendError(`Alerta: ${msg}. Detalles: ${errorText.substring(0, 100)}`);
-              audioService.play('alert_error_connection');
+              triggerErrorAlert(`Fallo al obtener conversaciones (${res.status}).`, errorText.substring(0, 50));
           }
       } catch (e: any) {
           if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
-              setBackendError("Alerta: Error de red al obtener conversaciones. Verifique su conexión y que el servidor backend esté activo y accesible (Ej: Ngrok funcionando).");
+              triggerErrorAlert("Error de red al obtener conversaciones.");
           } else {
-              setBackendError("Alerta: Fallo de conexión con el nodo central al obtener conversaciones.");
+              triggerErrorAlert("Fallo de conexión al obtener conversaciones.");
           }
-          audioService.play('alert_error_connection');
       }
-  }, [token, userRole, backendError]); // Dependencies for useCallback
+  }, [token, userRole, backendError, triggerErrorAlert]); 
 
   // Polling for connection status and conversations
   useEffect(() => {
@@ -655,18 +663,17 @@ export default function App() {
         } catch (e: any) {
             console.error("DATA ERROR:", e);
             if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
-                setBackendError("Alerta: Error de red al cargar datos iniciales. Verifique su conexión a internet y que el servidor backend esté activo y accesible (Ej: Ngrok funcionando).");
+                triggerErrorAlert("Error de red al cargar datos iniciales.");
             } else {
-                setBackendError("Alerta: Fallo de conexión con el nodo central al cargar datos iniciales.");
+                triggerErrorAlert("Fallo de conexión al cargar datos.");
             }
-            audioService.play('alert_error_connection');
         } finally {
             setIsLoadingSettings(false);
         }
     };
     loadInitialUserData();
     
-  }, [token]); // Only depends on token, polling handles continuous updates
+  }, [token, triggerErrorAlert]); // Only depends on token, polling handles continuous updates
   
   useEffect(() => {
     if (token) return; 

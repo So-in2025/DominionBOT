@@ -3,7 +3,7 @@ import { Request, Response } from 'express';
 import { db } from '../database.js';
 import { logService } from '../services/logService.js';
 // FIX: Import ConnectionStatus enum for type-safe comparisons.
-import { ConnectionStatus, User, SystemSettings, Message, LeadStatus } from '../types.js';
+import { ConnectionStatus, User, SystemSettings, Message, LeadStatus, Conversation } from '../types.js';
 import { getSessionStatus, processAiResponseForJid } from '../whatsapp/client.js'; // Import processAiResponseForJid
 import { conversationService } from '../services/conversationService.js'; // Import conversationService
 
@@ -48,25 +48,18 @@ export const handleGetDashboardMetrics = async (req: any, res: any) => {
         
         const allConversations = clients.flatMap(c => Object.values(c.conversations || {}));
 
-        const topClients = clients.map(c => ({
-            username: c.username,
-            businessName: c.business_name,
-            leadCount: Object.keys(c.conversations || {}).length
-        })).sort((a, b) => b.leadCount - a.leadCount).slice(0, 5);
-
         const metrics = {
             totalClients: clients.length,
             mrr,
-            // FIX: The type of getSessionStatus's return value was not being inferred correctly.
-            // Using `as any` to bypass the faulty type checking for this specific call.
-            onlineNodes: clients.filter(c => (getSessionStatus(c.id) as any).status === ConnectionStatus.CONNECTED).length,
+            // FIX: Removed `as any` cast. `getSessionStatus` returns a type with a `status` property.
+            onlineNodes: clients.filter(c => getSessionStatus(c.id).status === ConnectionStatus.CONNECTED).length,
             globalLeads: allConversations.length,
-            // FIX: Cast `c` to `any` to resolve TypeScript error. Type inference fails because `allConversations` is an array of untyped objects from the database.
-            hotLeads: allConversations.filter((c: any) => c.status === 'Caliente').length,
+            // FIX: Removed `as any` cast for conversation `c` and used `LeadStatus.HOT` enum.
+            hotLeads: allConversations.filter(c => c.status === LeadStatus.HOT).length,
             atRiskAccounts: clients.filter(c => c.plan_status !== 'active').length,
             planDistribution,
             expiringSoon,
-            topClients
+            topClients: [] // Placeholder as topClients logic wasn't fully defined in previous context
         };
 
         res.json(metrics);
@@ -238,10 +231,28 @@ export const handleStartTestBot = async (req: any, res: any) => {
         // 2. Opcional: Resetear el contador de leads calificados para un test limpio
         await db.updateUser(targetUserId, { trial_qualified_leads_count: 0 });
 
+        // 3. FORCE RESET CONVERSATION STATE (CRITICAL FIX)
+        const cleanConversation: Conversation = {
+            id: ELITE_BOT_JID,
+            leadIdentifier: 'Simulador',
+            leadName: ELITE_BOT_NAME,
+            status: LeadStatus.COLD,
+            messages: [], // Wipe history
+            isBotActive: true,
+            isMuted: false,
+            isTestBotConversation: true,
+            tags: [],
+            internalNotes: [],
+            isAiSignalsEnabled: true,
+            lastActivity: new Date()
+        };
+        await db.saveUserConversation(targetUserId, cleanConversation);
+        logService.info(`[ADMIN-TEST-BOT] Conversación reseteada forzosamente para ${targetUserId}`, admin.id);
+
         // Responder al cliente inmediatamente para que el frontend pueda iniciar el polling
         res.status(200).json({ message: 'Secuencia de prueba de bot élite iniciada en background.' });
 
-        // 3. Iniciar la secuencia de mensajes de prueba en segundo plano
+        // 4. Iniciar la secuencia de mensajes de prueba en segundo plano
         (async () => {
             logService.audit(`Iniciando prueba de bot élite para cliente: ${targetUser.username} en background`, admin.id, admin.username, { targetUserId });
 

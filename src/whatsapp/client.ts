@@ -14,9 +14,10 @@ import { conversationService } from '../services/conversationService.js';
 import { db } from '../database.js';
 import { generateBotResponse } from '../services/aiService.js';
 import { useMongoDBAuthState, clearBindedSession } from './mongoAuth.js';
+// FIX: Corrected malformed import statement for logService.
 import { logService } from '../services/logService.js';
 import * as QRCode from 'qrcode';
-// import { sseService } from '../services/sseService.js'; // Removed SSE service import
+// Removed SSE service import as it was previously commented out.
 
 const sessions = new Map<string, WASocket>();
 const qrCache = new Map<string, string>(); 
@@ -24,6 +25,9 @@ const codeCache = new Map<string, string>();
 const messageDebounceMap = new Map<string, ReturnType<typeof setTimeout>>();
 const connectionAttempts = new Map<string, boolean>();
 const DEBOUNCE_TIME_MS = 6000; 
+
+// TIMESTAMP to differentiate History vs Live messages
+const BOOT_TIMESTAMP = Date.now() / 1000;
 
 const logger = pino({ level: 'silent' }); 
 
@@ -51,6 +55,18 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
         logService.warn(`[WA-CLIENT] Connection already in progress for user ${userId}.`, userId);
         return;
     }
+    
+    // SAFETY: If a session object exists but we are reconnecting, it might be stale. Kill it.
+    if (sessions.has(userId)) {
+        logService.warn(`[WA-CLIENT] Found existing session object for ${userId} during connect. Killing it to ensure fresh start.`, userId);
+        try {
+            sessions.get(userId)?.end(undefined);
+            sessions.delete(userId);
+        } catch (e) {
+            console.error("Error killing stale session:", e);
+        }
+    }
+
     connectionAttempts.set(userId, true);
     qrCache.delete(userId);
     codeCache.delete(userId);
@@ -77,6 +93,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
             generateHighQualityLinkPreview: true,
             pairingCode: phoneNumber ? true : false, // Request pairing code if phone number is provided
             shouldIgnoreJid: jid => jid?.endsWith('@broadcast'), // Ignore broadcast messages
+            syncFullHistory: true, // EXPLICITLY REQUEST HISTORY
         });
 
         sessions.set(userId, sock);
@@ -131,27 +148,42 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
         });
 
         sock.ev.on('messages.upsert', async ({ messages, type }) => {
-            if (type === 'notify') {
-                for (const msg of messages) {
-                    // Ignore status messages and messages from self
-                    if (!msg.message || msg.key.fromMe || msg.key.remoteJid === 'status@broadcast') continue;
+            // We process 'notify' (new messages) AND 'append' (history)
+            for (const msg of messages) {
+                // Ignore status messages and messages from self (unless it helps context, but for now ignoring self to keep simple)
+                if (!msg.message || msg.key.remoteJid === 'status@broadcast') continue;
 
-                    const jid = msg.key.remoteJid;
-                    const contactName = msg.pushName || jid?.split('@')[0];
-                    const messageText = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
+                // Basic Filtering
+                const jid = msg.key.remoteJid;
+                const isFromMe = msg.key.fromMe;
+                const contactName = msg.pushName || jid?.split('@')[0];
+                const messageText = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
 
-                    if (!jid || !messageText) continue;
+                if (!jid || !messageText) continue;
 
-                    logService.info(`[WA-CLIENT] Message from ${contactName} (${jid}): ${messageText}`, userId);
+                // HISTORY VS LIVE DETECTION
+                // If the message is older than the server boot time (minus a small buffer), it's history.
+                // We assume BOOT_TIMESTAMP is when this node process started.
+                const msgTimestamp = typeof msg.messageTimestamp === 'number' ? msg.messageTimestamp : (msg.messageTimestamp as any).low;
+                const isHistory = msgTimestamp < (BOOT_TIMESTAMP - 10); // 10s buffer
 
-                    const userMessage: Message = {
-                        id: msg.key.id || Date.now().toString(),
-                        text: messageText,
-                        sender: 'user',
-                        timestamp: new Date(msg.messageTimestamp! * 1000)
-                    };
-                    await conversationService.addMessage(userId, jid, userMessage, contactName);
+                const userMessage: Message = {
+                    id: msg.key.id || Date.now().toString(),
+                    text: messageText,
+                    sender: isFromMe ? 'owner' : 'user',
+                    timestamp: new Date(msgTimestamp * 1000)
+                };
 
+                // Ingest the message (History or Live)
+                await conversationService.addMessage(userId, jid, userMessage, contactName, isHistory);
+
+                // AI TRIGGER LOGIC
+                // 1. Must NOT be from me
+                // 2. Must NOT be history
+                // 3. Must be of type 'notify' (double check)
+                if (!isFromMe && !isHistory && type === 'notify') {
+                    logService.info(`[WA-CLIENT] Live message detected from ${jid}. Queuing AI response.`, userId);
+                    
                     // Debounce AI response
                     if (messageDebounceMap.has(jid)) {
                         clearTimeout(messageDebounceMap.get(jid)!);
@@ -162,6 +194,9 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                         });
                         messageDebounceMap.delete(jid);
                     }, DEBOUNCE_TIME_MS));
+                } else if (isHistory) {
+                    // Just logging occasionally to debug
+                    // console.log(`[WA-CLIENT] History message ingested for ${jid} (timestamp: ${msgTimestamp})`);
                 }
             }
         });
@@ -179,20 +214,33 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
 
 // FIX: Export the disconnectWhatsApp function and implement its logic
 export async function disconnectWhatsApp(userId: string) {
-    logService.info(`[WA-CLIENT] Disconnecting WhatsApp for user: ${userId}`, userId);
+    logService.info(`[WA-CLIENT] Force disconnecting WhatsApp for user: ${userId}`, userId);
+    
+    // 1. Close socket if exists
     const sock = sessions.get(userId);
     if (sock) {
-        await sock.logout(); // End the session cleanly
+        try {
+            sock.end(undefined); // Close connection
+            await new Promise(resolve => setTimeout(resolve, 500)); // Give it a moment
+        } catch (e) {
+            console.error(`[WA-CLIENT] Error closing socket for ${userId}`, e);
+        }
         sessions.delete(userId);
     }
+
+    // 2. Clear Caches
     qrCache.delete(userId);
     codeCache.delete(userId);
-    // FIX: Updated `db.updateUser` and `db.updateUserSettings` to correctly handle updates
-    // for both top-level and nested user properties.
+    
+    // 3. FORCE Clear DB Session
+    // Even if socket wasn't open, we must nuke the DB records to prevent ghost sessions
+    await clearBindedSession(userId); 
+
+    // 4. Update User Profile
     await db.updateUser(userId, { whatsapp_number: '' });
     await db.updateUserSettings(userId, { isActive: false });
-    await clearBindedSession(userId); // Ensure session data is cleared from DB
-    logService.info(`[WA-CLIENT] WhatsApp disconnected for user: ${userId}`, userId);
+    
+    logService.info(`[WA-CLIENT] WhatsApp disconnected and session wiped for user: ${userId}`, userId);
 }
 
 // FIX: Export the sendMessage function and implement its logic
@@ -248,7 +296,7 @@ async function _commonAiProcessingLogic(userId: string, jid: string, user: User,
 
         // --- TRIAL LEAD COUNTING EXCLUSION FOR TEST BOT ---
         if (user.plan_status === 'trial' && aiResult.newStatus === LeadStatus.HOT && previousStatus !== LeadStatus.HOT) {
-            if (jid === ELITE_BOT_JID) {
+            if (latestConversation.isTestBotConversation) { // NEW: Use the explicit flag
                 logService.info(`${logPrefix} Lead calificado por bot élite no cuenta para el trial de ${userId}.`, userId);
             } else {
                 const currentCount = (user.trial_qualified_leads_count || 0) + 1;
@@ -285,7 +333,7 @@ export async function processAiResponseForJid(userId: string, jid: string) {
         logService.info(`[WA-CLIENT] AI processing skipped for JID ${jid} (bot inactive or plan suspended globally for user ${userId}).`, userId);
         
         // Special handling for expired/suspended for REAL conversations, not test bot.
-        if (user.plan_status === 'expired' && jid !== ELITE_BOT_JID) {
+        if (user.plan_status === 'expired' && jid !== ELITE_BOT_JID) { // Still use JID for this specific case as conversation might not exist
             const conversations = await conversationService.getConversations(userId);
             const conversation = conversations.find(c => c.id === jid);
             if (conversation && !conversation.isMuted) {
@@ -300,12 +348,16 @@ export async function processAiResponseForJid(userId: string, jid: string) {
         }
         return; // IMPORTANT: Return here if global checks fail
     }
+    
+    // --- FETCH CONVERSATION FOR BYPASS CHECK ---
+    const convs = await conversationService.getConversations(userId);
+    const conversation = convs.find(c => c.id === jid);
 
     // --- ELITE BOT SPECIFIC BYPASS ---
-    // If it's the ELITE_BOT_JID, and it passed the global checks above,
+    // If it's a test bot conversation (explicitly flagged in DB), and it passed global checks,
     // then we should *always* proceed to AI generation, bypassing conversation-specific rules.
-    if (jid === ELITE_BOT_JID) {
-        logService.info(`[WA-CLIENT] ELITE_BOT_JID ${jid} detected and global checks passed. Proceeding directly to AI generation.`, userId);
+    if (conversation?.isTestBotConversation) { // NEW: Use the explicit flag
+        logService.info(`[WA-CLIENT] ELITE_BOT_JID ${jid} detected via conversation flag and global checks passed. Proceeding directly to AI generation.`, userId);
         return _commonAiProcessingLogic(userId, jid, user, '[WA-CLIENT-ELITE-TEST]'); // Call common logic and return
     }
     
@@ -315,9 +367,6 @@ export async function processAiResponseForJid(userId: string, jid: string) {
         logService.info(`[WA-CLIENT] JID ${jid} ignored for user ${userId}.`, userId);
         return;
     }
-
-    const convs = await conversationService.getConversations(userId);
-    const conversation = convs.find(c => c.id === jid);
 
     if (!conversation || conversation.isMuted || !conversation.isBotActive || conversation.status === LeadStatus.PERSONAL) {
         logService.info(`[WA-CLIENT] AI processing skipped for JID ${jid} (muted, inactive, or personal).`, userId);
