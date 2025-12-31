@@ -106,8 +106,8 @@ const HowItWorksArt: React.FC = () => {
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        let w = canvas.width = canvas.offsetWidth;
-        let h = canvas.height = canvas.offsetHeight;
+        let w = canvas.offsetWidth;
+        let h = canvas.offsetHeight;
         let signals: Signal[] = [];
         let phase: SystemPhase = 'INGESTION';
         let textOpacity = 0;
@@ -124,6 +124,7 @@ const HowItWorksArt: React.FC = () => {
         const cycleDuration = Object.values(phaseConfig).reduce((sum, p) => sum + p.duration, 0);
 
         const init = () => {
+            handleResize();
             signals = Array.from({ length: 400 }).map(() => new Signal(w, h));
             startTime = Date.now();
         };
@@ -147,7 +148,7 @@ const HowItWorksArt: React.FC = () => {
                 accumulatedTime += config.duration;
             }
 
-            ctx.clearRect(0, 0, w, h);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
             
             signals = signals.filter(s => s.alpha > 0 && s.radius > 0);
             if (phase === 'INGESTION' && signals.length < 350) {
@@ -203,14 +204,17 @@ const HowItWorksArt: React.FC = () => {
         );
 
         const handleResize = () => {
-            w = canvas.width = canvas.offsetWidth;
-            h = canvas.height = canvas.offsetHeight;
+            const dpr = window.devicePixelRatio || 1;
+            w = canvas.offsetWidth;
+            h = canvas.offsetHeight;
+            canvas.width = w * dpr;
+            canvas.height = h * dpr;
+            ctx.scale(dpr, dpr);
         };
         
         if (sectionRef.current) observer.observe(sectionRef.current);
         window.addEventListener('resize', handleResize);
-        handleResize();
-
+        
         return () => {
             stopAnimation();
             window.removeEventListener('resize', handleResize);

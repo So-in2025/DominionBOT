@@ -1,5 +1,6 @@
 
-import { getAuthHeaders, BACKEND_URL } from '../config';
+import { getAuthHeaders, BACKEND_URL } from '../config.js';
+import { decodeRawAudioData } from '../utils/audioUtils.js';
 
 class AudioService {
     private audioContext: AudioContext | null = null;
@@ -34,18 +35,19 @@ class AudioService {
 
         try {
             const token = localStorage.getItem('saas_token');
-            if (!token) return;
+            if (!token && eventName !== 'landing_intro') return; // Allow landing intro without token
 
-            const response = await fetch(`${BACKEND_URL}/api/tts/${eventName}`, {
-                headers: getAuthHeaders(token)
-            });
+            const headers = token ? getAuthHeaders(token) : {};
+
+            const response = await fetch(`${BACKEND_URL}/api/tts/${eventName}`, { headers });
 
             if (!response.ok) {
                 throw new Error(`Fallo al obtener el audio para ${eventName}: ${response.statusText}`);
             }
 
             const arrayBuffer = await response.arrayBuffer();
-            const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+            // Usamos el decodificador personalizado para RAW PCM
+            const audioBuffer = await decodeRawAudioData(arrayBuffer, this.audioContext, 24000, 1);
             
             this.audioCache.set(eventName, audioBuffer);
             this._playBuffer(audioBuffer);
