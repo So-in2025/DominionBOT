@@ -57,7 +57,7 @@ const Header: React.FC<HeaderProps> = ({
 
   return (
     <>
-    <header className="sticky top-0 z-[100] bg-brand-black/95 backdrop-blur-md border-b border-white/10 h-[70px] md:h-[80px] w-full">
+    <header className="sticky top-0 z-[100] bg-brand-black/95 backdrop-blur-md border-b border-white/10 h-[90px] md:h-[100px] w-full">
       <div className="max-w-[1400px] mx-auto px-4 sm:px-6 h-full flex justify-between items-center">
         
         <div className="flex items-center gap-2 sm:gap-4 overflow-hidden flex-shrink-0">
