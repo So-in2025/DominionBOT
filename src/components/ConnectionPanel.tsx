@@ -31,17 +31,27 @@ const ConnectionPanel: React.FC<ConnectionPanelProps> = ({ status, qrCode, pairi
     const [linkMode, setLinkMode] = useState<'QR' | 'NUMBER'>('QR');
     // FIX: Initialize phoneNumber with an empty string fallback
     const [phoneNumber, setPhoneNumber] = useState(user?.whatsapp_number || '');
+    const [qrError, setQrError] = useState(false);
     
     const isLoading = status === ConnectionStatus.GENERATING_QR;
 
     useEffect(() => {
         if (user?.whatsapp_number) {
             setPhoneNumber(user.whatsapp_number);
-            setLinkMode('NUMBER');
         }
     }, [user]);
 
+    // AUTO-SWITCH TAB BASED ON AVAILABLE DATA
+    useEffect(() => {
+        if (pairingCode) {
+            setLinkMode('NUMBER');
+        } else if (qrCode) {
+            setLinkMode('QR');
+        }
+    }, [pairingCode, qrCode]);
+
     const handleStartConnect = async () => {
+        setQrError(false); // Reset error state on new attempt
         try {
             await onConnect(linkMode === 'NUMBER' ? phoneNumber : undefined);
         } catch (e) {
@@ -132,22 +142,40 @@ const ConnectionPanel: React.FC<ConnectionPanelProps> = ({ status, qrCode, pairi
                                     <h3 className="text-xl font-black text-white uppercase tracking-tighter">Código de Enlace</h3>
                                     <p className="text-[10px] text-gray-500 mt-2 uppercase tracking-widest">Toca la notificación de WhatsApp en tu móvil e ingresa este código</p>
                                 </div>
-                                <div className="flex gap-2 justify-center">
+                                <div className="flex gap-2 justify-center flex-wrap">
                                     {pairingCode.split('').map((char, i) => (
-                                        <div key={i} className="w-9 h-12 bg-black/80 border border-brand-gold/30 rounded-lg flex items-center justify-center text-brand-gold text-xl font-black shadow-inner">
-                                            {char}
-                                        </div>
+                                        char === '-' ? (
+                                            <div key={i} className="w-4 h-12 flex items-center justify-center text-brand-gold font-bold">-</div>
+                                        ) : (
+                                            <div key={i} className="w-9 h-12 bg-black/80 border border-brand-gold/30 rounded-lg flex items-center justify-center text-brand-gold text-xl font-black shadow-inner">
+                                                {char}
+                                            </div>
+                                        )
                                     ))}
                                 </div>
                             </div>
                         ) : (
                             <div className="space-y-6">
                                 <h3 className="text-xl font-black text-white uppercase tracking-tighter">Escanea el QR</h3>
-                                <div className="p-4 bg-white rounded-2xl inline-block shadow-2xl">
-                                    {qrCode ? (
-                                     <img src={qrCode} alt="WhatsApp QR" className="w-64 h-64" />
+                                <div className="p-4 bg-white rounded-2xl inline-block shadow-2xl relative min-h-[256px] min-w-[256px] flex items-center justify-center">
+                                    {qrCode && !qrError ? (
+                                     <img 
+                                        src={qrCode} 
+                                        alt="WhatsApp QR" 
+                                        className="w-64 h-64 object-contain" 
+                                        onError={() => setQrError(true)}
+                                     />
                                     ) : (
-                                        <div className="w-64 h-64 bg-gray-100 animate-pulse rounded flex items-center justify-center text-gray-400 text-xs font-black">Generando...</div>
+                                        <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-4">
+                                            {qrError ? (
+                                                <>
+                                                    <p className="text-red-500 text-xs font-bold mb-2">Error cargando imagen QR</p>
+                                                    <button onClick={forceWipe} className="text-[10px] text-blue-500 underline">Reiniciar</button>
+                                                </>
+                                            ) : (
+                                                <div className="w-64 h-64 bg-gray-100 animate-pulse rounded flex items-center justify-center text-gray-400 text-xs font-black">Generando...</div>
+                                            )}
+                                        </div>
                                     )}
                                 </div>
                             </div>

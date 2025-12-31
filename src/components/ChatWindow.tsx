@@ -1,4 +1,3 @@
-
 import React, { useRef, useEffect, useState } from 'react';
 import { Conversation, LeadStatus, InternalNote } from '../types';
 import MessageBubble from './MessageBubble';
@@ -14,6 +13,7 @@ interface ChatWindowProps {
   isMobile: boolean;
   onBack: () => void;
   onUpdateConversation?: (id: string, updates: Partial<Conversation>) => void;
+  isPlanExpired?: boolean;
 }
 
 const statusBadgeClass = {
@@ -30,7 +30,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   isBotGloballyActive, 
   isMobile, 
   onBack,
-  onUpdateConversation 
+  onUpdateConversation,
+  isPlanExpired
 }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [showSidebar, setShowSidebar] = useState(true);
@@ -97,23 +98,30 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 {conversation.status}
             </span>
 
-            <button 
-              onClick={() => onToggleBot(conversation.id)}
-              disabled={!isBotGloballyActive || conversation.isMuted}
-              className={`
-                  flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all
-                  ${conversation.isBotActive 
-                      ? 'bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500 hover:text-white' 
-                      : 'bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-green-500 hover:text-white'}
-                  ${(!isBotGloballyActive || conversation.isMuted) ? 'opacity-50 cursor-not-allowed grayscale' : ''}
-              `}
-            >
-              {conversation.isMuted ? (
-                  <><svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"/></svg> Copiloto</>
-              ) : (
-                  conversation.isBotActive ? "Bot ON" : "Bot OFF"
-              )}
-            </button>
+            {isPlanExpired ? (
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider bg-red-900/20 border border-red-500/50 text-red-400">
+                    <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+                    Licencia Requerida
+                </div>
+            ) : (
+                <button 
+                onClick={() => onToggleBot(conversation.id)}
+                disabled={!isBotGloballyActive || conversation.isMuted}
+                className={`
+                    flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all
+                    ${conversation.isBotActive 
+                        ? 'bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500 hover:text-white' 
+                        : 'bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-green-500 hover:text-white'}
+                    ${(!isBotGloballyActive || conversation.isMuted) ? 'opacity-50 cursor-not-allowed grayscale' : ''}
+                `}
+                >
+                {conversation.isMuted ? (
+                    <><svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"/></svg> Copiloto</>
+                ) : (
+                    conversation.isBotActive ? "Bot ON" : "Bot OFF"
+                )}
+                </button>
+            )}
 
             <button 
               onClick={() => setShowSidebar(!showSidebar)}
@@ -127,7 +135,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
 
         {/* MESSAGES AREA */}
         <div className="flex-1 overflow-y-auto px-4 py-6 md:px-8 space-y-4 md:space-y-6 custom-scrollbar relative z-0 pb-32">
-          {conversation.isMuted && !conversation.suggestedReplies && (
+          {conversation.isMuted && !conversation.suggestedReplies && !isPlanExpired && (
               <div className="bg-brand-gold/10 border border-brand-gold/20 p-4 rounded-xl mb-6 flex items-start gap-4 animate-fade-in shadow-[0_4px_20px_rgba(212,175,55,0.05)]">
                   <div className="p-2 bg-brand-gold/20 rounded-lg text-brand-gold">
                       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
@@ -135,6 +143,18 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                   <div>
                       <h4 className="text-sm font-bold text-white uppercase tracking-tight">Shadow Mode Activo</h4>
                       <p className="text-xs text-gray-400 mt-1">El control manual es requerido. Revisa el panel lateral.</p>
+                  </div>
+              </div>
+          )}
+
+          {isPlanExpired && (
+              <div className="bg-red-900/10 border border-red-500/30 p-4 rounded-xl mb-6 flex items-start gap-4 animate-fade-in shadow-lg">
+                  <div className="p-2 bg-red-500/10 rounded-lg text-red-400">
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                  </div>
+                  <div>
+                      <h4 className="text-sm font-bold text-white uppercase tracking-tight">Modo Fallback Activado</h4>
+                      <p className="text-xs text-gray-400 mt-1">La IA está en modo pasivo. Responde educadamente pero no califica. Activa tu licencia para retomar el control total.</p>
                   </div>
               </div>
           )}
@@ -176,8 +196,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
 
         <ChatInput
           onSendMessage={onSendMessage}
-          disabled={!isBotGloballyActive || (conversation.isBotActive && !conversation.isMuted)}
-          placeholder={conversation.isMuted ? 'Escribe o selecciona una sugerencia...' : (conversation.isBotActive ? 'El bot tiene el control...' : 'Escribe un mensaje...')}
+          disabled={!isBotGloballyActive || (conversation.isBotActive && !conversation.isMuted) || (isPlanExpired && conversation.isBotActive)}
+          placeholder={isPlanExpired ? 'Modo Lectura - Licencia Requerida' : (conversation.isMuted ? 'Escribe o selecciona una sugerencia...' : (conversation.isBotActive ? 'El bot tiene el control...' : 'Escribe un mensaje...'))}
         />
       </div>
 
@@ -197,7 +217,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
               internalNotes: [...(conversation.internalNotes || []), newNote] 
             });
           }}
-          // Fix: Removed non-existent onToggleAiSignals prop and added missing onUpdateConversation prop to enable sidebar actions (Error in line 189)
           onUpdateConversation={onUpdateConversation}
         />
       )}

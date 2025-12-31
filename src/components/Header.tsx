@@ -126,9 +126,9 @@ const Header: React.FC<HeaderProps> = ({
                     </button>
                 </div>
             ) : (
-                <div className="flex items-center gap-4">
-                    <button onClick={onLoginClick} className="hidden md:inline-block px-4 py-3 rounded-lg text-[10px] font-black uppercase tracking-widest text-gray-400 hover:text-white hover:bg-white/5 transition-all">Entrar</button>
-                    <button onClick={onRegisterClick} className="bg-brand-gold text-black px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-brand-gold/20 active:scale-95 transition-transform hover:scale-105">Solicitar Acceso</button>
+                <div className="flex items-center gap-2 sm:gap-4">
+                    <button onClick={onLoginClick} className="px-3 py-2 md:px-4 md:py-3 rounded-lg text-[10px] font-black uppercase tracking-widest text-gray-400 hover:text-white hover:bg-white/5 transition-all border border-white/5 md:border-transparent">Entrar</button>
+                    <button onClick={onRegisterClick} className="bg-brand-gold text-black px-3 py-2 md:px-5 md:py-3 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-brand-gold/20 active:scale-95 transition-transform hover:scale-105 whitespace-nowrap">Solicitar Acceso</button>
                 </div>
             )}
         </div>

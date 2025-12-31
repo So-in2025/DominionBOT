@@ -198,12 +198,12 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                         conversation.suggestedReplies = aiResult.suggestedReplies;
                     }
 
-                    // PHASE 2 LOGIC: Trial by result
+                    // PHASE 2 LOGIC: Trial by result (LIMITADO A 3 LEADS)
                     if (user.plan_status === 'trial' && aiResult.newStatus === LeadStatus.HOT && previousStatus !== LeadStatus.HOT) {
                         const currentCount = (user.trial_qualified_leads_count || 0) + 1;
-                        if (currentCount >= 10) {
+                        if (currentCount >= 3) { // Changed from 2 to 3
                             await db.updateUser(userId, { plan_status: 'expired', trial_qualified_leads_count: currentCount });
-                            logService.audit(`Prueba finalizada por alcanzar 10 leads calificados`, userId, user.username);
+                            logService.audit(`Prueba finalizada por alcanzar 3 leads calificados`, userId, user.username);
                         } else {
                             await db.updateUser(userId, { trial_qualified_leads_count: currentCount });
                         }

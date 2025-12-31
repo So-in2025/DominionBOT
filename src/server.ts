@@ -113,7 +113,7 @@ app.get('/api/metrics', authenticateToken, async (req: any, res: any) => {
 import { 
     handleConnect, handleDisconnect, handleSendMessage, handleUpdateConversation, handleGetStatus, handleGetConversations, handleGetTestimonials, handlePostTestimonial, handleGetTtsAudio
 } from './controllers/apiController.js';
-import { handleGetAllClients, handleUpdateClient, handleRenewClient, handleGetLogs, handleGetDashboardMetrics, handleActivateClient } from './controllers/adminController.js';
+import { handleGetAllClients, handleUpdateClient, handleRenewClient, handleGetLogs, handleGetDashboardMetrics, handleActivateClient, handleGetSystemSettings, handleUpdateSystemSettings, handleDeleteClient } from './controllers/adminController.js';
 
 // Standard Client Routes
 app.get('/api/status', authenticateToken, handleGetStatus); 
@@ -123,20 +123,8 @@ app.post('/api/send', authenticateToken, handleSendMessage);
 app.post('/api/conversation/update', authenticateToken, handleUpdateConversation);
 app.get('/api/conversations', authenticateToken, handleGetConversations);
 
-// Removed SSE Endpoint for real-time updates (Phase 3)
-/*
-app.get('/api/events', 
-    (req: any, res: any, next: any) => {
-        console.log(`[SERVER-SSE-DEBUG] Incoming request to /api/events. Path: ${req.path}, Query: ${JSON.stringify(req.query)}`);
-        next();
-    }, 
-    authenticateToken, 
-    (req: any, res: any) => {
-        console.log(`[SERVER-SSE-DEBUG] Handler for /api/events reached AFTER authentication. User ID: ${req.user.id}, Username: ${req.user.username}`);
-        sseService.addClient(req.user.id, res);
-    }
-);
-*/
+// Public/Shared Routes
+app.get('/api/system/settings', authenticateToken, handleGetSystemSettings); // Clients need this for support number
 
 // Testimonial Routes
 app.get('/api/testimonials', handleGetTestimonials);
@@ -155,9 +143,14 @@ adminRouter.use(authenticateToken, (req: any, res, next) => {
 adminRouter.get('/dashboard-metrics', handleGetDashboardMetrics);
 adminRouter.get('/clients', handleGetAllClients);
 adminRouter.put('/clients/:id', handleUpdateClient);
+adminRouter.delete('/clients/:id', handleDeleteClient); // New route for deletion
 adminRouter.post('/clients/:id/renew', handleRenewClient);
 adminRouter.post('/clients/:id/activate', handleActivateClient);
 adminRouter.get('/logs', handleGetLogs);
+// Admin System Settings
+adminRouter.get('/system/settings', handleGetSystemSettings);
+adminRouter.put('/system/settings', handleUpdateSystemSettings);
+
 adminRouter.post('/system/reset', async (req: any, res: any) => {
     logService.audit('HARD RESET DEL SISTEMA INICIADO', req.user.id, req.user.username);
     const success = await db.dangerouslyResetDatabase();

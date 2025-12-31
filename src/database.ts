@@ -1,9 +1,10 @@
 import bcrypt from 'bcrypt';
 import mongoose, { Schema, Model } from 'mongoose';
-import { User, BotSettings, PromptArchetype, GlobalMetrics, GlobalTelemetry, Conversation, IntendedUse, LogEntry, Testimonial } from './types.js';
+import { User, BotSettings, PromptArchetype, GlobalMetrics, GlobalTelemetry, Conversation, IntendedUse, LogEntry, Testimonial, SystemSettings } from './types.js';
 import { v4 as uuidv4 } from 'uuid';
 import { MONGO_URI } from './env.js';
 // import { sseService } from './services/sseService.js'; // Removed SSE service import
+import { clearBindedSession } from './whatsapp/mongoAuth.js'; // Import Session cleaner
 
 const LogSchema = new Schema({
     timestamp: { type: String, required: true, index: true },
@@ -20,6 +21,11 @@ const TestimonialSchema = new Schema({
     location: { type: String, required: true },
     text: { type: String, required: true },
 }, { timestamps: true });
+
+const SystemSettingsSchema = new Schema({
+    id: { type: String, default: 'global', unique: true },
+    supportWhatsappNumber: { type: String, default: '' } // Default to empty to detect unconfigured state
+});
 
 const UserSchema = new Schema({
     id: { type: String, required: true, unique: true, index: true },
@@ -67,6 +73,7 @@ const UserSchema = new Schema({
 const UserModel = (mongoose.models.SaaSUser || mongoose.model('SaaSUser', UserSchema)) as Model<any>;
 const LogModel = (mongoose.models.LogEntry || mongoose.model('LogEntry', LogSchema)) as Model<LogEntry>;
 const TestimonialModel = (mongoose.models.Testimonial || mongoose.model('Testimonial', TestimonialSchema)) as Model<Testimonial>;
+const SystemSettingsModel = (mongoose.models.SystemSettings || mongoose.model('SystemSettings', SystemSettingsSchema)) as Model<any>;
 
 class Database {
   private isInitialized = false;
@@ -123,7 +130,8 @@ class Database {
         plan_type: 'pro', // Start with PRO features
         plan_status: 'trial', // But in a trial state
         billing_start_date: new Date().toISOString(),
-        billing_end_date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(), // 14-day trial
+        // UPDATE: Trial reduced to 3 days for urgency
+        billing_end_date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(), 
         trial_qualified_leads_count: 0,
         created_at: new Date().toISOString(),
         settings: { 
@@ -211,6 +219,20 @@ class Database {
       return result;
   }
 
+  async deleteUser(userId: string): Promise<boolean> {
+      try {
+          const result = await UserModel.deleteOne({ id: userId });
+          if (result.deletedCount === 1) {
+              await clearBindedSession(userId); // Limpiar sesión de WhatsApp asociada
+              return true;
+          }
+          return false;
+      } catch (e) {
+          console.error(`[DB-DELETE-FAIL] Error deleting user ${userId}:`, e);
+          return false;
+      }
+  }
+
   async getUserConversations(userId: string): Promise<Conversation[]> {
       const user = await this.getUser(userId);
       return user && user.conversations ? Object.values(user.conversations) : [];
@@ -266,6 +288,22 @@ class Database {
 
   async getTestimonials(): Promise<Testimonial[]> {
       return await TestimonialModel.find().sort({ createdAt: -1 }).lean();
+  }
+
+  // SYSTEM SETTINGS METHODS
+  async getSystemSettings(): Promise<SystemSettings> {
+      const doc = await SystemSettingsModel.findOne({ id: 'global' });
+      if (!doc) {
+          // Create default if not exists
+          const newSettings = await SystemSettingsModel.create({ id: 'global', supportWhatsappNumber: '' });
+          return newSettings.toObject();
+      }
+      return doc.toObject();
+  }
+
+  async updateSystemSettings(settings: Partial<SystemSettings>): Promise<SystemSettings> {
+      const result = await SystemSettingsModel.findOneAndUpdate({ id: 'global' }, { $set: settings }, { new: true, upsert: true });
+      return result.toObject();
   }
 }
 

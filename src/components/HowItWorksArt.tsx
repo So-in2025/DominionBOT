@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef } from 'react';
 
 // SYSTEM STATE & ENTITY DEFINITIONS
@@ -87,7 +86,7 @@ class Signal {
                 ctx.shadowBlur = 4;
             }
         } else {
-            ctx.fillStyle = `rgba(100, 100, 100, ${this.alpha})`;
+            ctx.fillStyle = `rgba(130, 130, 130, ${this.alpha})`; // Slightly lighter grey for visibility on surface
         }
         ctx.fill();
         ctx.shadowBlur = 0; // Reset shadow for next particle
@@ -169,7 +168,7 @@ const HowItWorksArt: React.FC = () => {
                 ctx.textAlign = "center";
                 ctx.textBaseline = "middle";
                 ctx.letterSpacing = "0.4em";
-                ctx.fillStyle = isGoverned ? `rgba(212, 175, 55, ${textOpacity * 0.9})` : `rgba(120, 120, 120, ${textOpacity * 0.7})`;
+                ctx.fillStyle = isGoverned ? `rgba(212, 175, 55, ${textOpacity * 0.9})` : `rgba(160, 160, 160, ${textOpacity * 0.8})`; // Lighter text
                 ctx.fillText(currentText, w / 2, h / 2);
                 ctx.letterSpacing = "0px";
             }
@@ -223,7 +222,7 @@ const HowItWorksArt: React.FC = () => {
     }, []);
 
     return (
-        <section ref={sectionRef} className="relative w-full bg-black h-44">
+        <section ref={sectionRef} className="relative w-full bg-brand-surface h-44 border-t border-white/10">
             <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
         </section>
     );

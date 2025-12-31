@@ -200,3 +200,7 @@ export interface Testimonial {
   text: string;
   createdAt: string;
 }
+
+export interface SystemSettings {
+    supportWhatsappNumber: string;
+}

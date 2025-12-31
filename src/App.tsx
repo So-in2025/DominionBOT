@@ -31,7 +31,7 @@ const SIMULATION_SCRIPT = [
 
 // Contenido para la Sección de Testimonios
 const PREDEFINED_TESTIMONIALS = [
-    { name: "Marcos López", location: "Mendoza", text: "Bueno, parece que soy el primero en comentar. La verdad entré medio de curioso y no entendía nada al principio, pero después de usarlo un poco me acomodó bastante el WhatsApp." },
+    { name: "Marcos López", location: "Mendoza", text: "Bueno, parece que soy el primero en comentar. La verdad entré medio de curioso, pero luego de probar la demo me pareció muy útil, y práctica, los demás bots son muy caros y difíciles de configurar!. Excelente su trabajo." },
     { name: "Sofía Romano", location: "Mendoza", text: "No suelo comentar estas cosas, pero hasta ahora viene funcionando bien. Se nota que está pensado para ventas posta." },
     { name: "Javier Torres", location: "Mendoza", text: "Antes era responder mensajes todo el día sin parar. Ahora por lo menos está más ordenado. Eso ya vale la pena." },
     { name: "Valentina Giménez", location: "Mendoza", text: "Me gustó que no sea complicado como otros bots que probé. Acá fue conectar y listo." },
@@ -53,31 +53,53 @@ const PREDEFINED_TESTIMONIALS = [
     { name: "Emilia Ponce", location: "Mendoza", text: "Ojalá lo sigan mejorando, pero la base está muy bien." },
 ];
 
-const TrialBanner: React.FC<{ user: User | null }> = ({ user }) => {
+const TrialBanner: React.FC<{ user: User | null, supportNumber: string | null }> = ({ user, supportNumber }) => {
     if (!user || user.role === 'super_admin' || user.plan_status === 'active') return null;
 
     const endDate = new Date(user.billing_end_date);
     const now = new Date();
     const daysRemaining = Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
     const qualifiedLeads = user.trial_qualified_leads_count || 0;
+    const maxLeads = 3; // Updated limit to 3
 
-    if (user.plan_status === 'trial' && daysRemaining > 0 && qualifiedLeads < 10) {
+    // Case 1: Trial Active
+    if (user.plan_status === 'trial' && daysRemaining > 0 && qualifiedLeads < maxLeads) {
         return (
             <div className="bg-gradient-to-r from-brand-gold-dark via-brand-gold to-brand-gold-dark text-black text-center py-2 px-4 text-xs font-bold shadow-lg">
-                Estás en un período de prueba PRO. Finaliza en {daysRemaining} {daysRemaining > 1 ? 'días' : 'día'} o al calificar tus primeros {10 - qualifiedLeads} leads.
+                Estás en un período de prueba PRO. Finaliza en {daysRemaining} {daysRemaining > 1 ? 'días' : 'día'} o al calificar tus primeros {maxLeads - qualifiedLeads} leads.
             </div>
         );
     }
 
-    if (user.plan_status === 'expired' || (user.plan_status === 'trial' && (daysRemaining <= 0 || qualifiedLeads >= 10))) {
+    // Case 2: Trial Ended or Expired
+    if (user.plan_status === 'expired' || (user.plan_status === 'trial' && (daysRemaining <= 0 || qualifiedLeads >= maxLeads))) {
         if (!sessionStorage.getItem('trial_ended_alert_played')) {
             audioService.play('alert_warning_trial_ended');
             sessionStorage.setItem('trial_ended_alert_played', 'true');
         }
+        
+        // Use dynamic support number or fallback if not set yet.
+        const targetNumber = supportNumber || '5492612345678';
+        const message = encodeURIComponent(`Hola, mi prueba terminó (Usuario: ${user.username}). Quiero activar mi licencia PRO. Solcito datos de pago (CBU/Alias).`);
+        const waLink = `https://wa.me/${targetNumber}?text=${message}`;
+
+        const isSuccessLimit = qualifiedLeads >= maxLeads;
+        const bannerText = isSuccessLimit 
+            ? "¡Objetivo Cumplido! Has calificado tus primeros 3 leads. Tu prueba ha concluido por éxito. Activa tu licencia para escalar."
+            : "Tu período de prueba ha finalizado por tiempo. Activa tu licencia para restaurar las funcionalidades.";
+
         return (
-            <div className="bg-red-800 text-white text-center py-2 px-4 text-xs font-bold shadow-lg flex items-center justify-center gap-4">
-                <span>Tu período de prueba ha finalizado. Activa tu licencia para restaurar las funcionalidades.</span>
-                <button className="bg-white text-red-800 px-3 py-1 rounded font-bold text-[10px] uppercase">Contactar Soporte</button>
+            <div className="bg-red-800 text-white text-center py-2 px-4 text-xs font-bold shadow-lg flex flex-col md:flex-row items-center justify-center gap-2 md:gap-4 animate-fade-in">
+                <span>{bannerText}</span>
+                <a 
+                    href={waLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="bg-white text-red-800 px-4 py-1.5 rounded-full font-black text-[10px] uppercase hover:scale-105 transition-transform flex items-center gap-2 shadow-sm"
+                >
+                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.017-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/></svg>
+                    Solicitar Licencia
+                </a>
             </div>
         );
     }
@@ -254,7 +276,7 @@ const TestimonialsSection = ({ isLoggedIn, token, showToast }: { isLoggedIn: boo
                                 </div>
                                 <div className="flex items-center justify-between mt-6">
                                     <div className="flex text-yellow-400">
-                                        {[...Array(5)].map((_, i) => <svg key={i} className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>)}
+                                        {[...Array(5)].map((_, i) => <svg key={i} className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>)}
                                     </div>
                                     <div className="text-[9px] font-bold uppercase tracking-widest text-green-400/60 bg-green-500/10 px-2 py-1 rounded-full border border-green-500/20">Cliente Verificado</div>
                                 </div>
@@ -417,6 +439,7 @@ export default function App() {
   const [showLanding, setShowLanding] = useState(false);
   const [isBotGloballyActive, setIsBotGloballyActive] = useState(true);
   const [auditTarget, setAuditTarget] = useState<User | null>(null);
+  const [supportNumber, setSupportNumber] = useState<string | null>(null);
   
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
@@ -602,9 +625,10 @@ export default function App() {
         setIsLoadingSettings(true);
         try {
             // Fetch initial user and settings data once
-            const [userRes, sRes] = await Promise.all([
+            const [userRes, sRes, settingsRes] = await Promise.all([
                 fetch(`${BACKEND_URL}/api/user/me`, { headers: getAuthHeaders(token) }),
-                fetch(`${BACKEND_URL}/api/settings`, { headers: getAuthHeaders(token) })
+                fetch(`${BACKEND_URL}/api/settings`, { headers: getAuthHeaders(token) }),
+                fetch(`${BACKEND_URL}/api/system/settings`, { headers: getAuthHeaders(token) }) // Fetch global settings
             ]);
             
             if ([userRes, sRes].some(res => res.status === 403)) {
@@ -614,6 +638,10 @@ export default function App() {
 
             if (userRes.ok) setCurrentUser(await userRes.json());
             if (sRes.ok) setSettings(await sRes.json());
+            if (settingsRes.ok) {
+                const sysSettings = await settingsRes.json();
+                setSupportNumber(sysSettings.supportWhatsappNumber);
+            }
 
             if (backendError) setBackendError(null);
         } catch (e: any) {
@@ -738,7 +766,7 @@ export default function App() {
       if (currentView === View.AUDIT_MODE && auditTarget) {
         return <AuditView user={auditTarget} onClose={() => setCurrentView(View.ADMIN_GLOBAL)} onUpdate={(user) => setAuditTarget(user)} showToast={showToast} />;
       }
-      return <AdminDashboard token={token!} backendUrl={BACKEND_URL} onAudit={(u) => { setAuditTarget(u); setCurrentView(View.ADMIN_GLOBAL); }} showToast={showToast} onLogout={handleLogout} />;
+      return <AdminDashboard token={token!} backendUrl={BACKEND_URL} onAudit={(u) => { setAuditTarget(u); setCurrentView(View.AUDIT_MODE); }} showToast={showToast} onLogout={handleLogout} />;
     }
 
     const handleDisconnect = async () => {
@@ -794,7 +822,17 @@ export default function App() {
                         <ConversationList conversations={conversations} selectedConversationId={selectedConversationId} onSelectConversation={setSelectedConversationId} backendError={backendError} />
                     </div>
                     <div className={`${!selectedConversationId ? 'hidden md:flex' : 'flex'} flex-1 h-full`}>
-                        <ChatWindow conversation={selectedConversation} onSendMessage={isFunctionalityDisabled ? ()=>{} : handleSendMessage} onToggleBot={(id) => fetch(`${BACKEND_URL}/api/conversation/update`, { method: 'POST', headers: getAuthHeaders(token!), body: JSON.stringify({ id, updates: { isBotActive: !selectedConversation?.isBotActive } }) })} isTyping={isTyping} isBotGloballyActive={isBotGloballyActive} isMobile={true} onBack={() => setSelectedConversationId(null)} onUpdateConversation={(id, updates) => { setConversations(prev => { const updated = prev.map(c => c.id === id ? { ...c, ...updates } : c); return updated.sort((a, b) => { const dateA = new Date(a.lastActivity || a.firstMessageAt || 0); const dateB = new Date(b.lastActivity || b.firstMessageAt || 0); return dateB.getTime() - dateA.getTime(); }); }); fetch(`${BACKEND_URL}/api/conversation/update`, { method: 'POST', headers: getAuthHeaders(token!), body: JSON.stringify({ id, updates }) }); }} />
+                        <ChatWindow 
+                            conversation={selectedConversation} 
+                            onSendMessage={isFunctionalityDisabled ? ()=>{} : handleSendMessage} 
+                            onToggleBot={(id) => fetch(`${BACKEND_URL}/api/conversation/update`, { method: 'POST', headers: getAuthHeaders(token!), body: JSON.stringify({ id, updates: { isBotActive: !selectedConversation?.isBotActive } }) })} 
+                            isTyping={isTyping} 
+                            isBotGloballyActive={isBotGloballyActive} 
+                            isMobile={true} 
+                            onBack={() => setSelectedConversationId(null)} 
+                            onUpdateConversation={(id, updates) => { setConversations(prev => { const updated = prev.map(c => c.id === id ? { ...c, ...updates } : c); return updated.sort((a, b) => { const dateA = new Date(a.lastActivity || a.firstMessageAt || 0); const dateB = new Date(b.lastActivity || b.firstMessageAt || 0); return dateB.getTime() - dateA.getTime(); }); }); fetch(`${BACKEND_URL}/api/conversation/update`, { method: 'POST', headers: getAuthHeaders(token!), body: JSON.stringify({ id, updates }) }); }} 
+                            isPlanExpired={isFunctionalityDisabled}
+                        />
                     </div>
                 </div>
             );
@@ -827,7 +865,7 @@ export default function App() {
         onNavigate={handleNavigate} 
         connectionStatus={connectionStatus}
       />
-      {isAppView && <TrialBanner user={currentUser} />}
+      {isAppView && <TrialBanner user={currentUser} supportNumber={supportNumber} />}
 
       <main className={`flex-1 flex relative ${isAppView ? 'overflow-hidden' : ''}`}>
         {backendError && ( 

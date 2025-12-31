@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { User, PlanType, PlanStatus } from '../../types';
 import { getAuthHeaders } from '../../config';
@@ -96,6 +95,35 @@ const ClientManagementView: React.FC<ClientManagementViewProps> = ({ user, onClo
         }
     };
 
+    const handleDelete = async () => {
+        const confirmMsg = `¿ESTÁS SEGURO? Esta acción es IRREVERSIBLE.\n\nEliminarás a: ${clientData.business_name} (${clientData.username}).\n\nSe borrarán:\n- Credenciales\n- Conversaciones\n- Sesión de WhatsApp\n\nEscribe "BORRAR" para confirmar.`;
+        const userInput = window.prompt(confirmMsg);
+        
+        if (userInput !== 'BORRAR') {
+            if (userInput !== null) showToast('Cancelado. Texto de confirmación incorrecto.', 'error');
+            return;
+        }
+
+        setIsSaving(true);
+        try {
+            const token = localStorage.getItem('saas_token');
+            const res = await fetch(`${BACKEND_URL}/api/admin/clients/${clientData.id}`, {
+                method: 'DELETE',
+                headers: getAuthHeaders(token!),
+            });
+            if(res.ok) {
+                showToast('Cliente eliminado permanentemente.', 'success');
+                onClose(); // Cerrar el modal, el dashboard refrescará la lista eventualmente
+            } else {
+                showToast('Error al eliminar el cliente.', 'error');
+            }
+        } catch(e) {
+            showToast('Error de conexión al eliminar.', 'error');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
     const showActivateButton = clientData.plan_status === 'trial' || clientData.plan_status === 'expired';
 
     return (
@@ -159,6 +187,12 @@ const ClientManagementView: React.FC<ClientManagementViewProps> = ({ user, onClo
                             <div className="flex gap-4">
                                <button onClick={handleSave} disabled={isSaving} className="flex-1 py-3 bg-white/10 text-white font-bold text-xs rounded uppercase hover:bg-white/20 disabled:opacity-50">Guardar Cambios</button>
                                <button onClick={handleRenew} disabled={isSaving || showActivateButton} className="flex-1 py-3 bg-brand-gold text-black font-bold text-xs rounded uppercase hover:opacity-80 disabled:opacity-50 disabled:bg-gray-600 disabled:text-gray-400">Renovar Plan</button>
+                            </div>
+                            
+                            <div className="pt-4 border-t border-white/5">
+                                <button onClick={handleDelete} disabled={isSaving} className="w-full py-3 bg-red-900/50 text-red-300 font-black text-[10px] rounded uppercase hover:bg-red-800 disabled:opacity-50 border border-red-900/50">
+                                    ELIMINAR USUARIO (PELIGRO)
+                                </button>
                             </div>
                         </div>
                     </div>

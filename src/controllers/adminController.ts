@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { db } from '../database.js';
 import { logService } from '../services/logService.js';
 // FIX: Import ConnectionStatus enum for type-safe comparisons.
-import { ConnectionStatus, User } from '../types.js';
+import { ConnectionStatus, User, SystemSettings } from '../types.js';
 import { getSessionStatus } from '../whatsapp/client.js';
 
 const getAdminUser = (req: any) => ({ id: req.user.id, username: req.user.username });
@@ -90,6 +90,27 @@ export const handleUpdateClient = async (req: any, res: any) => {
     }
 };
 
+export const handleDeleteClient = async (req: any, res: any) => {
+    const { id } = req.params;
+    const admin = getAdminUser(req);
+
+    try {
+        const client = await db.getUser(id);
+        if (!client) return res.status(404).json({ message: 'Cliente no encontrado.' });
+
+        const success = await db.deleteUser(id);
+        if (success) {
+            logService.audit(`CLIENTE ELIMINADO: ${client.username}`, admin.id, admin.username, { deletedClientId: id });
+            res.json({ message: 'Cliente eliminado correctamente.' });
+        } else {
+            res.status(500).json({ message: 'No se pudo eliminar al cliente.' });
+        }
+    } catch (error: any) {
+        logService.error(`Error crítico al eliminar cliente ${id}`, error, admin.id, admin.username);
+        res.status(500).json({ message: 'Error interno del servidor.' });
+    }
+};
+
 export const handleActivateClient = async (req: any, res: any) => {
     const { id } = req.params;
     const admin = getAdminUser(req);
@@ -151,5 +172,28 @@ export const handleGetLogs = async (req: any, res: any) => {
     } catch (error: any) {
         logService.error('Error al obtener logs del sistema', error, getAdminUser(req).id, getAdminUser(req).username);
         res.status(500).json({ message: 'Error interno del servidor.' });
+    }
+};
+
+export const handleGetSystemSettings = async (req: any, res: any) => {
+    try {
+        const settings = await db.getSystemSettings();
+        res.json(settings);
+    } catch (error: any) {
+        logService.error('Error al obtener configuración del sistema', error);
+        res.status(500).json({ message: 'Error interno.' });
+    }
+};
+
+export const handleUpdateSystemSettings = async (req: any, res: any) => {
+    try {
+        const admin = getAdminUser(req);
+        const updates: Partial<SystemSettings> = req.body;
+        const settings = await db.updateSystemSettings(updates);
+        logService.audit('Configuración global del sistema actualizada', admin.id, admin.username, { updates });
+        res.json(settings);
+    } catch (error: any) {
+        logService.error('Error al actualizar configuración del sistema', error);
+        res.status(500).json({ message: 'Error interno.' });
     }
 };

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { User, LogEntry, GlobalDashboardMetrics } from '../../types';
+import { User, LogEntry, GlobalDashboardMetrics, SystemSettings } from '../../types';
 import { getAuthHeaders } from '../../config';
 
 interface AdminDashboardProps {
@@ -31,22 +31,30 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
     const [clients, setClients] = useState<User[]>([]);
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const [metrics, setMetrics] = useState<GlobalDashboardMetrics | null>(null);
+    const [systemSettings, setSystemSettings] = useState<SystemSettings>({ supportWhatsappNumber: '' });
     const [view, setView] = useState<AdminView>('dashboard');
     const [loading, setLoading] = useState(true);
     const [isResetArmed, setIsResetArmed] = useState(false);
     const [resetConfirmation, setResetConfirmation] = useState('');
+    const [supportNumberInput, setSupportNumberInput] = useState('');
 
     const fetchData = async () => {
         setLoading(true);
         try {
-            const [clientsRes, logsRes, metricsRes] = await Promise.all([
+            const [clientsRes, logsRes, metricsRes, settingsRes] = await Promise.all([
                 fetch(`${backendUrl}/api/admin/clients`, { headers: getAuthHeaders(token) }),
                 fetch(`${backendUrl}/api/admin/logs`, { headers: getAuthHeaders(token) }),
-                fetch(`${backendUrl}/api/admin/dashboard-metrics`, { headers: getAuthHeaders(token) })
+                fetch(`${backendUrl}/api/admin/dashboard-metrics`, { headers: getAuthHeaders(token) }),
+                fetch(`${backendUrl}/api/admin/system/settings`, { headers: getAuthHeaders(token) })
             ]);
             if (clientsRes.ok) setClients(await clientsRes.json());
             if (logsRes.ok) setLogs(await logsRes.json());
             if (metricsRes.ok) setMetrics(await metricsRes.json());
+            if (settingsRes.ok) {
+                const settings = await settingsRes.json();
+                setSystemSettings(settings);
+                setSupportNumberInput(settings.supportWhatsappNumber || '');
+            }
 
         } catch (e: any) {
             console.error("Admin Dashboard Error:", e);
@@ -65,6 +73,35 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
         const interval = setInterval(fetchData, 20000); // Auto-refresh
         return () => clearInterval(interval);
     }, [token, backendUrl]);
+
+    const updateSystemSettings = async () => {
+        if (!supportNumberInput || supportNumberInput.length < 10) {
+            showToast('El número parece incompleto. Use formato internacional (ej: 549...)', 'error');
+            return;
+        }
+        try {
+            const res = await fetch(`${backendUrl}/api/admin/system/settings`, {
+                method: 'PUT',
+                headers: getAuthHeaders(token),
+                body: JSON.stringify({ supportWhatsappNumber: supportNumberInput })
+            });
+            if (res.ok) {
+                const updated = await res.json();
+                setSystemSettings(updated);
+                showToast('Configuración global actualizada.', 'success');
+            } else {
+                showToast('Error al actualizar configuración.', 'error');
+            }
+        } catch (e) {
+            showToast('Error de conexión.', 'error');
+        }
+    };
+
+    const testSupportLink = () => {
+        if (!supportNumberInput) return;
+        const msg = encodeURIComponent("Hola Soporte, esto es una prueba de conexión desde el Admin Panel.");
+        window.open(`https://wa.me/${supportNumberInput}?text=${msg}`, '_blank');
+    };
 
     const executeReset = async () => {
         if (resetConfirmation !== 'RESET') {
@@ -121,7 +158,54 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
 
         switch(view) {
             case 'dashboard':
-                return <DashboardView metrics={metrics} onAudit={onAudit} />;
+                return (
+                    <div className="space-y-8">
+                        <DashboardView metrics={metrics} onAudit={onAudit} />
+                        
+                        <div className="bg-brand-surface border border-brand-gold/20 rounded-2xl p-6 shadow-xl relative overflow-hidden group">
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-brand-gold/5 rounded-full blur-3xl pointer-events-none group-hover:bg-brand-gold/10 transition-colors"></div>
+                            
+                            <div className="flex items-center gap-3 mb-6">
+                                <div className="p-2 bg-brand-gold/10 rounded-lg text-brand-gold">
+                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+                                </div>
+                                <h3 className="text-sm font-black text-white uppercase tracking-widest">Configuración Global de Soporte</h3>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-end">
+                                <div className="space-y-3">
+                                    <label className="text-[10px] font-bold text-brand-gold uppercase tracking-widest">WhatsApp del Bot (Recaudador)</label>
+                                    <div className="relative">
+                                        <input 
+                                            type="text" 
+                                            value={supportNumberInput} 
+                                            onChange={(e) => setSupportNumberInput(e.target.value.replace(/[^0-9]/g, ''))}
+                                            placeholder="549261..."
+                                            className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-sm text-white focus:border-brand-gold focus:ring-1 focus:ring-brand-gold/50 outline-none font-mono tracking-wider transition-all placeholder-gray-700"
+                                        />
+                                        <div className="absolute inset-y-0 right-2 flex items-center">
+                                            <button 
+                                                onClick={testSupportLink}
+                                                disabled={!supportNumberInput}
+                                                className="bg-white/10 hover:bg-green-500/20 text-gray-400 hover:text-green-400 p-2 rounded-lg transition-colors"
+                                                title="Probar enlace"
+                                            >
+                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <p className="text-[9px] text-gray-500 font-medium">
+                                        Los clientes serán redirigidos a este número cuando su periodo de prueba termine. El mensaje pre-cargado solicitará CBU/Alias automáticamente.
+                                    </p>
+                                </div>
+                                
+                                <button onClick={updateSystemSettings} className="w-full py-4 bg-brand-gold text-black rounded-xl font-black text-xs uppercase tracking-[0.2em] hover:scale-[1.02] active:scale-95 transition-all shadow-[0_10px_30px_rgba(212,175,55,0.2)]">
+                                    Guardar Cambios
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
             case 'clients':
                 return <ClientTable clients={clients} getPlanPill={getPlanPill} onAudit={onAudit} />;
             case 'logs':

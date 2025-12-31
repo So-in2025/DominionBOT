@@ -134,8 +134,8 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <div className={`absolute inset-0 bg-brand-black/90 backdrop-blur-md transition-opacity duration-300 ${animateIn ? 'opacity-100' : 'opacity-0'}`} onClick={onClose}></div>
-            <div className={`relative w-full max-w-md bg-brand-surface border border-white/10 rounded-2xl shadow-2xl overflow-hidden transition-all duration-300 transform ${animateIn ? 'scale-100 opacity-100 translate-y-0' : 'scale-95 opacity-0 translate-y-8'}`}>
-                <div className="h-1.5 w-full bg-gradient-to-r from-brand-gold-dark via-brand-gold to-brand-gold-dark"></div>
+            <div className={`relative w-full max-w-md max-h-[90vh] overflow-y-auto bg-brand-surface border border-white/10 rounded-2xl shadow-2xl transition-all duration-300 transform custom-scrollbar ${animateIn ? 'scale-100 opacity-100 translate-y-0' : 'scale-95 opacity-0 translate-y-8'}`}>
+                <div className="h-1.5 w-full bg-gradient-to-r from-brand-gold-dark via-brand-gold to-brand-gold-dark flex-shrink-0"></div>
                 
                 {mode !== 'registered_success' && (
                     <button onClick={onClose} className="absolute top-5 right-5 text-gray-500 hover:text-white transition-colors z-10 p-1">
@@ -143,7 +143,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
                     </button>
                 )}
 
-                <div className="p-10">
+                <div className="p-6 md:p-10">
                     {mode === 'registered_success' ? (
                         <div className="text-center space-y-8 animate-fade-in">
                             <div className="w-20 h-20 bg-green-500/10 text-green-500 rounded-full flex items-center justify-center mx-auto border border-green-500/20 shadow-[0_0_30px_rgba(34,197,94,0.2)]">
@@ -162,8 +162,8 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
                         </div>
                     ) : (
                         <>
-                            <div className="text-center mb-10">
-                                <h2 className="text-3xl font-black text-white tracking-tighter mb-2">
+                            <div className="text-center mb-8 md:mb-10">
+                                <h2 className="text-2xl md:text-3xl font-black text-white tracking-tighter mb-2">
                                     {mode === 'login' ? 'Bienvenido' : (mode === 'register' ? 'Nuevo Nodo' : 'Recuperación')}
                                 </h2>
                                 <p className="text-[10px] text-brand-gold uppercase tracking-[0.4em] font-black opacity-80">Infrastructure v2.7.6 Elite</p>
@@ -173,16 +173,16 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
                                 <div className="mb-6 p-4 bg-green-500/10 border border-green-500/20 rounded-xl text-green-400 text-xs text-center font-bold animate-fade-in">{successMsg}</div>
                             )}
 
-                            <form onSubmit={handleSubmit} className="space-y-6">
+                            <form onSubmit={handleSubmit} className="space-y-5 md:space-y-6">
                                 <div className="space-y-1.5">
                                     <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">{mode === 'login' ? 'Número de WhatsApp' : 'Tu Número de WhatsApp'}</label>
-                                    <input type="text" value={whatsappNumber} onChange={(e) => setWhatsappNumber(e.target.value.replace(/[^0-9]/g, ''))} className="w-full px-5 py-4 bg-black/40 border border-white/5 rounded-xl text-white focus:border-brand-gold outline-none transition-all placeholder-gray-800 font-mono" placeholder="549261..." required />
+                                    <input type="text" value={whatsappNumber} onChange={(e) => setWhatsappNumber(e.target.value.replace(/[^0-9]/g, ''))} className="w-full px-5 py-3 md:py-4 bg-black/40 border border-white/5 rounded-xl text-white focus:border-brand-gold outline-none transition-all placeholder-gray-800 font-mono" placeholder="549261..." required />
                                 </div>
 
                                 {mode === 'register' && (
                                      <div className="space-y-1.5 animate-fade-in">
                                         <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Tu Nombre o Nombre del Negocio</label>
-                                        <input type="text" value={businessName} onChange={(e) => setBusinessName(e.target.value)} className="w-full px-5 py-4 bg-black/40 border border-white/5 rounded-xl text-white focus:border-brand-gold outline-none transition-all placeholder-gray-800" placeholder="Ej: Agencia Dominion" required />
+                                        <input type="text" value={businessName} onChange={(e) => setBusinessName(e.target.value)} className="w-full px-5 py-3 md:py-4 bg-black/40 border border-white/5 rounded-xl text-white focus:border-brand-gold outline-none transition-all placeholder-gray-800" placeholder="Ej: Agencia Dominion" required />
                                     </div>
                                 )}
 
@@ -190,32 +190,32 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
                                     <>
                                         <div className="space-y-1.5 animate-fade-in">
                                             <label className="text-[10px] font-black text-brand-gold uppercase tracking-widest ml-1">Master Recovery Key</label>
-                                            <input type="text" value={recoveryKey} onChange={(e) => setRecoveryKey(e.target.value)} className="w-full px-5 py-4 bg-black/40 border border-brand-gold/30 rounded-xl text-white focus:border-brand-gold outline-none font-mono placeholder-gray-800" placeholder="X8Y2-Z9Q1-..." required />
+                                            <input type="text" value={recoveryKey} onChange={(e) => setRecoveryKey(e.target.value)} className="w-full px-5 py-3 md:py-4 bg-black/40 border border-brand-gold/30 rounded-xl text-white focus:border-brand-gold outline-none font-mono placeholder-gray-800" placeholder="X8Y2-Z9Q1-..." required />
                                         </div>
                                         <div className="space-y-1.5 animate-fade-in">
                                             <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Nueva Contraseña</label>
-                                            <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full px-5 py-4 bg-black/40 border border-white/5 rounded-xl text-white focus:border-brand-gold outline-none placeholder-gray-800" placeholder="••••••••" required />
+                                            <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full px-5 py-3 md:py-4 bg-black/40 border border-white/5 rounded-xl text-white focus:border-brand-gold outline-none placeholder-gray-800" placeholder="••••••••" required />
                                         </div>
                                     </>
                                 ) : (
                                     <div className="space-y-1.5">
                                         <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Contraseña</label>
-                                        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full px-5 py-4 bg-black/40 border border-white/5 rounded-xl text-white focus:border-brand-gold outline-none placeholder-gray-800" placeholder="••••••••" required />
+                                        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full px-5 py-3 md:py-4 bg-black/40 border border-white/5 rounded-xl text-white focus:border-brand-gold outline-none placeholder-gray-800" placeholder="••••••••" required />
                                     </div>
                                 )}
 
                                 {mode === 'register' && (
-                                    <div className="bg-black/20 rounded-2xl p-5 space-y-4 border border-white/5 animate-fade-in">
+                                    <div className="bg-black/20 rounded-2xl p-4 md:p-5 space-y-4 border border-white/5 animate-fade-in">
                                         <label className="flex items-start gap-4 cursor-pointer group">
-                                            <input type="checkbox" checked={agreedTerms} onChange={(e) => setAgreedTerms(e.target.checked)} className="mt-1 w-4 h-4 rounded border-white/10 bg-black checked:bg-brand-gold" />
+                                            <input type="checkbox" checked={agreedTerms} onChange={(e) => setAgreedTerms(e.target.checked)} className="mt-1 w-4 h-4 rounded border-white/10 bg-black checked:bg-brand-gold flex-shrink-0" />
                                             <span className="text-[10px] text-gray-400 group-hover:text-gray-300">Acepto los <button type="button" onClick={() => onOpenLegal('terms')} className="text-brand-gold font-bold">Términos de Servicio</button>.</span>
                                         </label>
                                         <label className="flex items-start gap-4 cursor-pointer group">
-                                            <input type="checkbox" checked={agreedPrivacy} onChange={(e) => setAgreedPrivacy(e.target.checked)} className="mt-1 w-4 h-4 rounded border-white/10 bg-black checked:bg-brand-gold" />
+                                            <input type="checkbox" checked={agreedPrivacy} onChange={(e) => setAgreedPrivacy(e.target.checked)} className="mt-1 w-4 h-4 rounded border-white/10 bg-black checked:bg-brand-gold flex-shrink-0" />
                                             <span className="text-[10px] text-gray-400 group-hover:text-gray-300">Entiendo la <button type="button" onClick={() => onOpenLegal('privacy')} className="text-brand-gold font-bold">Privacidad BYOK</button>.</span>
                                         </label>
                                         <label className="flex items-start gap-4 cursor-pointer group">
-                                            <input type="checkbox" checked={agreedManifesto} onChange={(e) => setAgreedManifesto(e.target.checked)} className="mt-1 w-4 h-4 rounded border-white/10 bg-black checked:bg-brand-gold" />
+                                            <input type="checkbox" checked={agreedManifesto} onChange={(e) => setAgreedManifesto(e.target.checked)} className="mt-1 w-4 h-4 rounded border-white/10 bg-black checked:bg-brand-gold flex-shrink-0" />
                                             <span className="text-[10px] text-gray-400 group-hover:text-gray-300">He leído el <button type="button" onClick={() => onOpenLegal('manifesto')} className="text-brand-gold font-bold">Manifiesto Dominion</button>.</span>
                                         </label>
                                     </div>
@@ -226,7 +226,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
                                 <button 
                                     type="submit" 
                                     disabled={isSubmitDisabled} 
-                                    className={`w-full py-5 rounded-xl font-black text-xs uppercase tracking-[0.2em] transition-all duration-500 ${isSubmitDisabled ? 'bg-white/5 text-gray-700 cursor-not-allowed opacity-50' : 'bg-brand-gold text-black shadow-[0_10px_30px_rgba(212,175,55,0.2)] hover:scale-[1.02] hover:shadow-[0_10px_40px_rgba(212,175,55,0.4)]'}`}
+                                    className={`w-full py-4 md:py-5 rounded-xl font-black text-xs uppercase tracking-[0.2em] transition-all duration-500 ${isSubmitDisabled ? 'bg-white/5 text-gray-700 cursor-not-allowed opacity-50' : 'bg-brand-gold text-black shadow-[0_10px_30px_rgba(212,175,55,0.2)] hover:scale-[1.02] hover:shadow-[0_10px_40px_rgba(212,175,55,0.4)]'}`}
                                 >
                                     {loading ? (
                                         <div className="flex items-center justify-center gap-2">
@@ -239,7 +239,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
                                 </button>
                             </form>
 
-                            <div className="mt-8 flex flex-col items-center gap-5">
+                            <div className="mt-6 md:mt-8 flex flex-col items-center gap-4 md:gap-5 pb-4">
                                 {mode === 'login' && (
                                     <button onClick={() => setMode('recovery')} className="text-[10px] text-gray-600 hover:text-brand-gold uppercase font-black tracking-widest transition-colors">¿Olvidaste tu contraseña?</button>
                                 )}
