@@ -247,7 +247,9 @@ export const handleStartTestBot = async (req: any, res: any) => {
             lastActivity: new Date()
         };
         await db.saveUserConversation(targetUserId, cleanConversation);
-        logService.info(`[ADMIN-TEST-BOT] Conversación reseteada forzosamente para ${targetUserId}`, admin.id);
+        // NEW LOG: Log conversation state after forced reset
+        logService.info(`[ADMIN-TEST-BOT] After forced reset, conversation state in DB for ${targetUserId} and JID ${ELITE_BOT_JID}: ${JSON.stringify(cleanConversation).substring(0, 500)}...`, admin.id);
+
 
         // Responder al cliente inmediatamente para que el frontend pueda iniciar el polling
         res.status(200).json({ message: 'Secuencia de prueba de bot élite iniciada en background.' });

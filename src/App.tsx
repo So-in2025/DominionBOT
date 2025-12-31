@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Conversation, BotSettings, Message, View, ConnectionStatus, User, LeadStatus, PromptArchetype, Testimonial } from './types';
 import Header from './components/Header';
@@ -47,8 +46,8 @@ const PREDEFINED_TESTIMONIALS = [
     { name: "Tomás Vega", location: "Mendoza", text: "Probé otros sistemas y siempre algo fallaba. Este por ahora se mantiene estable." },
     { name: "Isabella Pardo", location: "Mendoza", text: "Me gustó que no invade ni molesta a los clientes." },
     { name: "Felipe Muñoz", location: "Mendoza", text: "No esperaba mucho y me terminó sorprendiendo." },
-    { name: "Martina Flores", location: "Mendoza", text: "Lo estoy usando hace unos días y la experiencia viene siendo buena." },
-    { name: "Santino Rivas", location: "Mendoza", text: "Simple, directo y sin vueltas. Eso suma." },
+    { name: "Martina Flores", location: "Mendoza", "text": "Lo estoy usando hace unos días y la experiencia viene siendo buena." },
+    { name: "Santino Rivas", location: "Mendoza", "text": "Simple, directo y sin vueltas. Eso suma." },
     { name: "Victoria Medina", location: "Mendoza", text: "Se agradece algo así para laburar más tranquilo." },
     { name: "Benjamín Castro", location: "Mendoza", text: "Después de varios días usándolo, lo seguiría usando sin dudas." },
     { name: "Emilia Ponce", location: "Mendoza", text: "Ojalá lo sigan mejorando, pero la base está muy bien." },
@@ -490,7 +489,6 @@ export default function App() {
       };
   }, []); // El array vacío asegura que este efecto se ejecute solo una vez.
 
-  // FIX: Updated `showToast` type to include 'info'.
   const showToast = (message: string, type: 'success' | 'error' | 'info') => {
     if (type === 'error') audioService.play('alert_error_generic');
     setToast({ message, type });
@@ -520,6 +518,7 @@ export default function App() {
       // Clear polling intervals on logout
       if (statusPollingIntervalRef.current) {
           clearInterval(statusPollingIntervalRef.current);
+          // FIX: Changed 'pollingIntervalRef' to 'statusPollingIntervalRef'
           statusPollingIntervalRef.current = null;
       }
       if (convoPollingIntervalRef.current) {
@@ -549,6 +548,10 @@ export default function App() {
 
   // Define fetchStatus and fetchConversations as useCallback hooks
   const fetchStatus = useCallback(async () => {
+      if (!BACKEND_URL) {
+          setBackendError("ERROR CRÍTICO: La URL del backend no está configurada. Verifica VITE_BACKEND_URL en Vercel o tu archivo .env.local si estás en desarrollo.");
+          return;
+      }
       if (!token || userRole === 'super_admin') {
           setConnectionStatus(ConnectionStatus.DISCONNECTED);
           setQrCode(null);
@@ -578,6 +581,10 @@ export default function App() {
   }, [token, userRole, backendError, triggerErrorAlert]); 
 
   const fetchConversations = useCallback(async () => {
+      if (!BACKEND_URL) {
+          setBackendError("ERROR CRÍTICO: La URL del backend no está configurada. Verifica VITE_BACKEND_URL en Vercel o tu archivo .env.local si estás en desarrollo.");
+          return;
+      }
       if (!token || userRole === 'super_admin') {
           setConversations([]);
           return;
@@ -613,6 +620,12 @@ export default function App() {
 
   // Polling for connection status and conversations
   useEffect(() => {
+    // If backend URL is not set, don't even start polling
+    if (!BACKEND_URL) {
+        setBackendError("ERROR CRÍTICO: La URL del backend no está configurada. Verifica VITE_BACKEND_URL en Vercel o tu archivo .env.local si estás en desarrollo.");
+        return;
+    }
+
     if (!token || userRole === 'super_admin') {
         if (statusPollingIntervalRef.current) clearInterval(statusPollingIntervalRef.current);
         if (convoPollingIntervalRef.current) clearInterval(convoPollingIntervalRef.current);
@@ -639,6 +652,12 @@ export default function App() {
 
   // Initial user data load (now integrated with polling logic for status/conversations)
   useEffect(() => {
+    // If backend URL is not set, don't attempt to load user data
+    if (!BACKEND_URL) {
+        setBackendError("ERROR CRÍTICO: La URL del backend no está configurada. Verifica VITE_BACKEND_URL en Vercel o tu archivo .env.local si estás en desarrollo.");
+        return;
+    }
+
     if (!token) {
         setCurrentUser(null);
         return;
@@ -720,6 +739,10 @@ export default function App() {
   };
 
   const handleConnect = async (phoneNumber?: string) => {
+      if (!BACKEND_URL) {
+          setBackendError("ERROR CRÍTICO: La URL del backend no está configurada. Verifica VITE_BACKEND_URL en Vercel o tu archivo .env.local si estás en desarrollo.");
+          return;
+      }
       if (!token) return;
       setQrCode(null);
       setPairingCode(null);
@@ -752,6 +775,10 @@ export default function App() {
   };
 
   const handleSendMessage = async (text: string) => {
+      if (!BACKEND_URL) {
+          setBackendError("ERROR CRÍTICO: La URL del backend no está configurada. Verifica VITE_BACKEND_URL en Vercel o tu archivo .env.local si estás en desarrollo.");
+          return;
+      }
       if (!selectedConversationId || !token) return;
       try {
           await fetch(`${BACKEND_URL}/api/send`, {
@@ -763,6 +790,10 @@ export default function App() {
   };
 
   const handleUpdateSettings = async (newSettings: BotSettings) => {
+      if (!BACKEND_URL) {
+          setBackendError("ERROR CRÍTICO: La URL del backend no está configurada. Verifica VITE_BACKEND_URL en Vercel o tu archivo .env.local si estás en desarrollo.");
+          return;
+      }
       if (!token) return;
       try {
           const res = await fetch(`${BACKEND_URL}/api/settings`, {
@@ -790,6 +821,10 @@ export default function App() {
   
   // NEW: Handler for requesting history
   const handleRequestHistory = async () => {
+    if (!BACKEND_URL) {
+        setBackendError("ERROR CRÍTICO: La URL del backend no está configurada. Verifica VITE_BACKEND_URL en Vercel o tu archivo .env.local si estás en desarrollo.");
+        return;
+    }
     if (!token || isRequestingHistory) return;
 
     setIsRequestingHistory(true);
@@ -831,10 +866,14 @@ export default function App() {
       if (currentView === View.AUDIT_MODE && auditTarget) {
         return <AuditView user={auditTarget} onClose={() => setCurrentView(View.ADMIN_GLOBAL)} onUpdate={(user) => setAuditTarget(user)} showToast={showToast} />;
       }
-      return <AdminDashboard token={token!} backendUrl={BACKEND_URL} onAudit={(u) => { setAuditTarget(u); setCurrentView(View.AUDIT_MODE); }} showToast={showToast} onLogout={handleLogout} />;
+      return <AdminDashboard token={token!} backendUrl={BACKEND_URL!} onAudit={(u) => { setAuditTarget(u); setCurrentView(View.ADMIN_GLOBAL); }} showToast={showToast} onLogout={handleLogout} />;
     }
 
     const handleDisconnect = async () => {
+        if (!BACKEND_URL) {
+            setBackendError("ERROR CRÍTICO: La URL del backend no está configurada. Verifica VITE_BACKEND_URL en Vercel o tu archivo .env.local si estás en desarrollo.");
+            return;
+        }
         if (!token) return;
         try {
             await fetch(`${BACKEND_URL}/api/disconnect`, { headers: getAuthHeaders(token!) });
@@ -852,6 +891,10 @@ export default function App() {
     };
 
     const handleWipeConnection = async () => {
+        if (!BACKEND_URL) {
+            setBackendError("ERROR CRÍTICO: La URL del backend no está configurada. Verifica VITE_BACKEND_URL en Vercel o tu archivo .env.local si estás en desarrollo.");
+            return;
+        }
         if (!token) return;
         setConnectionStatus(ConnectionStatus.RESETTING); // Optimistic update
         try {
@@ -874,7 +917,7 @@ export default function App() {
 
     switch(currentView) {
         case View.DASHBOARD:
-            return <AgencyDashboard token={token!} backendUrl={BACKEND_URL} settings={settings!} onUpdateSettings={handleUpdateSettings} currentUser={currentUser} showToast={showToast} />;
+            return <AgencyDashboard token={token!} backendUrl={BACKEND_URL!} settings={settings!} onUpdateSettings={handleUpdateSettings} currentUser={currentUser} showToast={showToast} />;
         case View.SETTINGS:
             return <SettingsPanel settings={settings} isLoading={isLoadingSettings} onUpdateSettings={isFunctionalityDisabled ? ()=>{} : handleUpdateSettings} onOpenLegal={setLegalModalType} />;
         case View.CONNECTION:
@@ -941,9 +984,22 @@ export default function App() {
       {isAppView && <TrialBanner user={currentUser} supportNumber={supportNumber} />}
 
       <main className={`flex-1 flex relative ${isAppView ? 'overflow-hidden' : ''}`}>
-        {backendError && ( 
-            <div className="absolute top-0 left-0 right-0 z-[200] flex items-center justify-center p-2 text-[10px] font-black shadow-xl animate-pulse
-                bg-red-600/95 text-white">
+        {/* CRITICAL: Backend URL Not Configured */}
+        {!BACKEND_URL && (
+             <div className="absolute top-0 left-0 right-0 z-[200] flex flex-col items-center justify-center p-3 text-[10px] font-black shadow-xl animate-pulse bg-red-800 text-white">
+                <span>⚠️ ERROR CRÍTICO: La URL del backend NO está configurada.</span>
+                <span className="mt-1">
+                    Verifica `VITE_BACKEND_URL` en las variables de entorno de Vercel (o en tu `.env.local`). 
+                    <a href="https://vercel.com/docs/concepts/projects/environment-variables" target="_blank" rel="noopener noreferrer" className="ml-1 underline">
+                        [Guía Vercel]
+                    </a>
+                </span>
+            </div>
+        )}
+
+        {backendError && BACKEND_URL && ( 
+            <div className={`absolute top-0 left-0 right-0 z-[200] flex items-center justify-center p-2 text-[10px] font-black shadow-xl animate-pulse
+                bg-red-600/95 text-white`}>
                 <span>⚠️ {backendError}</span>
             </div>
         )}
@@ -957,7 +1013,7 @@ export default function App() {
                 isSimTyping={isSimTyping}
                 simScrollRef={simScrollRef}
                 onOpenLegal={setLegalModalType}
-                isServerReady={true}
+                isServerReady={!!BACKEND_URL} // Landing page should show "online" only if backend URL is configured
                 isLoggedIn={!!token}
                 token={token}
                 showToast={showToast}

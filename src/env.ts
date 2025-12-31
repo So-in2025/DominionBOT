@@ -24,6 +24,7 @@ export const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://admin:C3WcIkonj
 export const PORT = process.env.PORT || 3001;
 // Export Gemini API key. CRÍTICO: Asegúrate de que esta variable esté definida en tu archivo .env o .env.local
 // Ejemplo: API_KEY=TU_CLAVE_DE_GEMINI_AQUI
+// Esta clave es usada por el servidor para pre-generar audios TTS y como fallback si el cliente no configura su propia API Key de Gemini.
 export const API_KEY = process.env.API_KEY || ''; 
 
 // Debug de seguridad (solo muestra los últimos 4 caracteres)

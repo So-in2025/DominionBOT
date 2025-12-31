@@ -26,6 +26,7 @@ const Toast: React.FC<ToastProps> = ({ toast, onClose }) => {
   let backgroundColor = '';
   let borderColor = '';
   let icon = '';
+  let textColor = 'text-white'; // Default text color
   const iconBgColor = 'bg-white/20'; // Consistent icon background
 
   if (toast.type === 'success') {
@@ -36,6 +37,7 @@ const Toast: React.FC<ToastProps> = ({ toast, onClose }) => {
     backgroundColor = 'bg-blue-600/95';
     borderColor = 'border-blue-400/30';
     icon = 'ℹ';
+    textColor = 'text-white'; // Ensure white text for info
   } else { // 'error'
     backgroundColor = 'bg-red-600/95';
     borderColor = 'border-red-400/30';
@@ -51,7 +53,7 @@ const Toast: React.FC<ToastProps> = ({ toast, onClose }) => {
       <div className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center ${iconBgColor}`}>
         {icon}
       </div>
-      <p className="text-sm font-bold text-white">{toast.message}</p>
+      <p className={`text-sm font-bold ${textColor}`}>{toast.message}</p>
       <button onClick={onClose} className="ml-4 text-white/50 hover:text-white transition-colors">&times;</button>
     </div>
   );

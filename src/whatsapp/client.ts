@@ -324,15 +324,30 @@ export async function processAiResponseForJid(userId: string, jid: string) {
         return;
     }
 
+    // Fetch conversation immediately to get its flags
+    const convs = await conversationService.getConversations(userId);
+    const conversation = convs.find(c => c.id === jid);
+
+    // NEW LOG: Debug Elite Bot conversation flags right before bypass logic
+    if (jid === ELITE_BOT_JID) {
+        logService.info(`[WA-CLIENT-DEBUG-ELITE] === ELITE BOT DEBUG START ===`, userId);
+        logService.info(`[WA-CLIENT-DEBUG-ELITE] User ${userId} state: isActive=${user.settings.isActive}, plan_status=${user.plan_status}`, userId);
+        if (conversation) {
+            logService.info(`[WA-CLIENT-DEBUG-ELITE] Elite Bot convo ${jid} from DB: isTestBotConversation=${conversation.isTestBotConversation}, isMuted=${conversation.isMuted}, isBotActive=${conversation.isBotActive}, status=${conversation.status}`, userId);
+            logService.info(`[WA-CLIENT-DEBUG-ELITE] Full conversation object for Elite Bot: ${JSON.stringify(conversation).substring(0, 500)}...`, userId);
+        } else {
+            logService.info(`[WA-CLIENT-DEBUG-ELITE] No conversation object found in DB for Elite Bot JID ${jid}.`, userId);
+        }
+        logService.info(`[WA-CLIENT-DEBUG-ELITE] === ELITE BOT DEBUG END ===`, userId);
+    }
+    
     // --- GLOBAL CHECKS (Apply to ALL JIDs, including test bot) ---
     // If the user's bot is globally inactive or plan is suspended, we skip AI processing for *any* JID.
     if (!user.settings.isActive || user.plan_status === 'suspended') {
         logService.info(`[WA-CLIENT] AI processing skipped for JID ${jid} (bot inactive or plan suspended globally for user ${userId}).`, userId);
         
         // Special handling for expired/suspended for REAL conversations, not test bot.
-        if (user.plan_status === 'expired' && jid !== ELITE_BOT_JID) { // Still use JID for this specific case as conversation might not exist
-            const conversations = await conversationService.getConversations(userId);
-            const conversation = conversations.find(c => c.id === jid);
+        if (user.plan_status === 'expired' && jid !== ELITE_BOT_JID) { 
             if (conversation && !conversation.isMuted) {
                 const sock = sessions.get(userId);
                 if (sock) {
@@ -345,19 +360,11 @@ export async function processAiResponseForJid(userId: string, jid: string) {
         }
         return; // IMPORTANT: Return here if global checks fail
     }
-    
-    // --- FETCH CONVERSATION FOR BYPASS CHECK ---
-    const convs = await conversationService.getConversations(userId);
-    const conversation = convs.find(c => c.id === jid);
-
-    // NEW LOG: Debug Elite Bot conversation flags right before bypass logic
-    if (jid === ELITE_BOT_JID) {
-        logService.info(`[WA-CLIENT-DEBUG-ELITE] Elite Bot convo ${jid} state: isTestBotConversation=${conversation?.isTestBotConversation}, isMuted=${conversation?.isMuted}, isBotActive=${conversation?.isBotActive}, status=${conversation?.status}`, userId);
-    }
 
     // --- ELITE BOT SPECIFIC BYPASS ---
     // If it's a test bot conversation (explicitly flagged in DB), and it passed global checks,
     // then we should *always* proceed to AI generation, bypassing conversation-specific rules.
+    // This check is CRITICAL and must come before other conversation-specific filters.
     if (conversation?.isTestBotConversation) { 
         logService.info(`[WA-CLIENT] ELITE_BOT_JID ${jid} detected via conversation flag. Proceeding directly to AI generation.`, userId);
         return _commonAiProcessingLogic(userId, jid, user, '[WA-CLIENT-ELITE-TEST]'); // Call common logic and return
@@ -370,7 +377,13 @@ export async function processAiResponseForJid(userId: string, jid: string) {
         return;
     }
 
-    if (!conversation || conversation.isMuted || !conversation.isBotActive || conversation.status === LeadStatus.PERSONAL) {
+    // If conversation still doesn't exist, it's an edge case, maybe a message came before convo creation
+    if (!conversation) {
+        logService.warn(`[WA-CLIENT] No conversation object found for JID ${jid} after initial message ingestion and not an Elite Bot. Skipping AI.`, userId);
+        return;
+    }
+
+    if (conversation.isMuted || !conversation.isBotActive || conversation.status === LeadStatus.PERSONAL) {
         logService.info(`[WA-CLIENT] AI processing skipped for JID ${jid} (muted, inactive, or personal).`, userId);
         return;
     }
