@@ -19,9 +19,16 @@ const ConversationListItem: React.FC<ConversationListItemProps> = ({ conversatio
   const lastMessage = conversation.messages[conversation.messages.length - 1];
   const colorClass = statusColorClass[conversation.status];
   
-  const displayTitle = isNaN(Number(conversation.leadName.replace(/\+/g, ''))) 
-      ? conversation.leadName 
-      : formatPhoneNumber(conversation.leadName);
+  // ROBUST NAME CHECK LOGIC:
+  // 1. Strip non-digits to check if it's a pure number.
+  // 2. If it's a number > 6 digits, assume it's a phone number and use leadIdentifier formatting.
+  // 3. Otherwise use the name.
+  const cleanLeadName = conversation.leadName.replace(/[^0-9]/g, '');
+  const isLeadNameNumber = cleanLeadName.length > 6 && !isNaN(Number(cleanLeadName));
+
+  const displayTitle = isLeadNameNumber 
+      ? formatPhoneNumber(conversation.leadIdentifier) 
+      : conversation.leadName;
 
   return (
     <li

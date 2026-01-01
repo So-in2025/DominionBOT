@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { User, PlanType, PlanStatus } from '../../types';
 import { getAuthHeaders } from '../../config';
@@ -154,20 +155,20 @@ const ClientManagementView: React.FC<ClientManagementViewProps> = ({ user, onClo
                     </div>
 
                     <div className="space-y-6 bg-black/40 p-6 rounded-lg border border-white/5">
-                        <h3 className="text-brand-gold font-black uppercase tracking-widest text-xs">Gestión de Plan y Facturación</h3>
+                        <h3 className="text-brand-gold font-black uppercase tracking-widest text-xs">Gestión de Licencia</h3>
                         
                         <div>
-                            <label className="text-xs font-bold text-gray-400">Tipo de Plan</label>
+                            <label className="text-xs font-bold text-gray-400">Nivel de Acceso</label>
                             <select value={clientData.plan_type} onChange={e => handleInputChange('plan_type', e.target.value as PlanType)} className="w-full mt-1 p-2 bg-white/5 rounded text-white">
-                                <option value="starter">Starter</option>
-                                <option value="pro">Pro</option>
+                                <option value="pro">Pro (Licencia Completa)</option>
+                                <option value="starter">Fallback (Sin Licencia)</option>
                             </select>
                         </div>
                         
                         <div>
-                            <label className="text-xs font-bold text-gray-400">Estado del Plan</label>
+                            <label className="text-xs font-bold text-gray-400">Estado</label>
                             <select value={clientData.plan_status} onChange={e => handleInputChange('plan_status', e.target.value as PlanStatus)} className="w-full mt-1 p-2 bg-white/5 rounded text-white">
-                                <option value="trial">Prueba</option>
+                                <option value="trial">Prueba (Trial)</option>
                                 <option value="active">Activo</option>
                                 <option value="expired">Expirado</option>
                                 <option value="suspended">Suspendido</option>

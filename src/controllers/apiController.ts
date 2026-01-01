@@ -3,26 +3,57 @@ import { Request, Response } from 'express';
 // FIX: Import Buffer to resolve 'Cannot find name Buffer' error.
 import { Buffer } from 'buffer';
 // FIX: Import connectToWhatsApp, disconnectWhatsApp, sendMessage as they are now exported.
-import { connectToWhatsApp, disconnectWhatsApp, sendMessage, getSessionStatus, processAiResponseForJid } from '../whatsapp/client.js'; // Import processAiResponseForJid
+import { connectToWhatsApp, disconnectWhatsApp, sendMessage, getSessionStatus, processAiResponseForJid, fetchUserGroups } from '../whatsapp/client.js'; // Import fetchUserGroups
 import { conversationService } from '../services/conversationService.js';
-import { Message, LeadStatus, User, Conversation } from '../types.js';
+import { Message, LeadStatus, User, Conversation, SimulationScenario, EvaluationResult, Campaign } from '../types.js';
 import { db, sanitizeKey } from '../database.js'; // Import sanitizeKey
 import { logService } from '../services/logService.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { v4 as uuidv4 } from 'uuid';
 
 // --- Test Bot Specifics ---
 const ELITE_BOT_JID = '5491112345678@s.whatsapp.net'; // Consistent JID for the elite test bot
-const ELITE_BOT_NAME = 'Dominion Elite Test Bot';
+const ELITE_BOT_NAME = 'Dominion Elite Bot';
 
-const TEST_SCRIPT = [
-    "Hola, estoy interesado en tus servicios. ¿Cómo funciona?",
-    "¿Podrías explicarme un poco más sobre el plan PRO?",
-    "¿Cuál es el costo mensual?",
-    "¿Ofrecen alguna garantía o prueba?",
-    "Suena interesante. Creo que estoy listo para ver una demo o empezar. ¿Qué debo hacer ahora?",
-];
+const SCENARIO_SCRIPTS: Record<SimulationScenario, string[]> = {
+    'STANDARD_FLOW': [
+        "Hola, estoy interesado en tus servicios. ¿Cómo funciona?",
+        "¿Podrías explicarme un poco más sobre los beneficios?",
+        "¿Cuál es el costo?",
+        "Suena interesante. ¿Qué pasos siguen?",
+        "Perfecto, me gustaría proceder."
+    ],
+    'PRICE_OBJECTION': [
+        "Hola, vi tu anuncio. ¿Precio?",
+        "Uff, me parece bastante caro comparado con otros.",
+        "¿No tienen algún descuento o plan más barato?",
+        "Entiendo el valor, pero se me va de presupuesto ahora.",
+        "Voy a pensarlo si no pueden mejorar el número."
+    ],
+    'COMPETITOR_COMPARISON': [
+        "Hola. Estoy viendo opciones. ¿Qué los hace diferentes a la competencia?",
+        "Me han hablado de otra empresa que hace lo mismo por la mitad.",
+        "¿Por qué debería elegirlos a ustedes?",
+        "No veo la diferencia real en la propuesta.",
+        "Ok, dame una razón para cerrar hoy con ustedes."
+    ],
+    'GHOSTING_RISK': [
+        "Info.",
+        "...",
+        "¿Y el precio?",
+        "...",
+        "Ok."
+    ],
+    'CONFUSED_BUYER': [
+        "Hola, ¿venden repuestos de autos?",
+        "Ah, perdón, pensé que era otra cosa. ¿Pero qué hacen entonces?",
+        "No entiendo muy bien para qué me serviría.",
+        "¿Es como una estafa piramidal?",
+        "Ah bueno, gracias igual."
+    ]
+};
 
 // Memory Set to track active simulations for cancellation
 const activeSimulations = new Set<string>();
@@ -193,7 +224,7 @@ export const handleGetTtsAudio = async (req: any, res: any) => {
 };
 
 /**
- * Detiene la simulación del bot.
+ * Detiene la simulación del bot y ejecuta la evaluación.
  */
 export const handleStopClientTestBot = async (req: any, res: any) => {
     const userId = getUserId(req);
@@ -208,11 +239,15 @@ export const handleStopClientTestBot = async (req: any, res: any) => {
 };
 
 /**
- * Inicia una secuencia de mensajes de prueba desde el "bot de pruebas" hacia el bot del cliente actual.
+ * Inicia una secuencia de mensajes de prueba con escenario específico.
  */
 export const handleStartClientTestBot = async (req: any, res: any) => {
     const userId = getUserId(req);
-    const user = getUser(req); // User object from JWT
+    const user = getUser(req); 
+    const { scenario } = req.body; // New parameter
+
+    const selectedScenario: SimulationScenario = scenario || 'STANDARD_FLOW';
+    const script = SCENARIO_SCRIPTS[selectedScenario];
 
     if (activeSimulations.has(userId)) {
         return res.status(400).json({ message: 'Ya hay una simulación en curso.' });
@@ -230,16 +265,25 @@ export const handleStartClientTestBot = async (req: any, res: any) => {
             await db.updateUserSettings(userId, { isActive: true });
             logService.audit(`Bot del cliente ${targetUser.username} activado para prueba (por cliente).`, userId, user.username);
         }
-        // 2. Opcional: Resetear el contador de leads calificados para un test limpio
+        
+        // 2. Resetear contador de leads calificados
         await db.updateUser(userId, { trial_qualified_leads_count: 0 });
 
-        // 3. FORCE RESET CONVERSATION STATE (CRITICAL FIX)
+        // 3. FORCE RESET CONVERSATION STATE
+        // We delete it first to ensure no stale data ghosts remain
+        const safeJid = sanitizeKey(ELITE_BOT_JID);
+        if (targetUser.conversations) {
+             delete targetUser.conversations[safeJid];
+             await db.updateUser(userId, { conversations: targetUser.conversations });
+        }
+
+        // Create fresh clean conversation
         const cleanConversation: Conversation = {
             id: ELITE_BOT_JID,
             leadIdentifier: 'Simulador',
-            leadName: ELITE_BOT_NAME,
+            leadName: `${ELITE_BOT_NAME} [${selectedScenario}]`,
             status: LeadStatus.COLD,
-            messages: [], // Limpiamos historial
+            messages: [],
             isBotActive: true,
             isMuted: false, 
             isTestBotConversation: true, 
@@ -253,56 +297,55 @@ export const handleStartClientTestBot = async (req: any, res: any) => {
         // Mark as active
         activeSimulations.add(userId);
 
-        // Responder al cliente inmediatamente
         res.status(200).json({ message: 'Secuencia de prueba iniciada.' });
 
-        // 4. Iniciar la secuencia de mensajes de prueba en segundo plano
+        // 4. Bucle de Simulación
         (async () => {
-            logService.audit(`Iniciando prueba de bot élite (sincrónica) para: ${targetUser.username}`, userId, user.username);
+            logService.audit(`Iniciando prueba Elite++ (${selectedScenario}) para: ${targetUser.username}`, userId, user.username);
+            const startTime = Date.now();
 
-            for (const messageText of TEST_SCRIPT) {
+            for (const messageText of script) {
+                // Critical check inside loop
                 if (!activeSimulations.has(userId)) {
-                    logService.info('[SIMULATOR] Secuencia abortada.', userId);
+                    logService.info('[SIMULATOR] Secuencia abortada por usuario.', userId);
                     break;
                 }
 
-                // Pausa inicial para realismo y asegurar que la DB se actualizó
-                await new Promise(resolve => setTimeout(resolve, 1500));
-
-                // Añadir el mensaje del bot élite
+                // 4.1 Añadir mensaje del "Elite Bot" (Usuario simulado)
                 const msgTimestamp = new Date();
                 const eliteBotMessage: Message = { 
-                    id: `elite_bot_msg_${Date.now()}_${Math.random().toString(36).substring(7)}`, 
+                    id: `elite_bot_${Date.now()}_${Math.random().toString(36).substring(7)}`, 
                     text: messageText, 
-                    sender: 'elite_bot', 
+                    sender: 'elite_bot', // Identified as elite bot in backend, mapped to 'user' in frontend if needed
                     timestamp: msgTimestamp 
                 };
                 
-                // CRITICAL: Ensure this write is awaited properly
+                // Add message using service (appends correctly)
                 await conversationService.addMessage(userId, ELITE_BOT_JID, eliteBotMessage, ELITE_BOT_NAME);
 
-                // Trigger AI
+                // 4.2 Trigger AI Processing (this will generate 'bot' response and append it)
                 await processAiResponseForJid(userId, ELITE_BOT_JID);
 
-                // --- ESPERA INTELIGENTE (SMART WAIT) ---
+                // 4.3 Smart Wait for Bot Response
+                // We poll until we see a new message from 'bot'
                 let botResponded = false;
                 let attempts = 0;
-                const maxAttempts = 30; // 30 segundos max espera
+                const maxAttempts = 40; // 40 seconds max wait (generous for cold starts)
 
                 while (!botResponded && attempts < maxAttempts) {
                     if (!activeSimulations.has(userId)) break; 
 
-                    await new Promise(resolve => setTimeout(resolve, 1000)); // Polling 1s
+                    await new Promise(resolve => setTimeout(resolve, 1000)); // Poll every 1s
                     
-                    // Re-fetch conversation to check for new messages
-                    // We must refetch fresh from DB every time
+                    // Fetch directly from DB service to get truth
                     const currentConvs = await conversationService.getConversations(userId);
                     const currentConv = currentConvs.find(c => c.id === ELITE_BOT_JID);
                     
                     if (currentConv) {
+                        // Check for any message from 'bot' that is newer than our sent message
                         const response = currentConv.messages.find(m => 
                             m.sender === 'bot' && 
-                            new Date(m.timestamp).getTime() > msgTimestamp.getTime()
+                            new Date(m.timestamp).getTime() >= msgTimestamp.getTime()
                         );
                         if (response) {
                             botResponded = true;
@@ -313,17 +356,96 @@ export const handleStartClientTestBot = async (req: any, res: any) => {
 
                 if (!activeSimulations.has(userId)) break;
 
-                // Pausa de lectura humana antes de enviar el siguiente mensaje
+                // 4.4 Human Reading Pause (Realism)
                 if (botResponded) {
-                    await new Promise(resolve => setTimeout(resolve, 3000));
+                    // Wait 2-4 seconds before next message to simulate reading
+                    await new Promise(resolve => setTimeout(resolve, 2500));
                 } else {
-                    // Si hubo timeout, loguear advertencia pero continuar la secuencia
-                    logService.warn(`[SIMULATOR] Timeout esperando respuesta de IA para: "${messageText.substring(0, 20)}..."`, userId);
+                    logService.warn(`[SIMULATOR] Timeout esperando respuesta de IA. Continuando secuencia de todos modos.`, userId);
                 }
             }
 
             logService.audit(`Prueba de bot élite finalizada para cliente: ${targetUser.username}`, userId, user.username);
             activeSimulations.delete(userId); 
+
+            // --- 5. EVALUATION LOGIC (ELITE++) ---
+            try {
+                // Fetch final conversation state
+                const finalConvs = await conversationService.getConversations(userId);
+                const finalConv = finalConvs.find(c => c.id === ELITE_BOT_JID);
+                const updatedUser = await db.getUser(userId);
+
+                if (finalConv && updatedUser) {
+                    // Basic heuristic evaluation (To be replaced by LLM judge later)
+                    let score = 50; // Base score
+                    let outcome: EvaluationResult['outcome'] = 'NEUTRAL';
+                    let failurePattern: string | undefined = undefined;
+                    const insights: string[] = [];
+
+                    // Score Logic
+                    if (finalConv.status === LeadStatus.HOT) {
+                        score += 40;
+                        outcome = 'SUCCESS';
+                        insights.push("Cierre exitoso detectado.");
+                    } else if (finalConv.status === LeadStatus.WARM) {
+                        score += 20;
+                        outcome = 'NEUTRAL';
+                        insights.push("Lead nutrido pero no cerrado.");
+                    } else {
+                        score -= 10;
+                        outcome = 'FAILURE';
+                        insights.push("Fallo en calificar.");
+                    }
+
+                    // Failure Detection Heuristics
+                    if (selectedScenario === 'PRICE_OBJECTION' && finalConv.status !== LeadStatus.HOT) {
+                        failurePattern = "Price Friction Collapse";
+                        insights.push("La IA no superó la objeción de precio.");
+                        score -= 20;
+                    }
+                    if (selectedScenario === 'GHOSTING_RISK' && finalConv.messages.length < 4) {
+                        failurePattern = "Early Engagement Drop";
+                        insights.push("Abandono prematuro de la conversación.");
+                        score -= 15;
+                    }
+
+                    const result: EvaluationResult = {
+                        score: Math.max(0, Math.min(100, score)),
+                        outcome,
+                        detectedFailurePattern: failurePattern,
+                        insights
+                    };
+
+                    // Save Experiment
+                    const runData: any = {
+                        id: `exp_${Date.now()}`,
+                        timestamp: new Date().toISOString(),
+                        scenario: selectedScenario,
+                        brainVersionSnapshot: {
+                            archetype: updatedUser.settings.archetype,
+                            tone: updatedUser.settings.toneValue
+                        },
+                        durationSeconds: (Date.now() - startTime) / 1000,
+                        evaluation: result
+                    };
+
+                    // Persist to User Lab
+                    const lab = updatedUser.simulationLab || { experiments: [], aggregatedScore: 0, topFailurePatterns: {} };
+                    lab.experiments.push(runData);
+                    
+                    // Update stats
+                    lab.aggregatedScore = Math.round((lab.aggregatedScore * (lab.experiments.length - 1) + score) / lab.experiments.length);
+                    if (failurePattern) {
+                        lab.topFailurePatterns[failurePattern] = (lab.topFailurePatterns[failurePattern] || 0) + 1;
+                    }
+
+                    await db.updateUser(userId, { simulationLab: lab });
+                    logService.info(`[LAB] Experimento registrado para ${userId}. Score: ${score}`, userId);
+                }
+            } catch (evalErr) {
+                logService.error(`[LAB] Error en evaluación post-simulación`, evalErr, userId);
+            }
+
         })().catch(error => {
             logService.error(`Error en la secuencia de prueba del bot élite`, error, userId, user.username);
             activeSimulations.delete(userId);
@@ -362,5 +484,107 @@ export const handleClearClientTestBotConversation = async (req: any, res: any) =
     } catch (error: any) {
         logService.error(`Error al limpiar conversación simulador`, error, userId);
         res.status(500).json({ message: 'Error interno.' });
+    }
+};
+
+// --- NEW CAMPAIGN HANDLERS ---
+
+export const handleGetCampaigns = async (req: any, res: any) => {
+    const userId = getUserId(req);
+    try {
+        const campaigns = await db.getCampaigns(userId);
+        res.json(campaigns);
+    } catch(e) {
+        res.status(500).json({ message: 'Error obteniendo campañas.' });
+    }
+};
+
+export const handleCreateCampaign = async (req: any, res: any) => {
+    const userId = getUserId(req);
+    const data = req.body;
+    
+    // Basic validation
+    if (!data.name || !data.message || !data.groups || data.groups.length === 0) {
+        return res.status(400).json({ message: 'Datos incompletos.' });
+    }
+
+    try {
+        const campaign: Campaign = {
+            id: uuidv4(),
+            userId,
+            name: data.name,
+            message: data.message,
+            groups: data.groups,
+            status: 'DRAFT',
+            schedule: data.schedule || { type: 'ONCE' },
+            config: data.config || { minDelaySec: 10, maxDelaySec: 30 },
+            stats: { totalSent: 0, totalFailed: 0 },
+            createdAt: new Date().toISOString()
+        };
+
+        // Determine initial Run Time
+        // For 'ONCE', if status is set to active immediately, we run "now" (or scheduled time)
+        // For MVP, we default to Draft. User activates it later.
+        
+        const created = await db.createCampaign(campaign);
+        res.status(201).json(created);
+    } catch(e) {
+        res.status(500).json({ message: 'Error creando campaña.' });
+    }
+};
+
+export const handleUpdateCampaign = async (req: any, res: any) => {
+    const userId = getUserId(req);
+    const { id } = req.params;
+    const updates = req.body;
+
+    try {
+        const campaign = await db.getCampaign(id);
+        if (!campaign || campaign.userId !== userId) {
+            return res.status(404).json({ message: 'Campaña no encontrada.' });
+        }
+
+        // Logic for nextRunAt if Activating
+        if (updates.status === 'ACTIVE' && campaign.status !== 'ACTIVE') {
+            const now = new Date();
+            // If it's a future scheduled one, keep schedule. If it's ONCE and no date, run now.
+            if (updates.schedule?.startDate) {
+                updates.stats = { ...campaign.stats, nextRunAt: updates.schedule.startDate };
+            } else if (!campaign.stats.nextRunAt) {
+                updates.stats = { ...campaign.stats, nextRunAt: now.toISOString() };
+            }
+        }
+
+        const updated = await db.updateCampaign(id, updates);
+        res.json(updated);
+    } catch(e) {
+        res.status(500).json({ message: 'Error actualizando campaña.' });
+    }
+};
+
+export const handleDeleteCampaign = async (req: any, res: any) => {
+    const userId = getUserId(req);
+    const { id } = req.params;
+    try {
+        const campaign = await db.getCampaign(id);
+        if (!campaign || campaign.userId !== userId) {
+            return res.status(404).json({ message: 'Campaña no encontrada.' });
+        }
+        await db.deleteCampaign(id);
+        res.json({ message: 'Eliminada.' });
+    } catch(e) {
+        res.status(500).json({ message: 'Error eliminando campaña.' });
+    }
+};
+
+export const handleGetWhatsAppGroups = async (req: any, res: any) => {
+    const userId = getUserId(req);
+    try {
+        const groups = await fetchUserGroups(userId);
+        res.json(groups);
+    } catch(e: any) {
+        // If connection fails or no groups
+        console.error(e);
+        res.status(500).json({ message: 'No se pudieron obtener los grupos. ¿Bot conectado?' });
     }
 };

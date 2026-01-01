@@ -9,6 +9,7 @@ import { authenticateToken } from './middleware/auth.js';
 import { optionalAuthenticateToken } from './middleware/optionalAuth.js';
 import { logService } from './services/logService.js';
 import { ttsService } from './services/ttsService.js'; // Importar el nuevo servicio
+import { campaignService } from './services/campaignService.js'; // Init scheduler
 import { connectToWhatsApp, getSessionStatus } from './whatsapp/client.js'; // Import connectToWhatsApp AND getSessionStatus
 import { ConnectionStatus } from './types.js'; // Import ConnectionStatus
 
@@ -33,25 +34,25 @@ import { ConnectionStatus } from './types.js'; // Import ConnectionStatus
 // --- SEED DATA: TESTIMONIOS PERSISTENTES ---
 const SEED_TESTIMONIALS = [
     { name: "Marcos López", location: "Mendoza", text: "Bueno, parece que soy el primero en comentar. La verdad entré medio de curioso y no entendía nada al principio, pero después de usarlo un poco me acomodó bastante el WhatsApp." },
-    { name: "Sofía Romano", location: "Mendoza", text: "No suelo comentar estas cosas, pero hasta ahora viene funcionando bien. Se nota que está pensado para ventas posta." },
-    { name: "Javier Torres", location: "Mendoza", text: "Antes era responder mensajes todo el día sin parar. Ahora por lo menos está más ordenado. Eso ya vale la pena." },
-    { name: "Valentina Giménez", location: "Mendoza", text: "Me gustó que no sea complicado como otros bots que probé. Acá fue conectar y listo." },
-    { name: "Lucas Herrera", location: "Mendoza", text: "La verdad me ahorró bastante desgaste. Antes terminaba el día quemado." },
+    { name: "Sofía Romano", location: "Buenos Aires", text: "No suelo comentar estas cosas, pero hasta ahora viene funcionando bien. Se nota que está pensado para ventas posta." },
+    { name: "Javier Torres", location: "Córdoba", text: "Antes era responder mensajes todo el día sin parar. Ahora por lo menos está más ordenado. Eso ya vale la pena." },
+    { name: "Valentina Giménez", location: "Rosario", text: "Me gustó que no sea complicado como otros bots que probé. Acá fue conectar y listo." },
+    { name: "Lucas Herrera", location: "San Luis", text: "La verdad me ahorró bastante desgaste. Antes terminaba el día quemado." },
     { name: "Camila Fernandez", location: "Mendoza", text: "Buen precio para lo que hace. Pensé que iba a ser más caro." },
-    { name: "Mateo Diaz", location: "Mendoza", text: "No es magia, pero ayuda mucho a filtrar. Para mí cumple." },
-    { name: "Lucía Martinez", location: "Mendoza", text: "Todavía lo estoy probando, pero por ahora viene prolijo." },
-    { name: "Agustín Cruz", location: "Mendoza", text: "Pasé de contestar cualquier cosa a responder solo lo importante. Con eso ya estoy conforme." },
-    { name: "Abril Morales", location: "Mendoza", text: "Me sorprendió que no suene a bot." },
+    { name: "Mateo Diaz", location: "Buenos Aires", text: "No es magia, pero ayuda mucho a filtrar. Para mí cumple." },
+    { name: "Lucía Martinez", location: "Córdoba", text: "Todavía lo estoy probando, pero por ahora viene prolijo." },
+    { name: "Agustín Cruz", location: "Rosario", text: "Pasé de contestar cualquier cosa a responder solo lo importante. Con eso ya estoy conforme." },
+    { name: "Abril Morales", location: "San Luis", text: "Me sorprendió que no suene a bot." },
     { name: "Bautista Ríos", location: "Mendoza", text: "Venía de putear bastante con WhatsApp todos los días. Ahora eso bajó bastante." },
-    { name: "Mía Castillo", location: "Mendoza", text: "Se nota que está pensado para comerciantes y no para programadores." },
-    { name: "Tomás Vega", location: "Mendoza", text: "Probé otros sistemas y siempre algo fallaba. Este por ahora se mantiene estable." },
-    { name: "Isabella Pardo", location: "Mendoza", text: "Me gustó que no invade ni molesta a los clientes." },
-    { name: "Felipe Muñoz", location: "Mendoza", text: "No esperaba mucho y me terminó sorprendiendo." },
+    { name: "Mía Castillo", location: "Buenos Aires", text: "Se nota que está pensado para comerciantes y no para programadores." },
+    { name: "Tomás Vega", location: "Córdoba", text: "Probé otros sistemas y siempre algo fallaba. Este por ahora se mantiene estable." },
+    { name: "Isabella Pardo", location: "Rosario", text: "Me gustó que no invade ni molesta a los clientes." },
+    { name: "Felipe Muñoz", location: "San Luis", text: "No esperaba mucho y me terminó sorprendiendo." },
     { name: "Martina Flores", location: "Mendoza", text: "Lo estoy usando hace unos días y la experiencia viene siendo buena." },
-    { name: "Santino Rivas", location: "Mendoza", text: "Simple, directo y sin vueltas. Eso suma." },
-    { name: "Victoria Medina", location: "Mendoza", text: "Se agradece algo así para laburar más tranquilo." },
-    { name: "Benjamín Castro", location: "Mendoza", text: "Después de varios días usándolo, lo seguiría usando sin dudas." },
-    { name: "Emilia Ponce", location: "Mendoza", text: "Ojalá lo sigan mejorando, pero la base está muy bien." },
+    { name: "Santino Rivas", location: "Buenos Aires", text: "Simple, directo y sin vueltas. Eso suma." },
+    { name: "Victoria Medina", location: "Córdoba", text: "Se agradece algo así para laburar más tranquilo." },
+    { name: "Benjamín Castro", location: "Rosario", text: "Después de varios días usándolo, lo seguiría usando sin dudas." },
+    { name: "Emilia Ponce", location: "San Luis", text: "Ojalá lo sigan mejorando, pero la base está muy bien." },
 ];
 
 const app = express();
@@ -138,24 +139,36 @@ app.get('/api/metrics', authenticateToken, async (req: any, res: any) => {
     const userId = req.user.id;
     const user = await db.getUser(userId);
     if (!user) return res.status(404).end();
+    
+    // Conversation Metrics
     const convs = Object.values(user.conversations || {});
     const hot = convs.filter((c: any) => c.status === 'Caliente').length;
+    
+    // Campaign Metrics Integration
+    const campaigns = await db.getCampaigns(userId);
+    const activeCampaigns = campaigns.filter(c => c.status === 'ACTIVE').length;
+    const totalCampaignMessages = campaigns.reduce((acc, curr) => acc + (curr.stats?.totalSent || 0), 0);
+
     res.json({
         totalLeads: convs.length,
         hotLeads: hot,
         warmLeads: convs.filter((c: any) => c.status === 'Tibio').length,
         coldLeads: convs.filter((c: any) => c.status === 'Frío').length,
-        totalMessages: 0,
+        totalMessages: 0, // Placeholder for inbound messages count if tracked later
         conversionRate: convs.length > 0 ? Math.round((hot / convs.length) * 100) : 0,
         revenueEstimated: hot * 150,
         avgEscalationTimeMinutes: 0,
         activeSessions: 1,
-        humanDeviationScore: user.governance.humanDeviationScore || 0
+        humanDeviationScore: user.governance.humanDeviationScore || 0,
+        // New Campaign Data
+        campaignsActive: activeCampaigns,
+        campaignMessagesSent: totalCampaignMessages
     });
 });
 
 import { 
-    handleConnect, handleDisconnect, handleSendMessage, handleUpdateConversation, handleGetStatus, handleGetConversations, handleGetTestimonials, handlePostTestimonial, handleGetTtsAudio, handleStartClientTestBot, handleClearClientTestBotConversation, handleForceAiRun, handleStopClientTestBot
+    handleConnect, handleDisconnect, handleSendMessage, handleUpdateConversation, handleGetStatus, handleGetConversations, handleGetTestimonials, handlePostTestimonial, handleGetTtsAudio, handleStartClientTestBot, handleClearClientTestBotConversation, handleForceAiRun, handleStopClientTestBot,
+    handleGetCampaigns, handleCreateCampaign, handleUpdateCampaign, handleDeleteCampaign, handleGetWhatsAppGroups
 } from './controllers/apiController.js';
 import { handleGetAllClients, handleUpdateClient, handleRenewClient, handleGetLogs, handleGetDashboardMetrics, handleActivateClient, handleGetSystemSettings, handleUpdateSystemSettings, handleDeleteClient, handleStartTestBot, handleClearTestBotConversation } from './controllers/adminController.js';
 
@@ -172,6 +185,13 @@ app.get('/api/conversations', authenticateToken, handleGetConversations);
 app.post('/api/client/test-bot/start', authenticateToken, handleStartClientTestBot);
 app.post('/api/client/test-bot/stop', authenticateToken, handleStopClientTestBot); // NEW ROUTE
 app.post('/api/client/test-bot/clear', authenticateToken, handleClearClientTestBotConversation);
+
+// Campaign Routes (NEW)
+app.get('/api/campaigns', authenticateToken, handleGetCampaigns);
+app.post('/api/campaigns', authenticateToken, handleCreateCampaign);
+app.put('/api/campaigns/:id', authenticateToken, handleUpdateCampaign);
+app.delete('/api/campaigns/:id', authenticateToken, handleDeleteCampaign);
+app.get('/api/whatsapp/groups', authenticateToken, handleGetWhatsAppGroups);
 
 // Public/Shared Routes
 app.get('/api/system/settings', authenticateToken, handleGetSystemSettings); // Clients need this for support number
@@ -230,9 +250,7 @@ app.use('/api', (req: any, res) => {
 
 // Global 404 for non-/api routes (typically caught by frontend's index.html rewrite in Vercel)
 app.use((req: any, res) => {
-    // console.warn(`[SERVER-404-FALLBACK] Request fell through to global HTML 404 handler: ${req.method} ${req.originalUrl}`);
-    // logService.warn(`Ruta no encontrada: ${req.method} ${req.originalUrl}`, req.user?.id, req.user?.username);
-    res.status(404).send('Página no encontrada.'); // Still send HTML for non-API paths for clarity
+    res.status(404).send('Página no encontrada.'); 
 });
 
 // Global error handler
@@ -252,51 +270,57 @@ app.listen(Number(PORT), '0.0.0.0', async () => {
         await db.init();
         logService.info('El sistema backend se ha iniciado correctamente.');
         
-        // --- TESTIMONIALS SEEDING ---
+        // --- TESTIMONIALS DRIP SEEDING ---
         // Verificar si la colección de testimonios está vacía
         const testimonialsCount = await db.getTestimonialsCount();
         if (testimonialsCount === 0) {
-            logService.info('[SERVER] Base de datos de testimonios vacía. Iniciando sembrado (seeding)...');
+            logService.info('[SERVER] Base de datos de testimonios vacía. Iniciando sembrado DRIP (Goteo)...');
             
-            // Generate timestamps spread over the last 15 days
+            // DRIP STRATEGY:
+            // - Primeros 5: Ya publicados (entre hace 3 días y hoy).
+            // - Siguientes 15: Programados en el futuro con intervalos de 12 horas.
+            
             const seededData = SEED_TESTIMONIALS.map((t, index) => {
-                const daysAgo = Math.floor(Math.random() * 15); // Random between 0 and 15 days ago
-                const hoursAgo = Math.floor(Math.random() * 24);
-                const date = new Date();
-                date.setDate(date.getDate() - daysAgo);
-                date.setHours(date.getHours() - hoursAgo);
+                let date = new Date();
+                
+                if (index < 5) {
+                    // Histórico: Hace 1-3 días
+                    const hoursAgo = Math.floor(Math.random() * 72); // 0-72 hours ago
+                    date.setHours(date.getHours() - hoursAgo);
+                } else {
+                    // Futuro: Goteo cada 12 horas
+                    // index 5 -> +12h, index 6 -> +24h, etc.
+                    const hoursInFuture = (index - 4) * 12; 
+                    date.setHours(date.getHours() + hoursInFuture);
+                }
                 
                 return {
                     userId: 'system_seed',
                     name: t.name,
                     location: t.location,
                     text: t.text,
-                    createdAt: date.toISOString(),
+                    createdAt: date.toISOString(), // ISO string for sorting
                     updatedAt: date.toISOString()
                 };
             });
             
             await db.seedTestimonials(seededData);
-            logService.info('[SERVER] Testimonios sembrados exitosamente.');
+            logService.info('[SERVER] Testimonios sembrados con cronograma de goteo (Drip Schedule).');
         }
         // -----------------------------
 
-        await ttsService.init(); // Inicializar el servicio TTS para pre-generar audios
+        await ttsService.init(); 
 
         // --- NUEVA LÓGICA DE RECONEXIÓN AUTOMÁTICA DE NODOS ---
         logService.info('[SERVER] Iniciando reconexión automática de nodos de WhatsApp...');
         const clients = await db.getAllClients();
         for (const client of clients) {
-            // Solo intentar reconectar si el cliente tiene un plan activo o en trial, y su bot está activo.
             const isActivePlan = client.plan_status === 'active' || client.plan_status === 'trial';
             if (isActivePlan && client.settings.isActive) {
                 logService.info(`[SERVER] Intentando reconectar nodo para el cliente: ${client.username} (ID: ${client.id})`, client.id);
-                // No await here to allow connections to happen in parallel without blocking server startup.
-                // Errors will be logged within connectToWhatsApp.
                 connectToWhatsApp(client.id).catch(err => {
                     logService.error(`[SERVER] Falló la reconexión inicial para el cliente ${client.username}`, err, client.id);
                 });
-                // Pequeña pausa para evitar saturar el sistema si hay muchos clientes
                 await new Promise(resolve => setTimeout(resolve, 500)); 
             } else {
                 logService.info(`[SERVER] No se reconectará el nodo para el cliente: ${client.username} (plan_status: ${client.plan_status}, bot activo: ${client.settings.isActive})`, client.id);
@@ -307,14 +331,11 @@ app.listen(Number(PORT), '0.0.0.0', async () => {
 
         // --- ZOMBIE KICKER: Protocolo de Resurrección de Sesiones (Cada 5 min) ---
         setInterval(async () => {
-            // console.log('[ZOMBIE-KICKER] Revisando salud de nodos...');
             const allClients = await db.getAllClients();
             for (const client of allClients) {
                 const isActivePlan = client.plan_status === 'active' || client.plan_status === 'trial';
-                // Si el usuario paga y quiere el bot activo...
                 if (isActivePlan && client.settings.isActive) {
                     const status = getSessionStatus(client.id);
-                    // ...pero el nodo está desconectado en memoria RAM
                     if (status.status === ConnectionStatus.DISCONNECTED) {
                         logService.warn(`[ZOMBIE-KICKER] 🧟 Reviviendo sesión muerta para ${client.username}`, client.id);
                         connectToWhatsApp(client.id).catch(e => logService.error(`[ZOMBIE-KICKER] Falló resurrección para ${client.username}`, e, client.id));

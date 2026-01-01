@@ -10,9 +10,9 @@ import makeWASocket, {
 import { Boom } from '@hapi/boom';
 import pino from 'pino';
 import { HttpsProxyAgent } from 'https-proxy-agent';
-import { ConnectionStatus, Message, LeadStatus, User, Conversation } from '../types.js';
+import { ConnectionStatus, Message, LeadStatus, User, Conversation, WhatsAppGroup } from '../types.js';
 import { conversationService } from '../services/conversationService.js';
-import { db } from '../database.js';
+import { db, sanitizeKey } from '../database.js';
 import { generateBotResponse } from '../services/aiService.js';
 import { useMongoDBAuthState, clearBindedSession } from './mongoAuth.js';
 import { logService } from '../services/logService.js';
@@ -30,21 +30,17 @@ const logger = pino({ level: 'silent' });
 
 const ELITE_BOT_JID = '5491112345678@s.whatsapp.net';
 
-// Helper to extract text from various message types
 function extractMessageContent(msg: proto.IWebMessageInfo): string | null {
     const message = msg.message;
     if (!message) return null;
 
-    // 1. Plain Text
     if (message.conversation) return message.conversation;
     if (message.extendedTextMessage?.text) return message.extendedTextMessage.text;
     
-    // 2. Media with Captions
     if (message.imageMessage?.caption) return message.imageMessage.caption;
     if (message.videoMessage?.caption) return message.videoMessage.caption;
     if (message.documentMessage?.caption) return message.documentMessage.caption;
 
-    // 3. Media Placeholders (so the chat appears in history)
     if (message.imageMessage) return '📷 [Imagen]';
     if (message.audioMessage) return '🎤 [Audio]';
     if (message.videoMessage) return '🎥 [Video]';
@@ -68,6 +64,11 @@ export function getSessionStatus(userId: string): { status: ConnectionStatus, qr
     if (isLocked) return { status: ConnectionStatus.GENERATING_QR };
 
     return { status: ConnectionStatus.DISCONNECTED };
+}
+
+// Helper to get raw socket
+export function getSocket(userId: string): WASocket | undefined {
+    return sessions.get(userId);
 }
 
 export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
@@ -106,7 +107,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
             browser: Browsers.macOS('Chrome'),
             agent: user?.settings?.proxyUrl ? new HttpsProxyAgent(user.settings.proxyUrl) as any : undefined,
             generateHighQualityLinkPreview: true,
-            shouldIgnoreJid: jid => jid?.endsWith('@broadcast') || jid?.endsWith('@g.us'),
+            shouldIgnoreJid: jid => jid?.endsWith('@broadcast'), // Removed g.us check to allow groups
             syncFullHistory: true, 
             defaultQueryTimeoutMs: 60000, 
             keepAliveIntervalMs: 10000, 
@@ -191,7 +192,6 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
         }
 
         sock.ev.on('messages.upsert', async ({ messages, type }) => {
-            // Filter out empty messages immediately
             if (!messages || messages.length === 0) return;
             
             try {
@@ -199,29 +199,28 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                 
                 for (const msg of messages) {
                     const jid = msg.key.remoteJid;
-                    // Strict filtering: No groups, no broadcasts, no status
-                    // FIX: Added check for @lid to ensure we only get real phone numbers
-                    if (!jid || jid.endsWith('@g.us') || jid === 'status@broadcast' || jid.endsWith('@lid')) continue; 
+                    // Ignore status broadcasts, but ALLOW group messages now (g.us) for context if needed, 
+                    // though for now we are focusing on DMs. 
+                    // IMPORTANT: We still filter out group messages for AI processing unless explicitly enabled later.
+                    if (!jid || jid === 'status@broadcast' || jid.endsWith('@lid')) continue; 
                     
                     if (!messagesByJid[jid]) messagesByJid[jid] = [];
                     messagesByJid[jid].push(msg);
                 }
 
                 const chatProcessPromises = Object.keys(messagesByJid).map(async (jid) => {
+                    // FILTER: Do not process group messages for standard AI flow yet
+                    if (jid.endsWith('@g.us')) return; 
+
                     const chatMessages = messagesByJid[jid];
                     
                     for (const msg of chatMessages) {
                         try {
                             const isFromMe = msg.key.fromMe;
-                            
-                            // Use enhanced extractor to handle media/captions
                             const messageText = extractMessageContent(msg);
-
-                            // Skip if still no meaningful content (e.g. protocol messages)
                             if (!messageText) continue;
 
                             const msgTimestamp = typeof msg.messageTimestamp === 'number' ? msg.messageTimestamp : (msg.messageTimestamp as any)?.low || Date.now() / 1000;
-                            // Relaxed history check: 30 seconds buffer
                             const isHistory = msgTimestamp < (BOOT_TIMESTAMP - 30); 
 
                             const userMessage: Message = {
@@ -231,13 +230,10 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                                 timestamp: new Date(msgTimestamp * 1000)
                             };
 
-                            // --- NAME CAPTURE IMPROVEMENT ---
-                            // Check multiple sources for the name
                             const senderName = msg.pushName || (msg as any).verifiedBizName || undefined;
 
                             await conversationService.addMessage(userId, jid, userMessage, senderName, isHistory);
 
-                            // AI Trigger: Only for live messages (not history), not from me, and type notify
                             if (!isFromMe && !isHistory && type === 'notify') {
                                 if (messageDebounceMap.has(jid)) {
                                     clearTimeout(messageDebounceMap.get(jid)!);
@@ -285,29 +281,63 @@ export async function sendMessage(userId: string, jid: string, text: string) {
     await sock.sendMessage(jid, { text });
 }
 
+// --- NEW FUNCTIONALITY: Fetch Groups ---
+export async function fetchUserGroups(userId: string): Promise<WhatsAppGroup[]> {
+    const sock = sessions.get(userId);
+    if (!sock) {
+        throw new Error("WhatsApp no conectado.");
+    }
+    
+    try {
+        const groups = await sock.groupFetchAllParticipating();
+        return Object.values(groups).map(g => ({
+            id: g.id,
+            subject: g.subject,
+            size: g.participants.length
+        }));
+    } catch (e) {
+        logService.error(`[WA-CLIENT] Error fetching groups for ${userId}`, e);
+        throw new Error("Error obteniendo grupos de WhatsApp.");
+    }
+}
+
 async function _commonAiProcessingLogic(userId: string, jid: string, user: User, logPrefix: string = '[WA-CLIENT]') {
     const sock = sessions.get(userId);
-    if (!sock) return;
-
-    await sock.sendPresenceUpdate('composing', jid);
-    const latestUser = await db.getUser(userId); 
-    const safeJid = jid.replace(/\./g, '_');
+    
+    const latestUser = await db.getUser(userId);
+    const safeJid = sanitizeKey(jid);
     const latestConversation = latestUser?.conversations?.[safeJid] || latestUser?.conversations?.[jid];
 
     if (!latestConversation) return;
 
-    const aiResult = await generateBotResponse(latestConversation.messages, user);
+    const isTestBot = latestConversation.isTestBotConversation;
+
+    if (!isTestBot && !sock) return; 
+
+    if (!isTestBot && sock) {
+        await sock.sendPresenceUpdate('composing', jid);
+    }
+
+    const aiResult = await generateBotResponse(latestConversation.messages, user, isTestBot);
 
     if (aiResult?.responseText) {
-        await sock.sendMessage(jid, { text: aiResult.responseText });
+        if (isTestBot) {
+            logService.info(`${logPrefix} Generada respuesta simulada para ${jid}`, userId);
+        } else if (sock) {
+            await sock.sendMessage(jid, { text: aiResult.responseText });
+        }
+
         const botMessage: Message = { id: `bot-${Date.now()}`, text: aiResult.responseText, sender: 'bot', timestamp: new Date() };
         await conversationService.addMessage(userId, jid, botMessage);
     }
     
     if (aiResult) {
+        const freshUser = await db.getUser(userId);
+        const freshConvo = freshUser?.conversations?.[safeJid] || freshUser?.conversations?.[jid] || latestConversation;
+
         const updates: Partial<Conversation> = {
             status: aiResult.newStatus,
-            tags: [...new Set([...(latestConversation.tags || []), ...(aiResult.tags || [])])],
+            tags: [...new Set([...(freshConvo.tags || []), ...(aiResult.tags || [])])],
             suggestedReplies: undefined 
         };
 
@@ -315,11 +345,10 @@ async function _commonAiProcessingLogic(userId: string, jid: string, user: User,
             updates.isMuted = true;
             updates.suggestedReplies = aiResult.suggestedReplies;
         }
-        await db.saveUserConversation(userId, { ...latestConversation, ...updates });
+        await db.saveUserConversation(userId, { ...freshConvo, ...updates });
     }
 }
 
-// UPDATE: Added 'force' parameter to bypass checks
 export async function processAiResponseForJid(userId: string, jid: string, force: boolean = false) {
     const user = await db.getUser(userId);
     if (!user) return;
@@ -327,21 +356,19 @@ export async function processAiResponseForJid(userId: string, jid: string, force
     const convs = await conversationService.getConversations(userId);
     const conversation = convs.find(c => c.id === jid);
 
-    // Si está forzado, omitimos chequeos de estado del sistema (útil para debug o reactivación manual)
+    if (!conversation) return;
+
+    if (conversation.isTestBotConversation) {
+        if (user.plan_status === 'suspended') return;
+        return _commonAiProcessingLogic(userId, jid, user, '[WA-CLIENT-ELITE-TEST]');
+    }
+
     if (!force) {
         if (!user.settings.isActive || user.plan_status === 'suspended') return;
-        
-        if (conversation?.isTestBotConversation) { 
-            return _commonAiProcessingLogic(userId, jid, user, '[WA-CLIENT-ELITE-TEST]'); 
-        }
         
         const isIgnored = user.settings.ignoredJids?.some(id => id.includes(jid.split('@')[0]));
         if (isIgnored) return;
 
-        if (!conversation) return;
-
-        // CRITICAL: If muted/personal, we normally stop. 
-        // BUT if forced, we proceed.
         if (conversation.isMuted || !conversation.isBotActive || conversation.status === LeadStatus.PERSONAL) return;
     } else {
         logService.info(`[WA-CLIENT] ⚡ FORZANDO EJECUCIÓN IA para ${jid}`, userId);

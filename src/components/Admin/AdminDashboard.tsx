@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { User, LogEntry, GlobalDashboardMetrics, SystemSettings } from '../../types';
 import { getAuthHeaders } from '../../config';
@@ -195,7 +196,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
             suspended: 'bg-red-500/10 text-red-400 border-red-500/20',
             trial: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
         };
-        return <span className={`px-2 py-1 rounded text-[9px] font-black uppercase ${colors[status]} border`}>{type} - {status}</span>;
+        const label = type === 'starter' ? 'Fallback' : type.toUpperCase();
+        return <span className={`px-2 py-1 rounded text-[9px] font-black uppercase ${colors[status]} border`}>{label} - {status}</span>;
     };
 
     const getLogLevelPill = (level: string) => {
@@ -396,7 +398,7 @@ const DashboardView: React.FC<{metrics: GlobalDashboardMetrics | null, onAudit: 
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 <div className="lg:col-span-1 bg-brand-surface border border-white/5 rounded-2xl p-6">
-                    <h4 className="text-[10px] text-gray-500 font-black uppercase tracking-widest mb-4">Distribución de Planes</h4>
+                    <h4 className="text-[10px] text-gray-500 font-black uppercase tracking-widest mb-4">Distribución de Licencias</h4>
                     <div className="space-y-4">
                         <div>
                             <div className="flex justify-between text-xs mb-1">
@@ -407,7 +409,7 @@ const DashboardView: React.FC<{metrics: GlobalDashboardMetrics | null, onAudit: 
                         </div>
                          <div>
                             <div className="flex justify-between text-xs mb-1">
-                                <span className="font-bold text-white">STARTER</span>
+                                <span className="font-bold text-white">SIN LICENCIA (Fallback)</span>
                                 <span className="text-gray-400">{metrics.planDistribution.starter} Cuentas</span>
                             </div>
                             <div className="w-full bg-black/40 rounded-full h-4 border border-white/5 p-0.5"><div className="bg-gray-500 h-full rounded-full" style={{width: `${totalPlans > 0 ? (metrics.planDistribution.starter / totalPlans) * 100 : 0}%`}}></div></div>
@@ -439,7 +441,7 @@ const ClientTable: React.FC<{clients: User[], getPlanPill: Function, onAudit: Fu
                 <thead>
                     <tr className="text-[9px] uppercase font-black text-gray-600 border-b border-white/5 tracking-widest bg-black/20">
                         <th className="p-4">Cliente</th>
-                        <th className="p-4">Plan</th>
+                        <th className="p-4">Plan / Estado</th>
                         <th className="p-4">Vencimiento</th>
                         <th className="p-4">Última Actividad</th>
                         <th className="p-4 text-right">Acciones</th>

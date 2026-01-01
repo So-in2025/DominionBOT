@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { BotSettings, DashboardMetrics, User } from '../types.js';
 import { getAuthHeaders } from '../config';
@@ -79,7 +80,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
     setApiKeyStatus('VERIFYING');
     try {
         const ai = new GoogleGenAI({ apiKey: settings.geminiApiKey });
-        await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: [{text: 'test'}] }); // Use contents with parts for text-only input
+        await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: [{ parts: [{text: 'test'}] }] }); // Corrected usage
         setApiKeyStatus('VALID');
         alert('API Key verificada y operativa.');
     } catch (error) {
@@ -148,14 +149,17 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
             <button onClick={fetchData} className="px-6 py-2.5 bg-white/5 border border-white/10 rounded-lg text-[9px] font-black uppercase tracking-widest text-gray-400 hover:text-white transition-all">Actualizar Live Data</button>
         </header>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {/* METRICS GRID - Now inclusive of Campaigns */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
             <KpiCard label="Retorno Estimado" value={`$${metrics.revenueEstimated.toLocaleString()}`} isGold icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>} trend="+14% Sem" />
             <KpiCard label="Tasa Conversión" value={`${metrics.conversionRate}%`} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>} />
             <KpiCard label="Leads Captados" value={metrics.totalLeads} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857" /></svg>} />
-            <KpiCard label="Peticiones IA (Total)" value={metrics.totalMessages} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01" /></svg>} />
+            <KpiCard label="Peticiones IA" value={metrics.totalMessages} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01" /></svg>} />
+            {/* NEW CAMPAIGN KPI CARD */}
+            <KpiCard label="Difusión (Msgs)" value={metrics.campaignMessagesSent || 0} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" /></svg>} trend={metrics.campaignsActive > 0 ? `${metrics.campaignsActive} Activas` : 'Inactivo'} />
         </div>
 
-        {/* Client Test Bot Simulator - NEW POSITION: After KPI cards */}
+        {/* Client Test Bot Simulator */}
         {currentUser && (
             <TestBotSimulator 
                 token={token} 

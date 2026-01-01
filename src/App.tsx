@@ -11,6 +11,7 @@ import AuditView from './components/Admin/AuditView';
 import AuthModal from './components/AuthModal';
 import LegalModal from './components/LegalModal'; 
 import AgencyDashboard from './components/AgencyDashboard';
+import CampaignsPanel from './components/CampaignsPanel'; // IMPORT NEW COMPONENT
 import Toast, { ToastData } from './components/Toast';
 import HowItWorksArt from './components/HowItWorksArt';
 import HowItWorksSection from './components/HowItWorksSection';
@@ -72,21 +73,10 @@ const TestimonialsSection = ({ isLoggedIn, token, showToast }: { isLoggedIn: boo
     useEffect(() => {
         const fetchRealTestimonials = async () => {
             try {
-                if (!BACKEND_URL) {
-                    console.warn("BACKEND_URL no está configurada. No se pueden cargar las reseñas.");
-                    return;
-                }
+                if (!BACKEND_URL) return;
                 const res = await fetch(`${BACKEND_URL}/api/testimonials`, { headers: API_HEADERS });
 
                 if (!res.ok) {
-                    console.error(`Fallo al cargar reseñas: El servidor respondió con estado ${res.status}`);
-                    return;
-                }
-
-                const resClone = res.clone();
-                const bodyText = await resClone.text();
-
-                if (!bodyText) {
                     setRealTestimonials([]);
                     return;
                 }
@@ -96,32 +86,34 @@ const TestimonialsSection = ({ isLoggedIn, token, showToast }: { isLoggedIn: boo
                     const data = await res.json();
                     setRealTestimonials(data);
                 } else {
-                    console.warn("Fallo al cargar reseñas: La respuesta no es un JSON válido, probablemente una página de advertencia de proxy.");
                     setRealTestimonials([]);
                 }
             } catch (e) { 
-                console.error("Fallo de red o de parseo al cargar reseñas:", e); 
                 setRealTestimonials([]);
             }
         };
         fetchRealTestimonials();
     }, []);
 
-    // Simulación de "drip" eliminada: Ahora confiamos en los datos sembrados en la DB.
-    // Esto asegura persistencia real y evita problemas de caché local.
-
-    const allTestimonials = useMemo(() => {
-        // Simplemente devolver los testimonios reales (que ahora incluyen los sembrados por el servidor)
-        return [...realTestimonials].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const visibleTestimonials = useMemo(() => {
+        const now = new Date();
+        // DRIP LOGIC: Only show testimonials where createdAt <= Now
+        return realTestimonials
+            .filter(t => new Date(t.createdAt) <= now)
+            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     }, [realTestimonials]);
 
-    // Duplicar el array para el efecto de marquee infinito
+    // PRECISE DUPLICATION FOR MARQUEE
+    // We duplicate EXACTLY once to create a seamless loop with translateX(-50%)
     const marqueeTestimonials = useMemo(() => {
-        if (allTestimonials.length === 0) return [];
-        // Si hay pocos testimonios, triplicarlos para asegurar que llenen el ancho y scrolleen bien
-        if (allTestimonials.length < 5) return [...allTestimonials, ...allTestimonials, ...allTestimonials];
-        return [...allTestimonials, ...allTestimonials];
-    }, [allTestimonials]);
+        if (visibleTestimonials.length === 0) return [];
+        // Ensure we have enough items to fill the screen width for smooth scrolling
+        let items = [...visibleTestimonials];
+        while (items.length < 10) { // Artificial minimum length to ensure marquee works on wide screens
+            items = [...items, ...visibleTestimonials];
+        }
+        return [...items, ...items];
+    }, [visibleTestimonials]);
 
     const handleSubmitTestimonial = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -154,9 +146,9 @@ const TestimonialsSection = ({ isLoggedIn, token, showToast }: { isLoggedIn: boo
     const renderTestimonialForm = () => {
         if (!isLoggedIn) {
             return (
-                 <div className="mt-20 text-center relative group">
+                 <div className="mt-20 text-center relative group px-4">
                     <input type="text" placeholder="Dejá tu reseña..." disabled className="w-full max-w-2xl mx-auto bg-brand-black border border-dashed border-white/20 rounded-2xl py-6 px-8 text-center text-gray-500 cursor-not-allowed" />
-                    <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 w-max opacity-0 group-hover:opacity-100 transition-opacity bg-brand-gold text-black text-xs font-bold px-4 py-2 rounded-lg shadow-lg">
+                    <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 w-max opacity-0 group-hover:opacity-100 transition-opacity bg-brand-gold text-black text-xs font-bold px-4 py-2 rounded-lg shadow-lg pointer-events-none">
                         Inicia sesión para compartir tu experiencia
                     </div>
                 </div>
@@ -178,7 +170,7 @@ const TestimonialsSection = ({ isLoggedIn, token, showToast }: { isLoggedIn: boo
     };
 
     return (
-        <section className="bg-brand-surface py-20 border-t border-white/5 overflow-hidden">
+        <section className="bg-brand-surface py-20 border-t border-white/5 overflow-hidden w-full relative">
             <div className="mx-auto max-w-7xl px-6 lg:px-8 mb-16">
                 <div className="mx-auto max-w-xl text-center">
                     <h2 className="text-lg font-semibold leading-8 tracking-tight text-brand-gold uppercase">El Muro de la Verdad</h2>
@@ -187,34 +179,47 @@ const TestimonialsSection = ({ isLoggedIn, token, showToast }: { isLoggedIn: boo
             </div>
 
             {/* PREMIUM INFINITE MARQUEE CAROUSEL */}
-            <div className="relative flex overflow-x-hidden group mask-gradient w-full">
+            <div className="relative w-full overflow-hidden mask-gradient group">
                 {/* Mask overlay for smooth edges */}
-                <div className="absolute left-0 top-0 bottom-0 w-32 bg-gradient-to-r from-brand-surface to-transparent z-10 pointer-events-none"></div>
-                <div className="absolute right-0 top-0 bottom-0 w-32 bg-gradient-to-l from-brand-surface to-transparent z-10 pointer-events-none"></div>
+                <div className="absolute left-0 top-0 bottom-0 w-8 md:w-32 bg-gradient-to-r from-brand-surface to-transparent z-10 pointer-events-none"></div>
+                <div className="absolute right-0 top-0 bottom-0 w-8 md:w-32 bg-gradient-to-l from-brand-surface to-transparent z-10 pointer-events-none"></div>
 
-                <div className="animate-marquee flex gap-6 whitespace-nowrap py-4 hover:[animation-play-state:paused] items-stretch">
+                {/* MARQUEE TRACK - Note: 'animate-scroll' MUST exist in tailwind config */}
+                <div className="flex w-max animate-scroll will-change-transform group-hover:[animation-play-state:paused]">
                     {marqueeTestimonials.map((testimonial, idx) => (
                         <div 
                             key={`${testimonial._id}-${idx}`} 
-                            className="w-[350px] md:w-[400px] flex-shrink-0 p-8 bg-brand-black border border-white/10 rounded-3xl shadow-lg hover:shadow-brand-gold/10 transition-shadow duration-300 flex flex-col justify-between whitespace-normal"
+                            className="w-[85vw] sm:w-[350px] md:w-[400px] flex-shrink-0 mx-2 md:mx-4 p-6 md:p-8 bg-brand-black border border-white/10 rounded-3xl shadow-lg hover:shadow-brand-gold/10 transition-shadow duration-300 flex flex-col justify-between whitespace-normal"
                         >
                             <div>
-                                <div className="flex items-center gap-x-4 mb-6">
-                                    <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center text-brand-gold font-bold text-lg border border-white/10">
-                                        {testimonial.name.charAt(0)}
+                                <div className="flex items-center justify-between mb-6">
+                                    <div className="flex items-center gap-x-4">
+                                        <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-white/5 flex items-center justify-center text-brand-gold font-bold text-lg border border-white/10 flex-shrink-0">
+                                            {testimonial.name.charAt(0)}
+                                        </div>
+                                        <div className="min-w-0">
+                                            <div className="font-bold text-white text-sm truncate">{testimonial.name}</div>
+                                            <div className="text-gray-500 text-[10px] uppercase tracking-wider truncate">{testimonial.location}</div>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <div className="font-bold text-white text-sm">{testimonial.name}</div>
-                                        <div className="text-gray-500 text-[10px] uppercase tracking-wider">{testimonial.location}</div>
+                                    {/* Date Display */}
+                                    <div className="text-[10px] text-gray-600 font-mono text-right leading-tight flex-shrink-0">
+                                        {testimonial.createdAt ? new Date(testimonial.createdAt).toLocaleDateString() : 'Reciente'}
+                                        <br/>
+                                        {testimonial.createdAt ? new Date(testimonial.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}
                                     </div>
                                 </div>
                                 <div className="relative">
-                                    <p className="text-sm leading-6 text-gray-300 italic">“{testimonial.text}”</p>
+                                    <p className="text-sm leading-6 text-gray-300 italic line-clamp-4">“{testimonial.text}”</p>
                                 </div>
                             </div>
                             <div className="flex items-center justify-between mt-6 pt-6 border-t border-white/5">
                                 <div className="flex text-brand-gold">
-                                    {[...Array(5)].map((_, i) => <svg key={i} className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>)}
+                                    {[...Array(5)].map((_, i) => (
+                                        <svg key={i} className="w-4 h-4 text-brand-gold" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 22 20">
+                                            <path d="M20.924 7.625a1.523 1.523 0 0 0-1.238-1.044l-5.051-.734-2.259-4.577a1.534 1.534 0 0 0-2.752 0L7.365 5.847l-5.051.734A1.535 1.535 0 0 0 1.463 9.2l3.656 3.563-.863 5.031a1.532 1.532 0 0 0 2.226 1.616L11 17.033l4.518 2.375a1.534 1.534 0 0 0 2.226-1.617l-.863-5.03L20.537 9.2a1.523 1.523 0 0 0 .387-1.575Z"/>
+                                        </svg>
+                                    ))}
                                 </div>
                                 <div className="text-[8px] font-black uppercase tracking-widest text-green-400 bg-green-500/10 px-2 py-1 rounded-full border border-green-500/20">Verificado</div>
                             </div>
@@ -243,8 +248,8 @@ const FaqSection = () => {
     };
 
     return (
-        <section className="bg-brand-black py-20 sm:py-32">
-            <div className="mx-auto max-w-4xl px-6 lg:px-8">
+        <section className="bg-brand-black py-20 sm:py-32 w-full px-4 overflow-hidden">
+            <div className="mx-auto max-w-4xl lg:px-8">
                 <div className="mx-auto max-w-2xl text-center">
                      <h2 className="text-base font-semibold leading-7 text-brand-gold uppercase tracking-widest">Protocolo de Claridad</h2>
                      <p className="mt-2 text-3xl font-black tracking-tight text-white sm:text-4xl">Respuestas a Preguntas Estratégicas</p>
@@ -253,7 +258,7 @@ const FaqSection = () => {
                     {faqs.map((faq, index) => (
                         <div key={index} className="border border-white/10 rounded-2xl bg-brand-surface overflow-hidden transition-all duration-300">
                             <button onClick={() => toggleFaq(index)} className="w-full flex justify-between items-center text-left p-6">
-                                <span className={`text-base font-semibold ${openFaq === index ? 'text-brand-gold' : 'text-white'}`}>{faq.q}</span>
+                                <span className={`text-sm md:text-base font-semibold ${openFaq === index ? 'text-brand-gold' : 'text-white'}`}>{faq.q}</span>
                                 <svg className={`w-6 h-6 flex-shrink-0 transition-transform duration-300 ${openFaq === index ? 'rotate-45 text-brand-gold' : 'text-gray-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
                             </button>
                             <div className={`transition-all duration-500 ease-in-out ${openFaq === index ? 'max-h-96' : 'max-h-0'}`}>
@@ -271,11 +276,11 @@ const FaqSection = () => {
 
 function LandingPage({ onAuth, onRegister, visibleMessages, isSimTyping, simScrollRef, onOpenLegal, isServerReady, isLoggedIn, token, showToast }: any) {
     return (
-        <div className="relative flex-1 bg-brand-black flex flex-col font-sans">
+        <div className="w-full min-h-screen bg-brand-black font-sans relative overflow-x-hidden">
             <div className="absolute inset-0 neural-grid opacity-40 z-0 pointer-events-none"></div>
             
             {/* HERO SECTION - INTOCABLE */}
-            <section className="relative z-10 flex flex-col items-center justify-center p-6 md:p-12 pt-24 pb-32">
+            <section className="relative z-20 flex flex-col items-center justify-center p-6 md:p-12 pt-24 pb-32">
                 <div className="max-w-7xl w-full grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-24 items-center">
                     <div className="space-y-10 text-center lg:text-left">
                         <div className={`inline-flex items-center gap-3 px-4 py-1.5 border rounded-full text-[11px] font-black uppercase tracking-[0.3em] backdrop-blur-xl transition-all ${isServerReady ? 'border-green-500/30 bg-green-500/10 text-green-400 shadow-[0_0_20px_rgba(34,197,94,0.2)]' : 'border-red-500/30 bg-red-500/10 text-red-400'}`}>
@@ -283,11 +288,11 @@ function LandingPage({ onAuth, onRegister, visibleMessages, isSimTyping, simScro
                             {isServerReady ? 'SISTEMA ONLINE' : 'CONECTANDO NODO...'}
                         </div>
                         
-                        <h1 className="text-6xl md:text-8xl lg:text-[90px] font-black text-white leading-tight tracking-normal py-2">
+                        <h1 className="text-5xl md:text-8xl lg:text-[90px] font-black text-white leading-tight tracking-normal py-2">
                             Vender en <br />
                             <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-gold via-brand-gold-light to-brand-gold-dark">Piloto Automático</span>
                         </h1>
-                        <p className="text-xl md:text-2xl text-gray-400 leading-relaxed border-l-4 border-brand-gold/40 pl-8 mx-auto lg:mx-0 max-w-2xl font-medium">
+                        <p className="text-lg md:text-2xl text-gray-400 leading-relaxed border-l-4 border-brand-gold/40 pl-8 mx-auto lg:mx-0 max-w-2xl font-medium">
                            Dominion es la herramienta de IA que responde y califica a tus clientes en WhatsApp 24/7, para que vos o tu equipo solo se dedique a cerrar las ventas que importan.
                         </p>
                         
@@ -349,7 +354,7 @@ function LandingPage({ onAuth, onRegister, visibleMessages, isSimTyping, simScro
                         <p className="text-white font-black text-lg tracking-tight flex items-center justify-center md:justify-start gap-2">
                             Powered By <a href="https://websoin.netlify.app" target="_blank" rel="noopener noreferrer" className="text-brand-gold hover:text-brand-gold-light transition-colors">SO-&gt;IN</a>
                         </p>
-                        <div className="flex items-center gap-4 border-l border-white/10 pl-4">
+                        <div className="flex items-center gap-4 border-l border-white/10 pl-4 justify-center md:justify-start">
                             <a href="#" className="text-gray-500 hover:text-brand-gold transition-colors">
                                 <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
                             </a>
@@ -434,7 +439,7 @@ export default function App() {
       };
   }, []); // El array vacío asegura que este efecto se ejecute solo una vez.
 
-  const showToast = (message: string, type: 'success' | 'error') => {
+  const showToast = (message: string, type: 'success' | 'error' | 'info') => {
     if (type === 'error') audioService.play('alert_error_generic');
     setToast({ message, type });
   };
@@ -752,6 +757,8 @@ export default function App() {
     switch(currentView) {
         case View.DASHBOARD:
             return <AgencyDashboard token={token!} backendUrl={BACKEND_URL} settings={settings!} onUpdateSettings={handleUpdateSettings} currentUser={currentUser} showToast={showToast} />;
+        case View.CAMPAIGNS: // NEW VIEW CASE
+            return <CampaignsPanel token={token!} backendUrl={BACKEND_URL} showToast={showToast} />;
         case View.SETTINGS:
             return <SettingsPanel settings={settings} isLoading={isLoadingSettings} onUpdateSettings={isFunctionalityDisabled ? ()=>{} : handleUpdateSettings} onOpenLegal={setLegalModalType} />;
         case View.CONNECTION:
@@ -774,7 +781,7 @@ export default function App() {
   const isAppView = !!token && !showLanding;
 
   return (
-    <div className={`flex flex-col bg-brand-black text-white font-sans ${isAppView ? 'h-screen overflow-hidden' : 'min-h-screen'}`}>
+    <div className={`flex flex-col bg-brand-black text-white font-sans ${isAppView ? 'h-screen overflow-hidden' : 'min-h-screen'} max-w-[100vw]`}>
       <Toast toast={toast} onClose={() => setToast(null)} />
       <AuthModal 
         isOpen={authModal.isOpen} 
@@ -799,7 +806,7 @@ export default function App() {
       />
       {isAppView && <TrialBanner user={currentUser} />}
 
-      <main className={`flex-1 flex relative ${isAppView ? 'overflow-hidden' : ''}`}>
+      <main className={`flex-1 relative ${isAppView ? 'flex overflow-hidden' : 'block'}`}>
         {backendError && ( 
             <div className="absolute top-0 left-0 right-0 z-[200] flex items-center justify-center p-2 text-[10px] font-black shadow-xl animate-pulse
                 bg-red-600/95 text-white">

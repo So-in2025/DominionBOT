@@ -1,11 +1,10 @@
 
 import { Conversation, LeadStatus, Message } from '../types.js';
-import { db } from '../database.js';
-import { logService } from './logService.js'; // Import logService
+import { db, sanitizeKey } from '../database.js';
+import { logService } from './logService.js';
 
-// --- Test Bot Specifics (Duplicated for clarity) ---
+// --- Test Bot Specifics ---
 const ELITE_BOT_JID = '5491112345678@s.whatsapp.net';
-// --- END Test Bot Specifics ---
 
 class ConversationService {
   
@@ -15,109 +14,83 @@ class ConversationService {
 
   // Updated signature to accept isHistoryImport flag
   async addMessage(userId: string, jid: string, message: Message, leadName?: string, isHistoryImport: boolean = false) {
-    logService.info(`[ConversationService] [addMessage] Called for userId: ${userId}, jid: ${jid}, isHistoryImport: ${isHistoryImport}.`, userId);
-    logService.info(`[ConversationService] [addMessage] Message being added: ${JSON.stringify(message).substring(0, 200)}...`, userId);
-
+    // Retriev fresh user data to ensure we don't overwrite with stale state
     const user = await db.getUser(userId);
     if(!user) {
-        logService.warn(`[ConversationService] [addMessage] User ${userId} not found. Cannot add message.`, userId);
+        logService.warn(`[ConversationService] User ${userId} not found.`, userId);
         return;
     }
 
-    // Asegurar que conversations existe
     const conversations = user.conversations || {};
-    let conversation = conversations[jid];
+    // Handle potentially unsanitized keys from legacy data, but prefer sanitized
+    const safeJid = sanitizeKey(jid);
+    let conversation = conversations[safeJid] || conversations[jid];
 
     const isEliteBotJid = jid === ELITE_BOT_JID;
 
     if (!conversation) {
-      logService.info(`[ConversationService] [addMessage] Creating new conversation for jid: ${jid}.`, userId);
       const leadIdentifier = jid.split('@')[0];
       
-      // LOGIC: If it's a history import, default isBotActive to FALSE.
-      // If it's a live message (new conversation), default isBotActive to TRUE.
-      // NEW: Explicitly set isBotActive true and isMuted false for Elite Bot JID
+      // Elite Bot is always active and never muted initially
       const initialBotState = isEliteBotJid ? true : (isHistoryImport ? false : true);
 
       conversation = {
         id: jid,
         leadIdentifier: leadIdentifier,
-        leadName: leadName || leadIdentifier,
+        leadName: leadName || (isEliteBotJid ? 'Simulador Neural' : leadIdentifier),
         status: LeadStatus.COLD,
         messages: [],
         isBotActive: initialBotState, 
-        isMuted: isEliteBotJid ? false : false, // NEW: Elite bot should never be muted by default
-        firstMessageAt: new Date(message.timestamp), // Use message timestamp
+        isMuted: false,
+        firstMessageAt: new Date(message.timestamp),
         tags: [],
         internalNotes: [],
         isAiSignalsEnabled: true,
         isTestBotConversation: isEliteBotJid, 
+        lastActivity: new Date(message.timestamp)
       };
     } else {
-        // Update logic for existing conversations
-        if (isEliteBotJid) { // Only update these flags if it's explicitly the Elite Bot
-            // NEW: Ensure existing Elite Bot conversations are marked as active and not muted
-            if (!conversation.isTestBotConversation) { // Mark if not already marked
-                logService.info(`[ConversationService] [addMessage] Marking existing conversation ${jid} as test bot conversation.`, userId);
-                conversation.isTestBotConversation = true;
-            }
-            if (!conversation.isBotActive) { // Ensure bot is active for test convos
-                logService.info(`[ConversationService] [addMessage] Activating bot for existing Elite Bot conversation ${jid}.`, userId);
-                conversation.isBotActive = true;
-            }
-            if (conversation.isMuted) { // Ensure bot is not muted for test convos
-                logService.info(`[ConversationService] [addMessage] Unmuting existing Elite Bot conversation ${jid}.`, userId);
-                conversation.isMuted = false;
-            }
+        // Enforce Test Bot Rules on existing conversation
+        if (isEliteBotJid) { 
+            conversation.isTestBotConversation = true;
+            conversation.isBotActive = true;
+            conversation.isMuted = false;
+            conversation.leadName = 'Simulador Neural'; // Force correct name
         }
 
-        // Update Lead Name if provided and better than current
-        if (leadName && leadName !== conversation.leadName) {
+        // Update Lead Name if provided (and not a number)
+        if (leadName && leadName !== conversation.leadName && !isEliteBotJid) {
              const currentIsNumber = !isNaN(Number(conversation.leadName.replace(/[^0-9]/g, '')));
              const newIsNumber = !isNaN(Number(leadName.replace(/[^0-9]/g, '')));
-             
-             // Prefer non-numbers names (PushNames) over numbers
              if (currentIsNumber && !newIsNumber) {
                  conversation.leadName = leadName;
              }
         }
     }
     
-    logService.info(`[ConversationService] [addMessage] Conversation BEFORE adding message for ${jid}: ${JSON.stringify(conversation.messages.map(m => m.id)).substring(0, 200)}...`, userId);
-
-    // Prevent duplicates based on Message ID
+    // ATOMIC-LIKE APPEND:
+    // Check for duplicates
     if (!conversation.messages.some(m => m.id === message.id)) {
         conversation.messages.push(message);
-        logService.info(`[ConversationService] [addMessage] Message ${message.id} added to conversation ${jid}. Total messages: ${conversation.messages.length}`, userId);
         
-        // Sort messages by timestamp to ensure history is in order
+        // Sort to maintain chronological order (crucial for display)
         conversation.messages.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
         
-        // Update activity timestamp only if this message is newer than the last recorded activity
         const msgDate = new Date(message.timestamp);
-        const lastDate = new Date(conversation.lastActivity || 0);
-        if (msgDate > lastDate) {
-            conversation.lastActivity = msgDate;
-        }
-    } else {
-        logService.warn(`[ConversationService] [addMessage] Duplicate message ID ${message.id} for conversation ${jid}. Skipping.`, userId);
-    }
-    
-    logService.info(`[ConversationService] [addMessage] Conversation AFTER adding message for ${jid}: ${JSON.stringify(conversation.messages.map(m => m.id)).substring(0, 200)}...`, userId);
+        conversation.lastActivity = msgDate;
+    } 
 
+    // Status Automation
     if (message.sender === 'owner') {
         conversation.isMuted = false;
-        logService.info(`[ConversationService] [addMessage] Owner message detected for ${jid}. Unmuting conversation.`, userId);
     }
 
-    if (message.sender === 'user' && conversation.status === LeadStatus.COLD && !isHistoryImport) {
+    if (message.sender === 'user' && conversation.status === LeadStatus.COLD && !isHistoryImport && !isEliteBotJid) {
         conversation.status = LeadStatus.WARM;
-        logService.info(`[ConversationService] [addMessage] First live user message for ${jid}. Changing status to WARM.`, userId);
     }
     
-    logService.info(`[ConversationService] [addMessage] About to save conversation for ${jid}. Current user.conversations: ${Object.keys(user.conversations || {}).join(', ')}.`, userId);
+    // Save back to DB
     await db.saveUserConversation(userId, conversation);
-    logService.info(`[ConversationService] [addMessage] Successfully saved conversation for ${jid}.`, userId);
   }
 }
 

@@ -8,22 +8,28 @@ const MODEL_PRIORITY = ["gemini-3-flash-preview", "gemini-flash-lite-latest"];
 
 export const generateBotResponse = async (
   conversationHistory: Message[],
-  user: User
+  user: User,
+  isSimulation: boolean = false // NEW PARAM
 ): Promise<{ responseText?: string, suggestedReplies?: string[], newStatus: LeadStatus, tags: string[], recommendedAction?: string } | null> => {
   
-  // FIX: Allow 'trial' status to operate as active
-  if (!user.settings.isActive || (user.plan_status !== 'active' && user.plan_status !== 'trial')) {
-      // If plan is expired or suspended, or bot is off, send a generic polite message or do nothing
-      if(user.plan_status === 'expired') {
-          return { responseText: "Disculpa la demora, en breve te atenderemos.", newStatus: LeadStatus.COLD, tags: [] };
+  // FIX: If it's a simulation, we bypass the isActive check to ensure the test runs.
+  // Otherwise, strictly enforce isActive and valid plan status.
+  if (!isSimulation) {
+      if (!user.settings.isActive || (user.plan_status !== 'active' && user.plan_status !== 'trial')) {
+          // If plan is expired or suspended, or bot is off, send a generic polite message or do nothing
+          if(user.plan_status === 'expired') {
+              return { responseText: "Disculpa la demora, en breve te atenderemos.", newStatus: LeadStatus.COLD, tags: [] };
+          }
+          return null;
       }
-      return null;
   }
 
   // CRITICAL: Ensure user has provided their Gemini API Key
   if (!user.settings.geminiApiKey || user.settings.geminiApiKey.trim() === '') {
       logService.error(`[AI-SERVICE] Usuario ${user.username} (ID: ${user.id}) intentó generar respuesta AI sin API Key de Gemini configurada.`, null, user.id, user.username);
-      // For trial/expired, we already return a polite message. For active with no API key, we return nothing.
+      if (isSimulation) {
+          return { responseText: "[ERROR SISTEMA] No has configurado tu API Key de Gemini. Ve a Configuración > Panel de Control de Gemini.", newStatus: LeadStatus.COLD, tags: ['ERROR_CONFIG'] };
+      }
       return null; 
   }
   

@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef } from 'react';
 
 // SYSTEM STATE & ENTITY DEFINITIONS
@@ -147,7 +148,11 @@ const HowItWorksArt: React.FC = () => {
                 accumulatedTime += config.duration;
             }
 
+            // CRITICAL FIX: Clear the entire coordinate space (considering scale)
+            ctx.save();
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
             ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.restore();
             
             signals = signals.filter(s => s.alpha > 0 && s.radius > 0);
             if (phase === 'INGESTION' && signals.length < 350) {
@@ -203,11 +208,20 @@ const HowItWorksArt: React.FC = () => {
         );
 
         const handleResize = () => {
+            if (!canvas || !ctx) return;
             const dpr = window.devicePixelRatio || 1;
-            w = canvas.offsetWidth;
-            h = canvas.offsetHeight;
+            
+            // Get the display size
+            w = sectionRef.current?.offsetWidth || window.innerWidth;
+            h = sectionRef.current?.offsetHeight || 176; // Fallback to height
+
+            // Set actual size in memory (scaled to account for extra pixel density)
             canvas.width = w * dpr;
             canvas.height = h * dpr;
+
+            // Normalize coordinate system to use css pixels
+            // CRITICAL FIX: Reset transform before scaling to prevent accumulation
+            ctx.setTransform(1, 0, 0, 1, 0, 0); 
             ctx.scale(dpr, dpr);
         };
         
@@ -222,8 +236,10 @@ const HowItWorksArt: React.FC = () => {
     }, []);
 
     return (
-        <section ref={sectionRef} className="relative w-full bg-brand-surface h-44 border-t border-white/10">
-            <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
+        // Added overflow-hidden to prevent scrollbars
+        <section ref={sectionRef} className="relative w-full bg-brand-surface h-44 border-t border-white/10 overflow-hidden">
+            {/* Added style width/height 100% to force display size */}
+            <canvas ref={canvasRef} className="absolute inset-0 w-full h-full block" style={{ width: '100%', height: '100%' }} />
         </section>
     );
 };

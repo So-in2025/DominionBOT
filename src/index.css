@@ -9,19 +9,40 @@ html, body, #root {
   padding: 0;
   overflow-x: hidden;
   background-color: #050505; 
+  scrollbar-width: thin;
+  scrollbar-color: #222 transparent;
 }
 
 /* Custom Scrollbar Elite */
 ::-webkit-scrollbar {
-  width: 4px;
+  width: 5px;
+  height: 5px;
 }
+
+/* Mobile Scrollbar Optimization - INVISIBLE */
+@media (max-width: 768px) {
+  ::-webkit-scrollbar {
+    display: none; /* Invisible scrollbar for mobile */
+    width: 0px;
+    background: transparent;
+  }
+  
+  * {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+  }
+}
+
 ::-webkit-scrollbar-track {
-  background: #050505; 
+  background: transparent; /* Invisible track */
 }
+
 ::-webkit-scrollbar-thumb {
   background: #222; 
   border-radius: 10px;
+  transition: background 0.3s ease;
 }
+
 ::-webkit-scrollbar-thumb:hover {
   background: #D4AF37; 
 }

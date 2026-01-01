@@ -1,4 +1,5 @@
-# 🦅 CÓDICE DOMINION v2.9.1 [ADN DEL PROYECTO]
+
+# 🦅 CÓDICE DOMINION v3.0.0 [ADN DEL PROYECTO]
 
 > "En la era de la saturación digital, la velocidad es la moneda y la inteligencia es el arma. Dominion no es un bot; es la herramienta para no perder ventas en WhatsApp."
 
@@ -9,7 +10,7 @@
 1.  **No somos Spammers. Somos Vendedores.** Nuestra tecnología es para cerrar ventas, no para molestar gente.
 2.  **Human in the Loop.** La IA califica, el Humano cierra. Respetamos ese límite.
 3.  **Privacidad Sagrada (BYOK).** Tus datos son tu activo. Nosotros solo proveemos el motor.
-4.  **Calidad sobre Cantidad.** Priorizamos la gestión de conversaciones de alto valor.
+4.  **Verdad Absoluta.** No simulamos datos en el frontend. Todo es persistente y real desde el servidor.
 5.  **Tecnología con Propósito.** Cada feature existe para vender más, sin relleno.
 
 ---
@@ -46,44 +47,65 @@ Dominion no está diseñado para spam o marketing masivo. Está optimizado para 
 
 ---
 
-## 💰 MODELO SAAS Y PLANES COMERCIALES
+## 🦾 DOMINION ELITE++: SISTEMA DE ENTRENAMIENTO COMERCIAL
 
-Este documento detalla el modelo de negocio, los planes de suscripción y la lógica de monetización de Dominion.
+> "No se prueba en producción. Se entrena en el simulador."
+
+La versión Elite++ introduce un cambio de paradigma: el Simulador no es solo para verificar que el bot funcione, es para **estresar el cerebro comercial** antes de exponerlo a clientes reales.
+
+### 1. Laboratorio de Simulación (Simulation Lab)
+Un entorno aislado donde el "Cerebro Neural" (la configuración del bot) se enfrenta a escenarios predefinidos diseñados para hacerlo fallar.
+
+### 2. Escenarios Adversariales
+En lugar de un chat genérico, sometemos al bot a perfiles psicológicos específicos:
+- **Objeción de Precio:** El cliente presiona agresivamente por descuentos. El bot debe defender el valor sin ceder.
+- **Cliente Confundido:** Preguntas fuera de contexto. El bot debe re-enrumbar la conversación sin alucinar.
+- **Riesgo de Ghosting:** Respuestas monosílabas. El bot debe intentar re-enganchar.
+
+### 3. Evaluador Pasivo & Memoria de Fallos
+El sistema analiza el resultado de cada simulación y genera un **Evaluation Result**.
+- **Score de Robustez:** Una métrica del 0 al 100 que indica qué tan bien se desempeñó el cerebro en ese escenario.
+- **Failure Patterns:** El sistema recuerda *cómo* falló el bot (ej: "Colapso por Fricción de Precio"). Esto permite al usuario ajustar sus prompts específicamente para cubrir esas debilidades.
+
+---
+
+## 💰 MODELO SAAS Y ESTRATEGIA COMERCIAL
+
+Este documento detalla el modelo de negocio y la estructura de planes.
 
 ### 1. Modelo de Negocio: SaaS Multi-Tenant
 Dominion opera como una plataforma de Software como Servicio (SaaS) donde múltiples clientes (inquilinos o *tenants*) utilizan la misma infraestructura de software, pero con sus datos completamente aislados y seguros.
 
 - **Infraestructura Centralizada:** Un único backend y base de datos sirven a todos los clientes.
 - **Aislamiento de Datos:** Cada pieza de información (usuarios, conversaciones, configuraciones) está estrictamente vinculada a un `userId`.
-- **Escalabilidad:** Este modelo permite una gestión y actualización eficientes de la plataforma para todos los clientes a la vez.
 
-### 2. Planes Comerciales
-La plataforma ofrece un único plan principal y un estado de repliegue.
+### 2. Estrategia de Plan Único (One Plan)
+Dominion simplifica la oferta comercial. **Solo existe UN plan comercial completo (PRO).** No hay planes básicos ni intermedios.
 
-#### a) Plan `pro` (Profesional) - **USD 29/mes**
-- **Funcionalidades:**
+#### a) Plan `pro` (Licencia Completa) - **USD 29/mes**
+- **Funcionalidades Totales:**
     - `intent_detection`: Capacidad de la IA para entender la intención real del cliente.
     - `lead_scoring`: Calificación automática de leads en **Frío, Tibio, Caliente**.
     - `priority_alerts`: Notificaciones o cambios visuales para leads calientes.
     - `close_assist`: Modo "Copiloto" donde la IA sugiere respuestas al vendedor humano.
-- **Caso de Uso:** Es el plan único y completo, diseñado para equipos de ventas que buscan maximizar la eficiencia y la conversión.
+    - `force_run`: Capacidad de forzar manualmente la ejecución de la IA en cualquier chat.
+- **Filosofía:** Si vas a usar Dominion, lo usas con toda su potencia. No vendemos versiones diluidas.
 
-#### b) Plan `starter` (Fallback)
-- **Funcionalidades:**
-    - `auto_reply`: Respuestas automáticas básicas.
-    - `professional_tone`: La IA mantiene un tono profesional.
-- **Caso de Uso:** Este plan funciona como un **estado de repliegue (fallback)**. Cuando el plan `pro` o el `trial` de un cliente expira, el sistema revierte a las funcionalidades `starter` para garantizar que el bot no se apague por completo. **No es un plan de venta.**
+#### b) Estado `fallback` (Sin Licencia / Expirado)
+*Técnicamente etiquetado como `starter` en la base de datos por compatibilidad legacy.*
+- **Funcionalidades:** Limitado estrictamente a `auto_reply` (respuestas automáticas simples) y `professional_tone`.
+- **Caso de Uso:** **NO es un plan comercial.** Es un estado de seguridad operativa. Si la licencia PRO de un cliente expira, el sistema "cae" a este modo para evitar que el bot se apague y deje de responder, protegiendo la imagen del negocio, pero pierde toda inteligencia comercial avanzada.
 
 ### 3. Ciclo de Vida de la Suscripción
 1.  **Registro (`trial`):**
     - Al registrarse, un nuevo cliente comienza automáticamente en un período de prueba (`plan_status: 'trial'`).
-    - Este período le otorga acceso a todas las funcionalidades del plan `pro` durante **14 días o hasta calificar 10 conversaciones**, lo que ocurra primero.
+    - **Protocolo de Escasez:** Este período otorga acceso a todas las funcionalidades PRO durante **3 días o hasta calificar 10 conversaciones**, lo que ocurra primero.
 2.  **Activación (`active`):**
     - Un `super_admin` activa manualmente la licencia.
     - La activación cambia el `plan_status` a `active` y establece una nueva `billing_end_date` a **30 días en el futuro**.
 3.  **Expiración (`expired`):**
     - Si llega la `billing_end_date` y el plan no se ha renovado, el `plan_status` cambia a `expired`.
-    - Las funcionalidades se limitan a las del plan `starter`.
+    - Las funcionalidades se limitan a las del estado `fallback`.
 
 ### 4. Lógica de Monetización y Métricas
 - **MRR (Ingreso Mensual Recurrente):** El panel de `super_admin` calcula el MRR sumando `USD 29` por cada cliente con `plan_status: 'active'`.
@@ -93,15 +115,13 @@ La plataforma ofrece un único plan principal y un estado de repliegue.
 
 ## 🏗️ ARQUITECTURA Y FLUJO DE DATOS
 
-Este documento describe la arquitectura técnica de Dominion y cómo fluye la información a través del sistema.
-
 ### 1. Diagrama de Arquitectura de Alto Nivel
-\`\`\`
+```
             +----------------+      +------------------+      +-------------------+
             | Cliente (React)|<---->|  Backend (Node)  |<---->|   MongoDB Atlas   |
             +----------------+      +------------------+      +-------------------+
                   ^       |                    |                        ^
-                  |       | (API RESTful)      | (Baileys WS)           | (Auth State)
+                  |       | (API RESTful)      | (Baileys WS)           | (Auth State/Seeds)
                   |       |                    v                        |
                   |       +-----------+----------------+      +-------------------+
                   |                   |  Motor WhatsApp  |      | Google Gemini API |
@@ -112,7 +132,7 @@ Este documento describe la arquitectura técnica de Dominion y cómo fluye la in
             +----------------+      +------------------+      +-------------------+
             |  Usuario Final |<---->|  WhatsApp Web    |<-----|  (Procesamiento IA) |
             +----------------+      +------------------+      +-------------------+
-\`\`\`
+```
 
 ### 2. Desglose de Componentes
 1.  **Frontend (Cliente):**
@@ -124,33 +144,33 @@ Este documento describe la arquitectura técnica de Dominion y cómo fluye la in
     - **Función:** Es el núcleo de la aplicación. Gestiona la lógica de negocio, la autenticación (JWT), las peticiones de la API, y orquesta la comunicación entre el Motor de WhatsApp, la Base de Datos y el Core de IA.
     - **Despliegue:** Render.
 3.  **Motor de WhatsApp:**
-    - **Librería:** \`@whiskeysockets/baileys\`.
+    - **Librería:** `@whiskeysockets/baileys`.
     - **Función:** Emula una sesión de WhatsApp Web, manteniendo una conexión WebSocket persistente con los servidores de WhatsApp. Se encarga de recibir y enviar mensajes en nombre del usuario. Cada cliente tiene su propia sesión aislada.
 4.  **Base de Datos:**
     - **Servicio:** MongoDB Atlas.
     - **Función:** Almacena toda la información persistente:
         - **Credenciales de Sesión (Baileys):** Permite reanudar sesiones de WhatsApp sin necesidad de escanear el QR constantemente.
-        - **Datos de Usuario:** Perfiles, planes, configuraciones (\`BotSettings\`).
+        - **Datos de Usuario:** Perfiles, planes, configuraciones (`BotSettings`).
         - **Conversaciones:** Historial de mensajes, estado de leads, notas internas.
-        - **Logs y Telemetría:** Registros de eventos del sistema para auditoría.
+        - **Database Seeding:** Testimonios iniciales y datos de arranque inyectados desde el servidor para persistencia real.
 5.  **Core de IA:**
-    - **Servicio:** Google Gemini API (\`@google/genai\`).
+    - **Servicio:** Google Gemini API (`@google/genai`).
     - **Función:** Recibe el historial de una conversación y las directivas del "Cerebro Neural" desde el Backend. Procesa el texto y devuelve una respuesta estructurada en JSON con el texto a enviar, el nuevo estado del lead, tags, etc.
 
 ### 3. Flujo de Datos Típico (Mensaje Entrante)
 1.  **Recepción:** El Usuario Final envía un mensaje a través de WhatsApp.
-2.  **Ingestión:** El Motor de WhatsApp (\`baileys\`) recibe el mensaje a través de su WebSocket.
-3.  **Procesamiento Inicial:** El motor identifica a qué cliente (\`userId\`) pertenece el mensaje y lo reenvía al servicio de conversaciones del Backend.
-4.  **Persistencia:** El \`conversationService\` guarda el mensaje entrante en la conversación correspondiente en MongoDB.
+2.  **Ingestión:** El Motor de WhatsApp (`baileys`) recibe el mensaje a través de su WebSocket.
+3.  **Procesamiento Inicial:** El motor identifica a qué cliente (`userId`) pertenece el mensaje y lo reenvía al servicio de conversaciones del Backend.
+4.  **Persistencia:** El `conversationService` guarda el mensaje entrante en la conversación correspondiente en MongoDB.
 5.  **Debounce y Calificación:** Se activa un temporizador de 6 segundos. Si no llegan más mensajes del mismo usuario en ese tiempo, se procede a la calificación.
-6.  **Llamada a IA:** El Backend construye un prompt con el historial de la conversación y las configuraciones del cliente (\`BotSettings\`).
+6.  **Llamada a IA:** El Backend construye un prompt con el historial de la conversación y las configuraciones del cliente (`BotSettings`).
 7.  **Inferencia:** Se envía el prompt a la API de Google Gemini a través de la API Key del cliente (modelo BYOK).
 8.  **Respuesta IA:** Gemini devuelve una respuesta JSON estructurada.
 9.  **Acción:**
-    - El Backend extrae el \`responseText\` y lo envía al Motor de WhatsApp para que lo mande al Usuario Final.
-    - El \`newStatus\` y los \`tags\` se actualizan en la base de datos para esa conversación.
+    - El Backend extrae el `responseText` y lo envía al Motor de WhatsApp para que lo mande al Usuario Final.
+    - El `newStatus` y los `tags` se actualizan en la base de datos para esa conversación.
     - La respuesta del bot también se guarda en el historial.
-10. **Actualización UI:** El Frontend, ahora a través de **Server-Sent Events (SSE)**, recibe la conversación actualizada y la muestra en el Dashboard del cliente en tiempo real.
+10. **Actualización UI:** El Frontend utiliza un sistema de **Polling Optimizado** (intervalos de 3s para conversaciones y 5s para estado) para mantener la interfaz sincronizada con el backend en tiempo real.
 
 ---
 
@@ -164,18 +184,19 @@ Este documento describe la arquitectura técnica de Dominion y cómo fluye la in
 | **Backend**       | Node.js & Express            | Entorno de ejecución y framework para construir la API RESTful.            |
 | **Lenguaje (Back)** | TypeScript                 | Añade tipado estático a JavaScript para robustez.                        |
 | **Base de Datos**   | MongoDB (con Mongoose)     | Base de datos NoSQL flexible, ideal para los datos de sesión y chats.    |
-| **Motor WhatsApp**| \`@whiskeysockets/baileys\`    | Librería clave que emula WhatsApp Web para la conexión.                  |
-| **Inteligencia IA**| \`@google/genai\` (Gemini)     | SDK oficial para interactuar con los modelos de IA de Google.            |
+| **Motor WhatsApp**| `@whiskeysockets/baileys`    | Librería clave que emula WhatsApp Web para la conexión.                  |
+| **Inteligencia IA**| `@google/genai` (Gemini)     | SDK oficial para interactuar con los modelos de IA de Google.            |
 | **Autenticación** | JWT (jsonwebtoken)           | Estándar para crear tokens de acceso seguros entre cliente y servidor.   |
 | **Despliegue (BE)** | Render                       | Plataforma en la nube para desplegar el servicio Node.js.                |
 | **Despliegue (FE)** | Vercel                       | Plataforma optimizada para el despliegue de aplicaciones frontend.       |
-| **Tiempo Real**     | Server-Sent Events (SSE)     | Para actualizaciones de UI en tiempo real.                               |
+| **Sincronización**  | Polling (Intervalos)         | Estrategia robusta para actualización de UI sin complejidad de Sockets.  |
 
-### 2. Estructura de Archivos del Proyecto (\`/src\`)
-\`\`\`
+### 2. Estructura de Archivos del Proyecto (`/src`)
+```
 /src
 ├── components/         # Componentes de React para la UI
 │   ├── Admin/          # Componentes específicos del panel de Super Admin
+│   ├── Client/         # Componentes específicos del cliente (TestBotSimulator)
 │   ├── AuthModal.tsx
 │   ├── ChatWindow.tsx
 │   └── ...
@@ -186,11 +207,10 @@ Este documento describe la arquitectura técnica de Dominion y cómo fluye la in
 ├── middleware/         # Middlewares de Express (ej: autenticación)
 ├── services/           # Lógica de negocio y comunicación con APIs externas
 │   ├── aiService.ts      # Lógica de construcción de prompts y llamada a Gemini
-│   ├── audioService.ts   # (Frontend) Gestión de reproducción de audio
+│   ├── audioService.ts   # (Frontend) Gestión de reproducción de audio y TTS
 │   ├── conversationService.ts # Orquesta la lógica de las conversaciones
 │   ├── logService.ts     # Sistema centralizado de logging
 │   ├── planService.ts    # Define las funcionalidades por tipo de plan
-│   ├── sseService.ts     # (Backend) Gestión de conexiones Server-Sent Events
 │   └── ttsService.ts     # (Backend) Generación de audio con Text-to-Speech
 ├── utils/              # Funciones de ayuda reutilizables
 ├── whatsapp/           # Lógica de conexión con WhatsApp (Baileys)
@@ -202,7 +222,7 @@ Este documento describe la arquitectura técnica de Dominion y cómo fluye la in
 ├── env.ts              # Carga y exporta variables de entorno
 ├── server.ts           # Punto de entrada del servidor Express
 └── types.ts            # Definiciones de tipos y enumeraciones de TypeScript
-\`\`\`
+```
 
 ---
 
@@ -217,12 +237,12 @@ Esta guía te ayudará a poner en marcha y operar tu nodo de Dominion.
     - **Número de WhatsApp:** Será tu nombre de usuario. Ingresa el número completo, incluyendo código de país (ej: 549261...).
     - **Nombre del Negocio:** El nombre que la IA usará para presentarse.
     - **Contraseña:** Elige una contraseña segura.
-3.  **Acceso Inmediato:** Tras el registro, iniciarás sesión y comenzarás un período de prueba **PRO** de 14 días.
+3.  **Acceso Inmediato:** Tras el registro, iniciarás sesión y comenzarás un período de prueba **PRO** de 3 días o 10 leads calificados.
 4.  **Guarda tu Master Recovery Key:** Se te mostrará una clave de recuperación única. **¡GUÁRDALA EN UN LUGAR SEGURO!** Es la única forma de recuperar tu cuenta si olvidas la contraseña.
 
 #### b. Conexión del Nodo (Pestaña "Conexión")
 1.  **Elige un Método:**
-    - **Código QR:** Abre WhatsApp en tu teléfono, ve a \`Ajustes > Dispositivos Vinculados > Vincular un dispositivo\` y escanea el QR que aparece en pantalla. Es el método más rápido.
+    - **Código QR:** Abre WhatsApp en tu teléfono, ve a `Ajustes > Dispositivos Vinculados > Vincular un dispositivo` y escanea el QR que aparece en pantalla. Es el método más rápido.
     - **Vincular Teléfono:** Ingresa tu número de WhatsApp y haz clic en "Vincular". Recibirás una notificación en tu teléfono para ingresar un código de 8 caracteres que aparecerá en Dominion.
 2.  **Espera la Sincronización:** El estado cambiará a "Conectado" en unos segundos. ¡Listo! Tu nodo está en línea.
 3.  **Resetear Conexión:** Si tienes problemas para conectar, usa el botón "Limpiar rastro de sesión" o "Resetear Conexión" para forzar una desvinculación completa y empezar de cero.
@@ -248,7 +268,7 @@ Esta guía cubre las funcionalidades del panel de control global.
 
 #### b. Visión General (Dashboard)
 - **KPIs Globales:** Monitorea métricas clave de toda la plataforma: MRR, total de clientes, nodos en línea, y cuentas en riesgo.
-- **Distribución de Planes:** Visualiza cuántos clientes están en cada plan (\`pro\` vs. \`starter\`).
+- **Distribución de Planes:** Visualiza cuántos clientes están en cada plan (`pro` vs. `starter`).
 
 #### c. Gestión de Clientes (Pestaña "Clientes")
 - **Listado Completo:** Accede a una tabla con todos los clientes registrados.
@@ -260,7 +280,7 @@ Esta guía cubre las funcionalidades del panel de control global.
 
 ### 1. Autenticación y Autorización
 - **Tokens JWT:** La comunicación entre cliente y servidor está protegida mediante JSON Web Tokens.
-- **Roles de Usuario:** El sistema implementa un control de acceso basado en roles (RBAC): \`client\` y \`super_admin\`.
+- **Roles de Usuario:** El sistema implementa un control de acceso basado en roles (RBAC): `client` y `super_admin`.
 
 ### 2. Seguridad de Datos
 - **Aislamiento de Datos (Multi-Tenant):** La arquitectura está diseñada para un aislamiento estricto de los datos de cada cliente.
@@ -285,12 +305,12 @@ La interfaz debe sentirse como una herramienta profesional, precisa y de alta te
 ### 2. Paleta de Colores Principal
 | Nombre                | Hex       | Rol en la UI                                                            |
 | --------------------- | --------- | ----------------------------------------------------------------------- |
-| \`brand-black\`         | \`#050505\` | Color de fondo principal.                                               |
-| \`brand-surface\`       | \`#121212\` | Fondos para tarjetas y paneles.                                         |
-| \`brand-gold\`          | \`#D4AF37\` | Color de acento principal para acciones y highlights.                   |
+| `brand-black`         | `#050505` | Color de fondo principal.                                               |
+| `brand-surface`       | `#121212` | Fondos para tarjetas y paneles.                                         |
+| `brand-gold`          | `#D4AF37` | Color de acento principal para acciones y highlights.                   |
 
 ### 3. Tipografía
-- **Fuente Principal:** \`Inter\` (sans-serif), por su alta legibilidad en interfaces densas.
+- **Fuente Principal:** `Inter` (sans-serif), por su alta legibilidad en interfaces densas.
 
 ---
 
@@ -300,18 +320,21 @@ La interfaz debe sentirse como una herramienta profesional, precisa y de alta te
 Proporcionar feedback auditivo para acciones de UI/UX y reforzar la identidad de marca "High-Tech".
 
 ### 2. Arquitectura
-- **Backend (\`ttsService.ts\`):** Pre-genera archivos de audio para eventos usando Gemini TTS y los sirve a través de un endpoint.
-- **Frontend (\`audioService.ts\`):** Gestiona la carga (con caché) y reproducción de los sonidos en el navegador usando la Web Audio API.
+- **Backend (`ttsService.ts`):** Pre-genera archivos de audio para eventos (login, errores, conexiones) usando Gemini TTS y los sirve a través de un endpoint estático.
+- **Frontend (`audioService.ts`):** Gestiona la carga (con caché) y reproducción de los sonidos en el navegador usando la Web Audio API.
 
 ---
 
 ## 🗺️ ROADMAP EVOLUTIVO
 
-### ✅ v2.9 (Completado)
-- **Implementación de SSE (Server-Sent Events):** Reemplazar el *polling* por comunicación en tiempo real para conversaciones y estado de conexión.
-- **Funcionalidad Completa del Sandbox:** Permitir a los usuarios probar su "Cerebro Neural" en un entorno seguro antes de desplegarlo.
+### ✅ v3.0 (Estado Actual - Completado)
+- **Persistencia Total (DB Seeding):** Eliminación de localStorage para "simulaciones". El servidor siembra datos reales en MongoDB al inicio.
+- **Trigger Manual (Force Run):** Capacidad de forzar la ejecución de IA ignorando temporizadores.
+- **Infraestructura Robusta:** Polling optimizado y reconexión automática de nodos (Zombie Kicker).
+- **Audio Feedback:** Sistema TTS integrado para eventos del sistema.
+- **Elite++ Training:** Simulador adversarial con detección de patrones de fallo.
 
-### 🚀 v3.0 (Visión a Medio Plazo)
+### 🚀 v3.1 (Próximo Sprint)
 - **Mejoras de PWA:** Implementar notificaciones push para alertas de leads calientes.
 - **Copiloto Proactivo:** Expandir las capacidades del "Close Assist" para sugerir seguimientos.
 
@@ -336,34 +359,31 @@ Proporcionar feedback auditivo para acciones de UI/UX y reforzar la identidad de
 - **Calidad sobre Cantidad:** Optimizado para ventas de alto valor y consultivas.
 - **Tecnología con Propósito:** Cada feature existe para vender más, sin relleno.
 
-
-
-
 ---
 
-## ⚡ ADDENDUM v2.9.2: CAPACIDADES TÁCTICAS AVANZADAS
+## ⚡ ADDENDUM v3.0: CAPACIDADES TÁCTICAS Y CAMBIOS ESTRUCTURALES
 
 ### 1. Protocolo de Trial Dinámico (Gobernanza de Escasez)
 Para maximizar la conversión del usuario SaaS, hemos endurecido las reglas del período de prueba. Ya no es solo tiempo, es **resultado**.
-- **Límite Híbrido:** El trial finaliza a los **3 días** O al calificar los primeros **3 Leads**, lo que ocurra primero.
-- **Psicología:** Esto fuerza al usuario a valorar cada interacción de la IA. Si la IA le consigue 3 clientes potenciales, el valor está demostrado y el bloqueo se activa, obligando a la compra para continuar operando.
+- **Límite Híbrido:** El trial finaliza a los **3 días** O al calificar los primeros **10 Leads**, lo que ocurra primero.
+- **Psicología:** Esto fuerza al usuario a valorar cada interacción de la IA. Si la IA le consigue 10 clientes potenciales, el valor está demostrado y el bloqueo se activa, obligando a la compra para continuar operando.
 
 ### 2. Ingesta Multimedia (Ojos y Oídos del Sistema)
-El motor de WhatsApp (`client.ts`) ha sido parcheado para reconocer tipos de mensajes no textuales en el historial.
+El motor de WhatsApp (`client.ts`) reconoce tipos de mensajes no textuales en el historial.
 - **Capacidad:** El sistema ahora detecta `[Imagen]`, `[Audio]`, `[Video]`, `[Ubicación]`.
 - **Utilidad:** Esto evita que el historial se rompa o se ignore si el último mensaje del cliente fue una foto (muy común en talleres, inmobiliarias, etc.). Aunque la IA procesa texto, ahora tiene conciencia de que "algo más" fue enviado.
 
-### 3. Simulador Neural (Client Sandbox)
-Se ha integrado un entorno de pruebas seguro dentro del dashboard del cliente (`AgencyDashboard`).
-- **Función:** Permite al usuario "chatear" consigo mismo (simulando ser un bot) o ejecutar scripts de prueba automatizados para ver cómo su configuración de "Cerebro Neural" reacciona ante objeciones antes de conectar su número real.
-- **Seguridad:** Aísla el entorno de pruebas de la base de datos de producción real.
+### 3. Simulador Neural Elite++ (Training Lab)
+Se ha evolucionado el entorno de pruebas (`TestBotSimulator.tsx`).
+- **Función:** Permite someter al bot a escenarios de estrés (precios, confusión, competencia).
+- **Inteligencia:** Incluye un evaluador pasivo que detecta patrones de fallo y asigna un score de robustez.
 
 ### 4. Trigger Manual de Inferencia (Botón de Pánico)
 Se ha añadido un control de anulación manual en la interfaz de chat (`ChatWindow`).
-- **Problema:** A veces el *debounce* (espera automática) es muy lento para un vendedor ansioso, o el `webhook` de WhatsApp se retrasa.
+- **Problema:** A veces el *debounce* (espera automática) es muy lento para un vendedor ansioso, o el socket de WhatsApp se retrasa.
 - **Solución:** Un botón **"EJECUTAR IA"** que fuerza una llamada inmediata a Gemini, ignorando los temporizadores de espera y el estado de silencio, permitiendo una intervención táctica instantánea.
 
-### 5. Acceso Universal en Estado 'Trial'
-Se ha reescrito la lógica de permisos (`planService.ts` y `aiService.ts`).
-- **Cambio:** El estado `trial` ahora hereda **todos** los permisos del plan `pro`.
-- **Objetivo:** El usuario no debe encontrar *ninguna* fricción durante su prueba. La experiencia debe ser 100% Premium hasta el momento exacto del corte.
+### 5. Persistencia de la Verdad (Database Seeding)
+Se ha eliminado cualquier dependencia de `localStorage` para simular datos en la Landing Page o Dashboard.
+- **Implementación:** El servidor (`server.ts` y `database.ts`) verifica al inicio si la base de datos está vacía. Si lo está, inyecta ("siembra") testimonios y datos iniciales directamente en MongoDB con fechas pre-calculadas.
+- **Resultado:** Los datos son consistentes a través de dispositivos y resistentes al borrado de caché del navegador. Lo que el usuario ve es real desde la perspectiva de la aplicación.

@@ -13,7 +13,8 @@ export enum View {
   BLACKLIST = 'LISTA NEGRA',
   SETTINGS = 'CONFIGURACIÓN',
   SANDBOX = 'SIMULADOR',
-  ADMIN_GLOBAL = 'DASHBOARD_GLOBAL', // Renombrado para claridad
+  CAMPAIGNS = 'CAMPAÑAS', // NEW VIEW
+  ADMIN_GLOBAL = 'DASHBOARD_GLOBAL', 
   AUDIT_MODE = 'AUDIT_MODE'
 }
 
@@ -52,10 +53,76 @@ export type PlanType = 'starter' | 'pro';
 export type PlanStatus = 'active' | 'expired' | 'suspended' | 'trial';
 export type LogLevel = 'INFO' | 'WARN' | 'ERROR' | 'AUDIT';
 
+// --- CAMPAIGN MODULE TYPES ---
+export type CampaignStatus = 'DRAFT' | 'ACTIVE' | 'PAUSED' | 'COMPLETED';
+export type ScheduleType = 'ONCE' | 'DAILY' | 'WEEKLY';
+
+export interface Campaign {
+    id: string;
+    userId: string;
+    name: string;
+    message: string;
+    groups: string[]; // JIDs of target groups
+    status: CampaignStatus;
+    schedule: {
+        type: ScheduleType;
+        startDate: string; // ISO String
+        time: string; // "HH:MM" 24h format
+        daysOfWeek?: number[]; // 0-6 for Weekly
+    };
+    config: {
+        minDelaySec: number;
+        maxDelaySec: number;
+    };
+    stats: {
+        totalSent: number;
+        totalFailed: number;
+        lastRunAt?: string;
+        nextRunAt?: string;
+    };
+    createdAt: string;
+}
+
+export interface WhatsAppGroup {
+    id: string;
+    subject: string;
+    size?: number;
+}
+// -----------------------------
+
+// --- ELITE++ TRAINING SYSTEM TYPES ---
+export type SimulationScenario = 'STANDARD_FLOW' | 'PRICE_OBJECTION' | 'COMPETITOR_COMPARISON' | 'GHOSTING_RISK' | 'CONFUSED_BUYER';
+
+export interface EvaluationResult {
+    score: number; // 0-100 Robustness Score
+    outcome: 'SUCCESS' | 'FAILURE' | 'NEUTRAL';
+    detectedFailurePattern?: string; // e.g., "Early Pricing Fold", "Looping"
+    insights: string[];
+}
+
+export interface SimulationRun {
+    id: string;
+    timestamp: string;
+    scenario: SimulationScenario;
+    brainVersionSnapshot: {
+        archetype: string;
+        tone: number;
+    };
+    durationSeconds: number;
+    evaluation: EvaluationResult;
+}
+
+export interface SimulationLab {
+    experiments: SimulationRun[];
+    aggregatedScore: number;
+    topFailurePatterns: Record<string, number>; // Pattern Name -> Count
+}
+// -------------------------------------
+
 export interface Message {
   id: string;
   text: string;
-  sender: 'user' | 'bot' | 'owner' | 'elite_bot'; // Added elite_bot
+  sender: 'user' | 'bot' | 'owner' | 'elite_bot'; 
   timestamp: Date | string; 
 }
 
@@ -81,7 +148,7 @@ export interface Conversation {
   firstMessageAt?: Date | string;
   escalatedAt?: Date | string;
   suggestedReplies?: string[];
-  isTestBotConversation?: boolean; // NEW: Flag to identify test bot conversations
+  isTestBotConversation?: boolean; 
 }
 
 export interface BotSettings {
@@ -98,7 +165,7 @@ export interface BotSettings {
   toneValue: number;
   rhythmValue: number;
   intensityValue: number;
-  isWizardCompleted: boolean; // Added for wizard state
+  isWizardCompleted: boolean; 
   pwaEnabled: boolean;
   pushEnabled: boolean;
   audioEnabled: boolean;
@@ -106,9 +173,8 @@ export interface BotSettings {
   ignoredJids: string[];
 }
 
-// Renamed User to Client and expanded with SaaS fields
 export interface User {
-  id: string; // client_id
+  id: string; 
   username: string; 
   business_name: string;
   whatsapp_number: string;
@@ -132,6 +198,9 @@ export interface User {
     auditLogs: { timestamp: string; adminId: string; action: string }[];
     humanDeviationScore: number;
   };
+
+  // ELITE++ LAB DATA
+  simulationLab?: SimulationLab;
   
   trial_qualified_leads_count?: number;
   isSuspended?: boolean; 
@@ -161,6 +230,9 @@ export interface DashboardMetrics {
   avgEscalationTimeMinutes: number;
   activeSessions: number;
   humanDeviationScore: number;
+  // CAMPAIGN INTEGRATION
+  campaignsActive: number;
+  campaignMessagesSent: number;
 }
 
 export interface GlobalDashboardMetrics {

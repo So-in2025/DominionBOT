@@ -117,9 +117,19 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   }
   
   const currentBadge = statusBadgeClass[conversation.status];
-  const displayTitle = isNaN(Number(conversation.leadName.replace(/\+/g, ''))) 
-      ? conversation.leadName 
-      : formatPhoneNumber(conversation.leadName);
+  
+  // LOGIC TO PREVENT DOUBLE NUMBER DISPLAY
+  // Check if leadName is essentially just a number
+  const cleanLeadName = conversation.leadName.replace(/[^0-9]/g, '');
+  const isLeadNameNumber = cleanLeadName.length > 6 && !isNaN(Number(cleanLeadName));
+
+  // If leadName is a number, display formatted number as Title. If not, display Name.
+  const displayTitle = isLeadNameNumber 
+      ? formatPhoneNumber(conversation.leadIdentifier) 
+      : conversation.leadName;
+
+  // Only show the subtitle (phone number) if the Title is NOT already the number
+  const showSubtitle = !isLeadNameNumber;
 
   // Check blacklist status
   const currentNumber = conversation.id.split('@')[0];
@@ -142,7 +152,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
               <div className="relative">
                   <div className="w-10 h-10 md:w-11 md:h-11 rounded-full bg-gradient-to-br from-gray-700 to-black border border-white/10 flex items-center justify-center font-bold text-white shadow-inner overflow-hidden">
                       {/* Show initials or icon */}
-                      {conversation.leadName.charAt(0).toUpperCase()}
+                      {displayTitle.charAt(0).toUpperCase()}
                   </div>
                   <div className={`absolute bottom-0 right-0 w-3 h-3 border-2 border-brand-surface rounded-full ${isBlacklisted ? 'bg-red-500' : 'bg-green-500'}`}></div>
               </div>
@@ -152,7 +162,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                     {displayTitle}
                     {isBlacklisted && <span className="text-[9px] bg-red-500 text-white px-1.5 py-0.5 rounded uppercase font-black tracking-wider">Bloqueado</span>}
                 </h2>
-                <p className="text-[10px] text-gray-500 font-mono mt-0.5 tracking-wider">{formatPhoneNumber(conversation.leadIdentifier)}</p>
+                {showSubtitle && (
+                    <p className="text-[10px] text-gray-500 font-mono mt-0.5 tracking-wider">{formatPhoneNumber(conversation.leadIdentifier)}</p>
+                )}
               </div>
           </div>
           

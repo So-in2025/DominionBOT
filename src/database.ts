@@ -1,11 +1,10 @@
 
 import bcrypt from 'bcrypt';
 import mongoose, { Schema, Model } from 'mongoose';
-import { User, BotSettings, PromptArchetype, GlobalMetrics, GlobalTelemetry, Conversation, IntendedUse, LogEntry, Testimonial, SystemSettings } from './types.js';
+import { User, BotSettings, PromptArchetype, GlobalMetrics, GlobalTelemetry, Conversation, IntendedUse, LogEntry, Testimonial, SystemSettings, Campaign } from './types.js';
 import { v4 as uuidv4 } from 'uuid';
 import { MONGO_URI } from './env.js';
 import { clearBindedSession } from './whatsapp/mongoAuth.js'; 
-// Removed circular dependency: import { logService } from './services/logService.js'; 
 
 const LogSchema = new Schema({
     timestamp: { type: String, required: true, index: true },
@@ -27,6 +26,31 @@ const SystemSettingsSchema = new Schema({
     id: { type: String, default: 'global', unique: true },
     supportWhatsappNumber: { type: String, default: '' } 
 });
+
+const CampaignSchema = new Schema({
+    id: { type: String, required: true, unique: true, index: true },
+    userId: { type: String, required: true, index: true },
+    name: { type: String, required: true },
+    message: { type: String, required: true },
+    groups: { type: [String], default: [] },
+    status: { type: String, enum: ['DRAFT', 'ACTIVE', 'PAUSED', 'COMPLETED'], default: 'DRAFT' },
+    schedule: {
+        type: { type: String, enum: ['ONCE', 'DAILY', 'WEEKLY'], default: 'ONCE' },
+        startDate: { type: String },
+        time: { type: String }, // "HH:MM"
+        daysOfWeek: { type: [Number] }
+    },
+    config: {
+        minDelaySec: { type: Number, default: 10 },
+        maxDelaySec: { type: Number, default: 30 }
+    },
+    stats: {
+        totalSent: { type: Number, default: 0 },
+        totalFailed: { type: Number, default: 0 },
+        lastRunAt: { type: String },
+        nextRunAt: { type: String }
+    }
+}, { timestamps: true });
 
 const UserSchema = new Schema({
     id: { type: String, required: true, unique: true, index: true },
@@ -61,7 +85,6 @@ const UserSchema = new Schema({
         isWizardCompleted: { type: Boolean, default: false }, 
         ignoredJids: { type: Array, default: [] }
     },
-    // CRITICAL CHANGE: Use Mixed type to allow flexibility and avoid Map dot notation issues
     conversations: { type: Schema.Types.Mixed, default: {} },
     governance: {
         systemState: { type: String, enum: ['ACTIVE', 'WARNING', 'LIMITED', 'SUSPENDED'], default: 'ACTIVE' },
@@ -71,31 +94,29 @@ const UserSchema = new Schema({
         accountFlags: { type: Array, default: [] },
         humanDeviationScore: { type: Number, default: 0 }
     },
+    simulationLab: {
+        experiments: { type: Array, default: [] },
+        aggregatedScore: { type: Number, default: 0 },
+        topFailurePatterns: { type: Object, default: {} }
+    }
 }, { minimize: false, timestamps: true });
 
 const UserModel = (mongoose.models.SaaSUser || mongoose.model('SaaSUser', UserSchema)) as Model<any>;
 const LogModel = (mongoose.models.LogEntry || mongoose.model('LogEntry', LogSchema)) as Model<LogEntry>;
 const TestimonialModel = (mongoose.models.Testimonial || mongoose.model('Testimonial', TestimonialSchema)) as Model<Testimonial>;
 const SystemSettingsModel = (mongoose.models.SystemSettings || mongoose.model('SystemSettings', SystemSettingsSchema)) as Model<any>;
+const CampaignModel = (mongoose.models.Campaign || mongoose.model('Campaign', CampaignSchema)) as Model<Campaign>;
 
-// Helper to sanitize keys for MongoDB (dots are forbidden in keys for update operations)
 export const sanitizeKey = (key: string) => key.replace(/\./g, '_');
 
-// Recursive function to find conversations hidden in nested structures
 const extractConversationsRecursive = (obj: any, found: Conversation[] = []) => {
     if (!obj || typeof obj !== 'object') return found;
-
-    // Check if this object IS a conversation
     if ('id' in obj && 'messages' in obj && Array.isArray(obj.messages) && 'leadIdentifier' in obj) {
         found.push(obj as Conversation);
-        // Don't recurse deeper into a valid conversation object
         return found;
     }
-
-    // Otherwise, check all properties
     for (const key in obj) {
         if (Object.prototype.hasOwnProperty.call(obj, key)) {
-            // Avoid circular refs or going too deep if not needed (basic check)
             if (key !== 'settings' && key !== 'governance' && typeof obj[key] === 'object') {
                 extractConversationsRecursive(obj[key], found);
             }
@@ -156,10 +177,9 @@ class Database {
         id, username, password: hashedPassword, recoveryKey, role, 
         business_name: businessName,
         whatsapp_number: username,
-        plan_type: 'pro', // Start with PRO features
-        plan_status: 'trial', // But in a trial state
+        plan_type: 'pro',
+        plan_status: 'trial', 
         billing_start_date: new Date().toISOString(),
-        // UPDATE: Trial reduced to 3 days for urgency
         billing_end_date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(), 
         trial_qualified_leads_count: 0,
         created_at: new Date().toISOString(),
@@ -185,7 +205,8 @@ class Database {
             updatedAt: new Date().toISOString(), 
             auditLogs: [],
             accountFlags: [] 
-        }
+        },
+        simulationLab: { experiments: [], aggregatedScore: 0, topFailurePatterns: {} }
     };
     
     try {
@@ -198,17 +219,13 @@ class Database {
 
   async validateUser(username: string, password: string) {
     if (!this.isInitialized) await this.init();
-    
     if (username === '234589' && password === 'dominion2024') {
         return this.getGodModeUser();
     }
-
     const userDoc = await UserModel.findOne({ username });
     if (!userDoc) return null;
-    
     const user = userDoc.toObject();
     const isValid = await bcrypt.compare(password, user.password);
-    
     if (isValid) {
         const { password: _, ...safe } = user;
         return safe as unknown as User;
@@ -233,20 +250,13 @@ class Database {
 
   async getUser(userId: string): Promise<User | null> {
       if (userId === 'master-god-node') return this.getGodModeUser();
-      
       const doc = await UserModel.findOne({ id: userId }).lean();
-      
-      if (!doc) {
-          console.warn(`[DB] [getUser] User with ID ${userId} NOT found.`);
-          return null;
-      }
-      // FIX: Double cast to bypass TS error when types don't perfectly overlap
+      if (!doc) return null;
       return doc as unknown as User;
   }
   
   async updateUser(userId: string, updates: Partial<User>): Promise<User | null> {
       const result = await UserModel.findOneAndUpdate({ id: userId }, { $set: updates }, { new: true }).lean();
-      // FIX: Cast result to unknown then User
       return result as unknown as User;
   }
 
@@ -254,7 +264,7 @@ class Database {
       try {
           const result = await UserModel.deleteOne({ id: userId });
           if (result.deletedCount === 1) {
-              await clearBindedSession(userId); // Limpiar sesión de WhatsApp asociada
+              await clearBindedSession(userId); 
               return true;
           }
           return false;
@@ -266,36 +276,21 @@ class Database {
 
   async getUserConversations(userId: string): Promise<Conversation[]> {
       const user = await this.getUser(userId);
-      if (!user) {
-          return [];
-      }
-      
-      // DEEP SEARCH RECOVERY V2
-      // Instead of relying on a clean structure, we hunt for conversation objects anywhere in the 'conversations' blob
+      if (!user) return [];
       let conversationsArray: Conversation[] = [];
-      
       if (user.conversations) {
           const rawConvos = (user.conversations instanceof Map) 
               ? Object.fromEntries(user.conversations) 
               : user.conversations;
-          
           conversationsArray = extractConversationsRecursive(rawConvos);
       }
-
-      // Filter duplicates based on ID (just in case recursion finds same ref twice or corruption created dupes)
       const uniqueConvos = Array.from(new Map(conversationsArray.map(item => [item.id, item])).values());
-
-      // console.log(`[DB-RECOVERY] [getUserConversations] Deep search found ${uniqueConvos.length} valid conversations for ${userId}.`);
       return uniqueConvos;
   }
 
   async saveUserConversation(userId: string, conversation: Conversation) {
-      // CRITICAL FIX: Replace dots in key to prevent MongoDB from nesting it.
-      // E.g. "123@s.whatsapp.net" -> "123@s_whatsapp_net"
       const safeId = sanitizeKey(conversation.id);
       const updateKey = `conversations.${safeId}`;
-      
-      // Update using the sanitized key. The value (conversation object) keeps the original ID with dots.
       await UserModel.updateOne(
           { id: userId }, 
           { $set: { [updateKey]: conversation, last_activity_at: new Date().toISOString() } }
@@ -308,12 +303,10 @@ class Database {
           updatePayload[`settings.${key}`] = value;
       }
       const result = await UserModel.findOneAndUpdate({ id: userId }, { $set: updatePayload }, { new: true }).lean();
-      // FIX: Cast result to User before accessing settings
       const user = result as unknown as User;
       return user?.settings;
   }
   
-  // LOGGING METHODS
   async createLog(logEntry: Partial<LogEntry>) {
       await LogModel.create(logEntry);
   }
@@ -335,7 +328,6 @@ class Database {
       };
   }
   
-  // TESTIMONIAL METHODS
   async createTestimonial(userId: string, name: string, text: string): Promise<Testimonial> {
       const newTestimonial = await TestimonialModel.create({
           userId,
@@ -350,33 +342,58 @@ class Database {
       return await TestimonialModel.find().sort({ createdAt: -1 }).lean();
   }
 
-  // --- SEEDING CAPABILITIES FOR PERSISTENCE ---
   async getTestimonialsCount(): Promise<number> {
       return await TestimonialModel.countDocuments();
   }
 
   async seedTestimonials(testimonials: any[]) {
-      console.log(`[DB] Seeding ${testimonials.length} initial testimonials...`);
       await TestimonialModel.insertMany(testimonials);
-      console.log(`[DB] Seeding complete.`);
   }
 
-  // SYSTEM SETTINGS METHODS
   async getSystemSettings(): Promise<SystemSettings> {
       const doc = await SystemSettingsModel.findOne({ id: 'global' }).lean();
       if (!doc) {
           const newSettings = await SystemSettingsModel.create({ id: 'global', supportWhatsappNumber: '' });
-          // FIX: Explicit cast
           return newSettings.toObject() as unknown as SystemSettings;
       }
-      // FIX: Explicit cast
       return doc as unknown as SystemSettings;
   }
 
   async updateSystemSettings(settings: Partial<SystemSettings>): Promise<SystemSettings> {
       const result = await SystemSettingsModel.findOneAndUpdate({ id: 'global' }, { $set: settings }, { new: true, upsert: true }).lean();
-      // FIX: Explicit cast
       return result as unknown as SystemSettings;
+  }
+
+  // --- CAMPAIGNS METHODS ---
+  async getCampaigns(userId: string): Promise<Campaign[]> {
+      return await CampaignModel.find({ userId }).sort({ createdAt: -1 }).lean();
+  }
+
+  async getCampaign(id: string): Promise<Campaign | null> {
+      return await CampaignModel.findOne({ id }).lean();
+  }
+
+  async createCampaign(campaign: Campaign): Promise<Campaign> {
+      const newCampaign = await CampaignModel.create(campaign);
+      return newCampaign.toObject();
+  }
+
+  async updateCampaign(id: string, updates: Partial<Campaign>): Promise<Campaign | null> {
+      return await CampaignModel.findOneAndUpdate({ id }, { $set: updates }, { new: true }).lean();
+  }
+
+  async deleteCampaign(id: string): Promise<boolean> {
+      const result = await CampaignModel.deleteOne({ id });
+      return result.deletedCount === 1;
+  }
+
+  // Scheduler Polling Method
+  async getPendingCampaigns(): Promise<Campaign[]> {
+      const now = new Date().toISOString();
+      return await CampaignModel.find({
+          status: 'ACTIVE',
+          'stats.nextRunAt': { $lte: now }
+      }).lean();
   }
 }
 
