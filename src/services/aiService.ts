@@ -30,8 +30,14 @@ export const generateBotResponse = async (
   const features = planService.getClientFeatures(user);
   const settings = user.settings;
 
+  // CRITICAL FIX: Treat 'elite_bot' as 'user' (Cliente) so the AI knows to respond to it.
   const historyText = conversationHistory.slice(-15).map(m => {
-      const role = m.sender === 'user' ? 'Cliente' : (m.sender === 'owner' ? 'Agente_Humano' : 'Dominion_Bot');
+      let role = 'Dominion_Bot';
+      if (m.sender === 'user' || m.sender === 'elite_bot') {
+          role = 'Cliente';
+      } else if (m.sender === 'owner') {
+          role = 'Agente_Humano';
+      }
       return `${role}: ${m.text}`;
   }).join('\n');
 
@@ -105,7 +111,7 @@ ${JSON.stringify(Object.keys(responseSchema.properties))}
     try {
       const response = await ai.models.generateContent({
         model: modelName,
-        contents: prompt,
+        contents: [{ parts: [{ text: prompt }] }],
         config: { 
           systemInstruction,
           responseMimeType: "application/json", 

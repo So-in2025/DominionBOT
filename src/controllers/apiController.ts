@@ -197,13 +197,14 @@ export const handleGetTtsAudio = async (req: any, res: any) => {
  */
 export const handleStopClientTestBot = async (req: any, res: any) => {
     const userId = getUserId(req);
+    // FORCE REMOVE FROM ACTIVE SET
     if (activeSimulations.has(userId)) {
         activeSimulations.delete(userId);
-        logService.info(`[SIMULATOR] Simulación detenida manualmente por el usuario`, userId);
-        res.status(200).json({ message: 'Simulación detenida.' });
-    } else {
-        res.status(200).json({ message: 'No había simulación activa.' });
+        logService.info(`[SIMULATOR] Simulación detenida manualmente por el usuario ${userId}`, userId);
+        return res.status(200).json({ message: 'Simulación detenida.' });
     }
+    // Even if not strictly "active", ensure we respond success to reset frontend state
+    res.status(200).json({ message: 'Simulación detenida (No estaba activa).' });
 };
 
 /**
@@ -233,16 +234,15 @@ export const handleStartClientTestBot = async (req: any, res: any) => {
         await db.updateUser(userId, { trial_qualified_leads_count: 0 });
 
         // 3. FORCE RESET CONVERSATION STATE (CRITICAL FIX)
-        // Eliminamos residuos anteriores (estado muted, hot, etc) para que el bot responda sí o sí.
         const cleanConversation: Conversation = {
             id: ELITE_BOT_JID,
             leadIdentifier: 'Simulador',
             leadName: ELITE_BOT_NAME,
             status: LeadStatus.COLD,
-            messages: [], // Limpiamos historial para que se vea limpio en el frontend
+            messages: [], // Limpiamos historial
             isBotActive: true,
-            isMuted: false, // IMPORTANT: Ensure not muted
-            isTestBotConversation: true, // IMPORTANT: Flag for bypass
+            isMuted: false, 
+            isTestBotConversation: true, 
             tags: [],
             internalNotes: [],
             isAiSignalsEnabled: true,
@@ -253,21 +253,23 @@ export const handleStartClientTestBot = async (req: any, res: any) => {
         // Mark as active
         activeSimulations.add(userId);
 
-        // Responder al cliente inmediatamente para que el frontend pueda iniciar el polling
-        res.status(200).json({ message: 'Secuencia de prueba de bot élite iniciada en background.' });
+        // Responder al cliente inmediatamente
+        res.status(200).json({ message: 'Secuencia de prueba iniciada.' });
 
         // 4. Iniciar la secuencia de mensajes de prueba en segundo plano
         (async () => {
             logService.audit(`Iniciando prueba de bot élite (sincrónica) para: ${targetUser.username}`, userId, user.username);
 
             for (const messageText of TEST_SCRIPT) {
-                // Chequear si se canceló la simulación antes de cada paso
                 if (!activeSimulations.has(userId)) {
                     logService.info('[SIMULATOR] Secuencia abortada.', userId);
                     break;
                 }
 
-                // Añadir el mensaje del bot élite como si fuera un usuario al chat del cliente
+                // Pausa inicial para realismo y asegurar que la DB se actualizó
+                await new Promise(resolve => setTimeout(resolve, 1500));
+
+                // Añadir el mensaje del bot élite
                 const msgTimestamp = new Date();
                 const eliteBotMessage: Message = { 
                     id: `elite_bot_msg_${Date.now()}_${Math.random().toString(36).substring(7)}`, 
@@ -275,28 +277,29 @@ export const handleStartClientTestBot = async (req: any, res: any) => {
                     sender: 'elite_bot', 
                     timestamp: msgTimestamp 
                 };
+                
+                // CRITICAL: Ensure this write is awaited properly
                 await conversationService.addMessage(userId, ELITE_BOT_JID, eliteBotMessage, ELITE_BOT_NAME);
 
-                // Trigger el procesamiento de la IA del cliente objetivo inmediatamente (sin debounce)
+                // Trigger AI
                 await processAiResponseForJid(userId, ELITE_BOT_JID);
 
                 // --- ESPERA INTELIGENTE (SMART WAIT) ---
-                // Esperar a que el bot responda antes de enviar el siguiente mensaje.
                 let botResponded = false;
                 let attempts = 0;
-                const maxAttempts = 45; // Esperar máximo 45 segundos por respuesta
+                const maxAttempts = 30; // 30 segundos max espera
 
                 while (!botResponded && attempts < maxAttempts) {
-                    if (!activeSimulations.has(userId)) break; // Salir si se cancela durante la espera
+                    if (!activeSimulations.has(userId)) break; 
 
-                    await new Promise(resolve => setTimeout(resolve, 1000)); // Polling cada 1s
+                    await new Promise(resolve => setTimeout(resolve, 1000)); // Polling 1s
                     
                     // Re-fetch conversation to check for new messages
+                    // We must refetch fresh from DB every time
                     const currentConvs = await conversationService.getConversations(userId);
                     const currentConv = currentConvs.find(c => c.id === ELITE_BOT_JID);
                     
                     if (currentConv) {
-                        // Buscar un mensaje del bot que sea posterior al mensaje que acabamos de enviar
                         const response = currentConv.messages.find(m => 
                             m.sender === 'bot' && 
                             new Date(m.timestamp).getTime() > msgTimestamp.getTime()
@@ -310,26 +313,24 @@ export const handleStartClientTestBot = async (req: any, res: any) => {
 
                 if (!activeSimulations.has(userId)) break;
 
-                // Si el bot respondió, añadir un pequeño delay de "lectura" humano (2-3s)
+                // Pausa de lectura humana antes de enviar el siguiente mensaje
                 if (botResponded) {
-                    await new Promise(resolve => setTimeout(resolve, 2500));
+                    await new Promise(resolve => setTimeout(resolve, 3000));
                 } else {
-                    // Si hubo timeout (la IA falló o tardó demasiado), loguearlo pero seguir (o romper según preferencia)
+                    // Si hubo timeout, loguear advertencia pero continuar la secuencia
                     logService.warn(`[SIMULATOR] Timeout esperando respuesta de IA para: "${messageText.substring(0, 20)}..."`, userId);
-                    // Opcional: romper el ciclo si la IA muere
-                    // break; 
                 }
             }
 
             logService.audit(`Prueba de bot élite finalizada para cliente: ${targetUser.username}`, userId, user.username);
-            activeSimulations.delete(userId); // Limpiar flag al terminar
+            activeSimulations.delete(userId); 
         })().catch(error => {
-            logService.error(`Error en la secuencia de prueba del bot élite en background para ${userId}`, error, userId, user.username);
+            logService.error(`Error en la secuencia de prueba del bot élite`, error, userId, user.username);
             activeSimulations.delete(userId);
         });
 
     } catch (error: any) {
-        logService.error(`Error al iniciar la prueba del bot élite para ${userId} (autodirigida)`, error, userId, user.username);
+        logService.error(`Error al iniciar la prueba del bot élite`, error, userId, user.username);
         activeSimulations.delete(userId);
         if (!res.headersSent) { 
             res.status(500).json({ message: 'Error interno del servidor al iniciar la prueba.' });
@@ -342,34 +343,24 @@ export const handleStartClientTestBot = async (req: any, res: any) => {
  */
 export const handleClearClientTestBotConversation = async (req: any, res: any) => {
     const userId = getUserId(req);
-    const user = getUser(req);
-
-    // Asegurar que se detiene cualquier simulación activa antes de limpiar
-    activeSimulations.delete(userId);
+    activeSimulations.delete(userId); // Ensure stopped
 
     try {
         const targetUser = await db.getUser(userId);
-        if (!targetUser) {
-            return res.status(404).json({ message: 'Cliente objetivo no encontrado.' });
-        }
+        if (!targetUser) return res.status(404).json({ message: 'Cliente no encontrado.' });
 
         const safeJid = sanitizeKey(ELITE_BOT_JID);
-        if (targetUser.conversations && targetUser.conversations[safeJid]) {
-            delete targetUser.conversations[safeJid];
-            await db.updateUser(userId, { conversations: targetUser.conversations });
-            logService.audit(`Conversación de bot élite eliminada para cliente (autodirigida): ${targetUser.username}`, userId, user.username);
-        } else if (targetUser.conversations && targetUser.conversations[ELITE_BOT_JID]) {
-             // Fallback for old structure
-             delete targetUser.conversations[ELITE_BOT_JID];
+        // Force delete using MongoDB update unset or pulling
+        if (targetUser.conversations) {
+             delete targetUser.conversations[safeJid];
+             delete targetUser.conversations[ELITE_BOT_JID]; // Just in case
              await db.updateUser(userId, { conversations: targetUser.conversations });
-        } else {
-            logService.info(`No se encontró conversación de bot élite para eliminar en cliente (autodirigida): ${targetUser.username}`, userId, user.username);
         }
 
-        res.status(200).json({ message: 'Conversación de prueba de bot élite eliminada.' });
+        res.status(200).json({ message: 'Conversación de prueba eliminada.' });
 
     } catch (error: any) {
-        logService.error(`Error al limpiar la conversación del bot élite para ${userId} (autodirigida)`, error, userId, user.username);
-        res.status(500).json({ message: 'Error interno del servidor al limpiar la conversación.' });
+        logService.error(`Error al limpiar conversación simulador`, error, userId);
+        res.status(500).json({ message: 'Error interno.' });
     }
 };
