@@ -211,26 +211,22 @@ class Database {
 
   async getUser(userId: string): Promise<User | null> {
       if (userId === 'master-god-node') return this.getGodModeUser();
-      logService.info(`[DB] [getUser] Attempting to find user with ID: ${userId}`, userId);
-      const doc = await UserModel.findOne({ id: userId });
+      
+      // CRITICAL FIX: Usar .lean() es OBLIGATORIO para evitar problemas con Mapas de Mongoose
+      // Esto devuelve un objeto JSON puro en lugar de un Documento Mongoose complejo.
+      const doc = await UserModel.findOne({ id: userId }).lean();
+      
       if (!doc) {
           logService.warn(`[DB] [getUser] User with ID ${userId} NOT found.`, userId);
           return null;
       }
-      logService.info(`[DB] [getUser] User with ID ${userId} FOUND. Username: ${doc.username}, Role: ${doc.role}`, userId);
-      // Log the conversations map directly from the Mongoose document before converting to plain object
-      logService.info(`[DB] [getUser] Raw conversations from DB for ${userId}: ${JSON.stringify(doc.conversations).substring(0, 500)}...`, userId);
-      
-      // NEW LOG: Explicitly check Elite Bot conversation flags from DB
-      if (doc.conversations && doc.conversations[ELITE_BOT_JID]) {
-          logService.info(`[DB] [getUser] Elite Bot convo for ${userId} from DB: isTestBotConversation=${doc.conversations[ELITE_BOT_JID].isTestBotConversation}, isMuted=${doc.conversations[ELITE_BOT_JID].isMuted}, isBotActive=${doc.conversations[ELITE_BOT_JID].isBotActive}, status=${doc.conversations[ELITE_BOT_JID].status}`, userId);
-      }
 
-      return doc.toObject();
+      // NO necesitamos convertir .toObject() porque .lean() ya nos dio un objeto plano.
+      return doc as User;
   }
   
   async updateUser(userId: string, updates: Partial<User>) {
-      const result = await UserModel.findOneAndUpdate({ id: userId }, { $set: updates }, { new: true });
+      const result = await UserModel.findOneAndUpdate({ id: userId }, { $set: updates }, { new: true }).lean();
       return result;
   }
 
@@ -249,24 +245,34 @@ class Database {
   }
 
   async getUserConversations(userId: string): Promise<Conversation[]> {
-      logService.info(`[DB] [getUserConversations] Fetching conversations for userId: ${userId}`, userId);
-      const user = await this.getUser(userId);
+      const user = await this.getUser(userId); // Esto ahora usa .lean(), devolviendo un objeto plano
       if (!user) {
           logService.warn(`[DB] [getUserConversations] User ${userId} not found, returning empty conversations.`, userId);
           return [];
       }
-      logService.info(`[DB] [getUserConversations] User ${userId} retrieved. Conversations Map keys: ${Object.keys(user.conversations || {}).join(', ')}`, userId);
-      const conversationsArray = user.conversations ? Object.values(user.conversations) : [];
+      
+      // FIX: Robust handling. Si user.conversations es un objeto plano (gracias a lean()), Object.values funciona.
+      let conversationsArray: Conversation[] = [];
+      
+      if (user.conversations) {
+          // Si por alguna razón sigue siendo un Map (raro con lean()), lo manejamos.
+          if (user.conversations instanceof Map) {
+               // @ts-ignore
+               conversationsArray = Array.from(user.conversations.values());
+          } else {
+               // Esto es lo estándar para objetos planos
+               conversationsArray = Object.values(user.conversations);
+          }
+      }
+
       logService.info(`[DB] [getUserConversations] Returning ${conversationsArray.length} conversations for ${userId}.`, userId);
       return conversationsArray;
   }
 
   async saveUserConversation(userId: string, conversation: Conversation) {
       const updateKey = `conversations.${conversation.id}`;
-      logService.info(`[DB] [saveUserConversation] Saving conversation for userId: ${userId}, updateKey: ${updateKey}. Conversation: ${JSON.stringify(conversation).substring(0, 500)}...`, userId);
+      // Note: $set works fine with Maps using dot notation for keys
       const result = await UserModel.updateOne({ id: userId }, { $set: { [updateKey]: conversation, last_activity_at: new Date().toISOString() } });
-      logService.info(`[DB] [saveUserConversation] Update result for ${userId}: matchedCount=${result.matchedCount}, modifiedCount=${result.modifiedCount}.`, userId);
-      // Removed SSE event as it was previously commented out.
   }
 
   async updateUserSettings(userId: string, settings: Partial<BotSettings>) {
@@ -274,7 +280,7 @@ class Database {
       for (const [key, value] of Object.entries(settings)) {
           updatePayload[`settings.${key}`] = value;
       }
-      const result = await UserModel.findOneAndUpdate({ id: userId }, { $set: updatePayload }, { new: true });
+      const result = await UserModel.findOneAndUpdate({ id: userId }, { $set: updatePayload }, { new: true }).lean();
       return result?.settings;
   }
   
@@ -317,18 +323,18 @@ class Database {
 
   // SYSTEM SETTINGS METHODS
   async getSystemSettings(): Promise<SystemSettings> {
-      const doc = await SystemSettingsModel.findOne({ id: 'global' });
+      const doc = await SystemSettingsModel.findOne({ id: 'global' }).lean();
       if (!doc) {
           // Create default if not exists
           const newSettings = await SystemSettingsModel.create({ id: 'global', supportWhatsappNumber: '' });
           return newSettings.toObject();
       }
-      return doc.toObject();
+      return doc as SystemSettings;
   }
 
   async updateSystemSettings(settings: Partial<SystemSettings>): Promise<SystemSettings> {
-      const result = await SystemSettingsModel.findOneAndUpdate({ id: 'global' }, { $set: settings }, { new: true, upsert: true });
-      return result.toObject();
+      const result = await SystemSettingsModel.findOneAndUpdate({ id: 'global' }, { $set: settings }, { new: true, upsert: true }).lean();
+      return result as SystemSettings;
   }
 }
 
