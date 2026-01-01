@@ -118,8 +118,8 @@ export const handleForceAiRun = async (req: any, res: any) => {
 
     try {
         logService.info(`[API] Solicitud manual de ejecución de IA para ${jid}`, userId);
-        // This is async, we trigger it and return OK.
-        processAiResponseForJid(userId, jid).catch(e => {
+        // PASS FORCE = TRUE
+        processAiResponseForJid(userId, jid, true).catch(e => {
             logService.error(`[API] Error ejecutando IA manual para ${jid}`, e, userId);
         });
         
