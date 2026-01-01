@@ -350,6 +350,17 @@ class Database {
       return await TestimonialModel.find().sort({ createdAt: -1 }).lean();
   }
 
+  // --- SEEDING CAPABILITIES FOR PERSISTENCE ---
+  async getTestimonialsCount(): Promise<number> {
+      return await TestimonialModel.countDocuments();
+  }
+
+  async seedTestimonials(testimonials: any[]) {
+      console.log(`[DB] Seeding ${testimonials.length} initial testimonials...`);
+      await TestimonialModel.insertMany(testimonials);
+      console.log(`[DB] Seeding complete.`);
+  }
+
   // SYSTEM SETTINGS METHODS
   async getSystemSettings(): Promise<SystemSettings> {
       const doc = await SystemSettingsModel.findOne({ id: 'global' }).lean();

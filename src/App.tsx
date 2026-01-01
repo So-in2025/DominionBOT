@@ -6,7 +6,6 @@ import ConversationList from './components/ConversationList';
 import ChatWindow from './components/ChatWindow';
 import SettingsPanel from './components/SettingsPanel';
 import ConnectionPanel from './components/ConnectionPanel';
-import BlacklistPanel from './components/BlacklistPanel'; // IMPORTED
 import AdminDashboard from './components/Admin/AdminDashboard';
 import AuditView from './components/Admin/AuditView';
 import AuthModal from './components/AuthModal';
@@ -31,77 +30,31 @@ const SIMULATION_SCRIPT = [
     { id: 10, type: 'bot', text: "Excelente. Te dejo el link para que actives tu nodo de infraestructura ahora mismo y empecemos a filtrar. \n\n👉 https://dominion-bot.vercel.app/\n(Toca en 'Solicitar Acceso')", statusLabel: "VENTA CERRADA ✅", delayBefore: 2200 },
 ];
 
-// Contenido para la Sección de Testimonios
-const PREDEFINED_TESTIMONIALS = [
-    { name: "Marcos López", location: "Mendoza", text: "Bueno, parece que soy el primero en comentar. La verdad entré medio de curioso, pero luego de probar la demo me pareció muy útil, y práctica, los demás bots son muy caros y difíciles de configurar!. Excelente su trabajo." },
-    { name: "Sofía Romano", location: "Mendoza", text: "No suelo comentar estas cosas, pero hasta ahora viene funcionando bien. Se nota que está pensado para ventas posta." },
-    { name: "Javier Torres", location: "Mendoza", text: "Antes era responder mensajes todo el día sin parar. Ahora por lo menos está más ordenado. Eso ya vale la pena." },
-    { name: "Valentina Giménez", location: "Mendoza", text: "Me gustó que no sea complicado como otros bots que probé. Acá fue conectar y listo." },
-    { name: "Lucas Herrera", location: "Mendoza", text: "La verdad me ahorró bastante desgaste. Antes terminaba el día quemado." },
-    { name: "Camila Fernandez", location: "Mendoza", text: "Buen precio para lo que hace. Pensé que iba a ser más caro." },
-    { name: "Mateo Diaz", location: "Mendoza", text: "No es magia, pero ayuda mucho a filtrar. Para mí cumple." },
-    { name: "Lucía Martinez", location: "Mendoza", text: "Todavía lo estoy probando, pero por ahora viene prolijo." },
-    { name: "Agustín Cruz", location: "Mendoza", text: "Pasé de contestar cualquier cosa a responder solo lo importante. Con eso ya estoy conforme." },
-    { name: "Abril Morales", location: "Mendoza", text: "Me sorprendió que no suene a bot." },
-    { name: "Bautista Ríos", location: "Mendoza", text: "Venía de putear bastante con WhatsApp todos los días. Ahora eso bajó bastante." },
-    { name: "Mía Castillo", location: "Mendoza", text: "Se nota que está pensado para comerciantes y no para programadores." },
-    { name: "Tomás Vega", location: "Mendoza", text: "Probé otros sistemas y siempre algo fallaba. Este por ahora se mantiene estable." },
-    { name: "Isabella Pardo", location: "Mendoza", text: "Me gustó que no invade ni molesta a los clientes." },
-    { name: "Felipe Muñoz", location: "Mendoza", text: "No esperaba mucho y me terminó sorprendiendo." },
-    { name: "Martina Flores", location: "Mendoza", "text": "Lo estoy usando hace unos días y la experiencia viene siendo buena." },
-    { name: "Santino Rivas", location: "Mendoza", "text": "Simple, directo y sin vueltas. Eso suma." },
-    { name: "Victoria Medina", location: "Mendoza", text: "Se agradece algo así para laburar más tranquilo." },
-    { name: "Benjamín Castro", location: "Mendoza", text: "Después de varios días usándolo, lo seguiría usando sin dudas." },
-    { name: "Emilia Ponce", location: "Mendoza", text: "Ojalá lo sigan mejorando, pero la base está muy bien." },
-];
-
-const TrialBanner: React.FC<{ user: User | null, supportNumber: string | null }> = ({ user, supportNumber }) => {
+const TrialBanner: React.FC<{ user: User | null }> = ({ user }) => {
     if (!user || user.role === 'super_admin' || user.plan_status === 'active') return null;
 
     const endDate = new Date(user.billing_end_date);
     const now = new Date();
     const daysRemaining = Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
     const qualifiedLeads = user.trial_qualified_leads_count || 0;
-    const maxLeads = 3; // Updated limit to 3
 
-    // Case 1: Trial Active
-    if (user.plan_status === 'trial' && daysRemaining > 0 && qualifiedLeads < maxLeads) {
+    if (user.plan_status === 'trial' && daysRemaining > 0 && qualifiedLeads < 10) {
         return (
             <div className="bg-gradient-to-r from-brand-gold-dark via-brand-gold to-brand-gold-dark text-black text-center py-2 px-4 text-xs font-bold shadow-lg">
-                Estás en un período de prueba PRO. Finaliza en {daysRemaining} {daysRemaining > 1 ? 'días' : 'día'} o al calificar tus primeros {maxLeads - qualifiedLeads} leads.
+                Estás en un período de prueba PRO. Finaliza en {daysRemaining} {daysRemaining > 1 ? 'días' : 'día'} o al calificar tus primeros {10 - qualifiedLeads} leads.
             </div>
         );
     }
 
-    // Case 2: Trial Ended or Expired
-    if (user.plan_status === 'expired' || (user.plan_status === 'trial' && (daysRemaining <= 0 || qualifiedLeads >= maxLeads))) {
+    if (user.plan_status === 'expired' || (user.plan_status === 'trial' && (daysRemaining <= 0 || qualifiedLeads >= 10))) {
         if (!sessionStorage.getItem('trial_ended_alert_played')) {
             audioService.play('alert_warning_trial_ended');
             sessionStorage.setItem('trial_ended_alert_played', 'true');
         }
-        
-        // Use dynamic support number or fallback if not set yet.
-        const targetNumber = supportNumber || '5492612345678';
-        const message = encodeURIComponent(`Hola, mi prueba terminó (Usuario: ${user.username}). Quiero activar mi licencia PRO. Solcito datos de pago (CBU/Alias).`);
-        const waLink = `https://wa.me/${targetNumber}?text=${message}`;
-
-        const isSuccessLimit = qualifiedLeads >= maxLeads;
-        const bannerText = isSuccessLimit 
-            ? "¡Objetivo Cumplido! Has calificado tus primeros 3 leads. Tu prueba ha concluido por éxito. Activa tu licencia para escalar."
-            : "Tu período de prueba ha finalizado por tiempo. Activa tu licencia para restaurar las funcionalidades.";
-
         return (
-            <div className="bg-red-800 text-white text-center py-2 px-4 text-xs font-bold shadow-lg flex flex-col md:flex-row items-center justify-center gap-2 md:gap-4 animate-fade-in">
-                <span>{bannerText}</span>
-                <a 
-                    href={waLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="bg-white text-red-800 px-4 py-1.5 rounded-full font-black text-[10px] uppercase hover:scale-105 transition-transform flex items-center gap-2 shadow-sm"
-                >
-                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.017-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/></svg>
-                    Solicitar Licencia
-                </a>
+            <div className="bg-red-800 text-white text-center py-2 px-4 text-xs font-bold shadow-lg flex items-center justify-center gap-4">
+                <span>Tu período de prueba ha finalizado. Activa tu licencia para restaurar las funcionalidades.</span>
+                <button className="bg-white text-red-800 px-3 py-1 rounded font-bold text-[10px] uppercase">Contactar Soporte</button>
             </div>
         );
     }
@@ -109,227 +62,317 @@ const TrialBanner: React.FC<{ user: User | null, supportNumber: string | null }>
     return null;
 };
 
-const TestimonialsSection = ({ isLoggedIn, token, showToast }: { isLoggedIn: boolean, token: string | null, showToast: (message: string, type: 'success' | 'error' | 'info') => void }) => {
-    const [testimonials, setTestimonials] = useState<Testimonial[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [newTestimonial, setNewTestimonial] = useState("");
-    const [submitting, setSubmitting] = useState(false);
+// --- START: Landing Page Strategic Sections ---
+
+const TestimonialsSection = ({ isLoggedIn, token, showToast }: { isLoggedIn: boolean, token: string | null, showToast: (message: string, type: 'success' | 'error') => void }) => {
+    const [realTestimonials, setRealTestimonials] = useState<Testimonial[]>([]);
+    const [newTestimonialText, setNewTestimonialText] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     useEffect(() => {
-        const fetchTestimonials = async () => {
-            if (!BACKEND_URL) {
-                 // Fallback if no backend
-                 setTestimonials(PREDEFINED_TESTIMONIALS as any);
-                 setLoading(false);
-                 return;
-            }
+        const fetchRealTestimonials = async () => {
             try {
-                const res = await fetch(`${BACKEND_URL}/api/testimonials`);
-                if (res.ok) {
-                    const data = await res.json();
-                    setTestimonials(data.length > 0 ? data : PREDEFINED_TESTIMONIALS);
-                } else {
-                     setTestimonials(PREDEFINED_TESTIMONIALS as any);
+                if (!BACKEND_URL) {
+                    console.warn("BACKEND_URL no está configurada. No se pueden cargar las reseñas.");
+                    return;
                 }
-            } catch (error) {
-                setTestimonials(PREDEFINED_TESTIMONIALS as any);
-            } finally {
-                setLoading(false);
+                const res = await fetch(`${BACKEND_URL}/api/testimonials`, { headers: API_HEADERS });
+
+                if (!res.ok) {
+                    console.error(`Fallo al cargar reseñas: El servidor respondió con estado ${res.status}`);
+                    return;
+                }
+
+                const resClone = res.clone();
+                const bodyText = await resClone.text();
+
+                if (!bodyText) {
+                    setRealTestimonials([]);
+                    return;
+                }
+
+                const contentType = res.headers.get("content-type");
+                if (contentType && contentType.includes("application/json")) {
+                    const data = await res.json();
+                    setRealTestimonials(data);
+                } else {
+                    console.warn("Fallo al cargar reseñas: La respuesta no es un JSON válido, probablemente una página de advertencia de proxy.");
+                    setRealTestimonials([]);
+                }
+            } catch (e) { 
+                console.error("Fallo de red o de parseo al cargar reseñas:", e); 
+                setRealTestimonials([]);
             }
         };
-        fetchTestimonials();
+        fetchRealTestimonials();
     }, []);
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    // Simulación de "drip" eliminada: Ahora confiamos en los datos sembrados en la DB.
+    // Esto asegura persistencia real y evita problemas de caché local.
+
+    const allTestimonials = useMemo(() => {
+        // Simplemente devolver los testimonios reales (que ahora incluyen los sembrados por el servidor)
+        return [...realTestimonials].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    }, [realTestimonials]);
+
+    // Duplicar el array para el efecto de marquee infinito
+    const marqueeTestimonials = useMemo(() => {
+        if (allTestimonials.length === 0) return [];
+        // Si hay pocos testimonios, triplicarlos para asegurar que llenen el ancho y scrolleen bien
+        if (allTestimonials.length < 5) return [...allTestimonials, ...allTestimonials, ...allTestimonials];
+        return [...allTestimonials, ...allTestimonials];
+    }, [allTestimonials]);
+
+    const handleSubmitTestimonial = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!newTestimonial.trim() || !token) return;
-        setSubmitting(true);
+        if (!newTestimonialText.trim() || !token) return;
+
+        setIsSubmitting(true);
         try {
-             const res = await fetch(`${BACKEND_URL}/api/testimonials`, {
+            const res = await fetch(`${BACKEND_URL}/api/testimonials`, {
                 method: 'POST',
                 headers: getAuthHeaders(token),
-                body: JSON.stringify({ text: newTestimonial })
+                body: JSON.stringify({ text: newTestimonialText })
             });
+
             if (res.ok) {
-                const added = await res.json();
-                setTestimonials(prev => [added, ...prev]);
-                setNewTestimonial("");
-                showToast("Testimonio publicado. ¡Gracias!", 'success');
+                const newTestimonial = await res.json();
+                setRealTestimonials(prev => [newTestimonial, ...prev]);
+                setNewTestimonialText('');
+                showToast('¡Gracias por tu reseña!', 'success');
+                audioService.play('action_success_feedback');
             } else {
-                showToast("Error al publicar testimonio.", 'error');
+                showToast('Hubo un error al enviar tu reseña.', 'error');
             }
-        } catch (e) {
-             showToast("Error de conexión.", 'error');
+        } catch (error) {
+            showToast('Error de red al enviar la reseña.', 'error');
         } finally {
-            setSubmitting(false);
+            setIsSubmitting(false);
         }
+    };
+    
+    const renderTestimonialForm = () => {
+        if (!isLoggedIn) {
+            return (
+                 <div className="mt-20 text-center relative group">
+                    <input type="text" placeholder="Dejá tu reseña..." disabled className="w-full max-w-2xl mx-auto bg-brand-black border border-dashed border-white/20 rounded-2xl py-6 px-8 text-center text-gray-500 cursor-not-allowed" />
+                    <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 w-max opacity-0 group-hover:opacity-100 transition-opacity bg-brand-gold text-black text-xs font-bold px-4 py-2 rounded-lg shadow-lg">
+                        Inicia sesión para compartir tu experiencia
+                    </div>
+                </div>
+            );
+        }
+
+        return (
+            <form onSubmit={handleSubmitTestimonial} className="mt-20 max-w-2xl mx-auto animate-fade-in px-4">
+                <h3 className="text-center font-bold text-brand-gold mb-4 uppercase text-xs tracking-widest">Comparte tu experiencia</h3>
+                <div className="relative">
+                    <textarea value={newTestimonialText} onChange={(e) => setNewTestimonialText(e.target.value)} placeholder="Escribe tu reseña aquí..." className="w-full bg-brand-black border border-white/20 rounded-2xl py-4 px-6 text-white h-28 resize-none focus:border-brand-gold focus:ring-brand-gold/50 outline-none transition" maxLength={250} />
+                    <p className="absolute bottom-3 right-4 text-[10px] text-gray-500 font-mono">{newTestimonialText.length} / 250{'}'}</p>
+                </div>
+                <button type="submit" disabled={isSubmitting || !newTestimonialText.trim()} className="w-full mt-4 py-4 bg-brand-gold text-black rounded-xl font-black text-xs uppercase tracking-[0.2em] shadow-lg shadow-brand-gold/20 hover:scale-[1.02] transition-transform disabled:opacity-50 disabled:cursor-not-allowed">
+                    {isSubmitting ? 'Publicando...' : 'Publicar Reseña'}
+                </button>
+            </form>
+        );
     };
 
     return (
-        <section className="py-20 bg-black relative border-t border-white/5">
-             <div className="max-w-7xl mx-auto px-6">
-                <div className="text-center mb-16">
-                     <h2 className="text-3xl font-black text-white uppercase tracking-tighter mb-4">La Voz de la Red</h2>
-                     <p className="text-gray-400 text-sm max-w-2xl mx-auto">Lo que dicen quienes ya operan con Dominion.</p>
+        <section className="bg-brand-surface py-20 border-t border-white/5 overflow-hidden">
+            <div className="mx-auto max-w-7xl px-6 lg:px-8 mb-16">
+                <div className="mx-auto max-w-xl text-center">
+                    <h2 className="text-lg font-semibold leading-8 tracking-tight text-brand-gold uppercase">El Muro de la Verdad</h2>
+                    <p className="mt-2 text-3xl font-black tracking-tight text-white sm:text-4xl">Resultados Reales de Negocios Reales</p>
                 </div>
+            </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {testimonials.map((t, i) => (
-                        <div key={i} className="bg-white/5 border border-white/5 p-6 rounded-2xl relative">
-                             <div className="flex items-center gap-3 mb-4">
-                                <div className="w-10 h-10 rounded-full bg-brand-gold/20 flex items-center justify-center text-brand-gold font-bold text-lg">
-                                    {t.name.charAt(0)}
+            {/* PREMIUM INFINITE MARQUEE CAROUSEL */}
+            <div className="relative flex overflow-x-hidden group mask-gradient w-full">
+                {/* Mask overlay for smooth edges */}
+                <div className="absolute left-0 top-0 bottom-0 w-32 bg-gradient-to-r from-brand-surface to-transparent z-10 pointer-events-none"></div>
+                <div className="absolute right-0 top-0 bottom-0 w-32 bg-gradient-to-l from-brand-surface to-transparent z-10 pointer-events-none"></div>
+
+                <div className="animate-marquee flex gap-6 whitespace-nowrap py-4 hover:[animation-play-state:paused] items-stretch">
+                    {marqueeTestimonials.map((testimonial, idx) => (
+                        <div 
+                            key={`${testimonial._id}-${idx}`} 
+                            className="w-[350px] md:w-[400px] flex-shrink-0 p-8 bg-brand-black border border-white/10 rounded-3xl shadow-lg hover:shadow-brand-gold/10 transition-shadow duration-300 flex flex-col justify-between whitespace-normal"
+                        >
+                            <div>
+                                <div className="flex items-center gap-x-4 mb-6">
+                                    <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center text-brand-gold font-bold text-lg border border-white/10">
+                                        {testimonial.name.charAt(0)}
+                                    </div>
+                                    <div>
+                                        <div className="font-bold text-white text-sm">{testimonial.name}</div>
+                                        <div className="text-gray-500 text-[10px] uppercase tracking-wider">{testimonial.location}</div>
+                                    </div>
                                 </div>
-                                <div>
-                                    <h4 className="text-white font-bold text-sm">{t.name}</h4>
-                                    <p className="text-gray-500 text-xs">{t.location}</p>
+                                <div className="relative">
+                                    <p className="text-sm leading-6 text-gray-300 italic">“{testimonial.text}”</p>
                                 </div>
-                             </div>
-                             <p className="text-gray-300 text-sm italic">"{t.text}"</p>
+                            </div>
+                            <div className="flex items-center justify-between mt-6 pt-6 border-t border-white/5">
+                                <div className="flex text-brand-gold">
+                                    {[...Array(5)].map((_, i) => <svg key={i} className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>)}
+                                </div>
+                                <div className="text-[8px] font-black uppercase tracking-widest text-green-400 bg-green-500/10 px-2 py-1 rounded-full border border-green-500/20">Verificado</div>
+                            </div>
                         </div>
                     ))}
                 </div>
+            </div>
 
-                {isLoggedIn && (
-                    <div className="mt-16 max-w-xl mx-auto bg-brand-surface border border-brand-gold/20 p-8 rounded-3xl shadow-2xl">
-                        <h3 className="text-white font-bold text-lg mb-4 text-center uppercase tracking-widest">Deja tu huella en el sistema</h3>
-                        <form onSubmit={handleSubmit} className="space-y-4">
-                            <textarea 
-                                value={newTestimonial} 
-                                onChange={e => setNewTestimonial(e.target.value)}
-                                className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm focus:border-brand-gold outline-none resize-none h-32"
-                                placeholder="Comparte tu experiencia..."
-                                maxLength={250}
-                            />
-                            <button disabled={submitting || !newTestimonial.trim()} className="w-full py-3 bg-brand-gold text-black font-black uppercase tracking-widest rounded-xl hover:scale-[1.02] transition-transform disabled:opacity-50">
-                                {submitting ? 'Publicando...' : 'Publicar Testimonio'}
-                            </button>
-                        </form>
-                    </div>
-                )}
-             </div>
+            {renderTestimonialForm()}
         </section>
     );
 };
 
 const FaqSection = () => {
+    const [openFaq, setOpenFaq] = useState<number | null>(0);
     const faqs = [
-        { q: "¿Necesito saber programar?", a: "No. Dominion está diseñado para dueños de negocio. Se configura en 3 pasos simples." },
-        { q: "¿Es seguro conectar mi WhatsApp?", a: "Utilizamos un sistema de aislamiento de sesiones. Tu conexión es privada y encriptada." },
-        { q: "¿Qué pasa si supero la capa gratuita de Gemini?", a: "Dominion sigue funcionando, pero Google podría facturarte el excedente. La capa gratuita es muy generosa para uso normal." },
-        { q: "¿Puedo cancelar cuando quiera?", a: "Sí. No hay contratos forzosos. Eres dueño de tu nodo." }
+        { q: "¿En qué se diferencia de otros bots de WhatsApp?", a: "Dominion no es un bot de flujos; es una infraestructura de calificación. Usamos IA avanzada (Google Gemini) para entender la intención real de compra, no solo para seguir un script predefinido." },
+        { q: "¿Es seguro para mi número? ¿Hay riesgo de bloqueo?", a: "Nuestra arquitectura está diseñada para mitigar activamente los riesgos emulando un comportamiento humano y profesional. No permitimos envíos masivos (spam), que es la principal causa de bloqueo. Si bien ningún sistema no oficial puede eliminar el riesgo al 100%, Dominion está construido para un uso seguro en ventas consultivas." },
+        { q: "¿Necesito conocimientos técnicos para usarlo?", a: "No. La configuración inicial es un proceso guiado paso a paso. Una vez que el 'Cerebro Neural' está configurado y el nodo está conectado, el sistema funciona de forma 100% autónoma." },
+        { q: "¿Qué significa 'BYOK' (Bring Your Own Key)?", a: "Significa que tú tienes el control total. Conectas tu propia clave de la API de Google Gemini, lo que asegura que tus datos, tus conversaciones y tus costos de IA son tuyos y de nadie más. Soberanía total." },
+        { q: "¿Qué pasa cuando mi plan expira?", a: "Tu bot no se apaga. Para evitar que pierdas leads, el sistema revierte a las funcionalidades básicas de respuesta (Plan Starter), dándote tiempo para renovar sin interrumpir el servicio." }
     ];
 
+    const toggleFaq = (index: number) => {
+        setOpenFaq(prev => (prev === index ? null : index));
+    };
+
     return (
-        <section className="py-20 bg-brand-black border-t border-white/5">
-             <div className="max-w-4xl mx-auto px-6">
-                <h2 className="text-3xl font-black text-white uppercase tracking-tighter mb-12 text-center">Preguntas Frecuentes</h2>
-                <div className="space-y-4">
-                    {faqs.map((faq, i) => (
-                        <div key={i} className="bg-white/5 rounded-xl p-6 border border-white/5 hover:border-brand-gold/30 transition-colors">
-                            <h3 className="text-white font-bold text-sm uppercase tracking-widest mb-2">{faq.q}</h3>
-                            <p className="text-gray-400 text-sm">{faq.a}</p>
+        <section className="bg-brand-black py-20 sm:py-32">
+            <div className="mx-auto max-w-4xl px-6 lg:px-8">
+                <div className="mx-auto max-w-2xl text-center">
+                     <h2 className="text-base font-semibold leading-7 text-brand-gold uppercase tracking-widest">Protocolo de Claridad</h2>
+                     <p className="mt-2 text-3xl font-black tracking-tight text-white sm:text-4xl">Respuestas a Preguntas Estratégicas</p>
+                </div>
+                <div className="mt-16 space-y-4">
+                    {faqs.map((faq, index) => (
+                        <div key={index} className="border border-white/10 rounded-2xl bg-brand-surface overflow-hidden transition-all duration-300">
+                            <button onClick={() => toggleFaq(index)} className="w-full flex justify-between items-center text-left p-6">
+                                <span className={`text-base font-semibold ${openFaq === index ? 'text-brand-gold' : 'text-white'}`}>{faq.q}</span>
+                                <svg className={`w-6 h-6 flex-shrink-0 transition-transform duration-300 ${openFaq === index ? 'rotate-45 text-brand-gold' : 'text-gray-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
+                            </button>
+                            <div className={`transition-all duration-500 ease-in-out ${openFaq === index ? 'max-h-96' : 'max-h-0'}`}>
+                                <div className="px-6 pb-6 text-gray-300 text-sm leading-relaxed">
+                                    {faq.a}
+                                </div>
+                            </div>
                         </div>
                     ))}
                 </div>
-             </div>
+            </div>
         </section>
     );
 };
 
-const LandingPage = ({ onAuth, onRegister, visibleMessages, isSimTyping, simScrollRef, onOpenLegal, isServerReady, isLoggedIn, token, showToast }: any) => {
+function LandingPage({ onAuth, onRegister, visibleMessages, isSimTyping, simScrollRef, onOpenLegal, isServerReady, isLoggedIn, token, showToast }: any) {
     return (
-        <div className="flex-1 flex flex-col font-sans">
-             {/* HERO SECTION */}
-             <section className="relative pt-20 pb-32 lg:pt-32 lg:pb-40 overflow-hidden">
-                <div className="absolute inset-0 bg-brand-black">
-                     <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[500px] bg-brand-gold opacity-10 blur-[120px] rounded-full pointer-events-none"></div>
-                </div>
-
-                <div className="relative z-10 max-w-7xl mx-auto px-6 grid lg:grid-cols-2 gap-16 items-center">
-                    <div className="space-y-8 text-center lg:text-left">
-                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-gold/10 border border-brand-gold/20 text-brand-gold text-[10px] font-black uppercase tracking-widest animate-fade-in">
-                            <span className="w-2 h-2 rounded-full bg-brand-gold animate-pulse"></span>
-                            Sistema Online v2.7
+        <div className="relative flex-1 bg-brand-black flex flex-col font-sans">
+            <div className="absolute inset-0 neural-grid opacity-40 z-0 pointer-events-none"></div>
+            
+            {/* HERO SECTION - INTOCABLE */}
+            <section className="relative z-10 flex flex-col items-center justify-center p-6 md:p-12 pt-24 pb-32">
+                <div className="max-w-7xl w-full grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-24 items-center">
+                    <div className="space-y-10 text-center lg:text-left">
+                        <div className={`inline-flex items-center gap-3 px-4 py-1.5 border rounded-full text-[11px] font-black uppercase tracking-[0.3em] backdrop-blur-xl transition-all ${isServerReady ? 'border-green-500/30 bg-green-500/10 text-green-400 shadow-[0_0_20px_rgba(34,197,94,0.2)]' : 'border-red-500/30 bg-red-500/10 text-red-400'}`}>
+                            <span className={`w-2 h-2 rounded-full ${isServerReady ? 'bg-green-500 animate-pulse' : 'bg-red-500 animate-pulse'}`}></span>
+                            {isServerReady ? 'SISTEMA ONLINE' : 'CONECTANDO NODO...'}
                         </div>
-                        <h1 className="text-5xl lg:text-7xl font-black text-white tracking-tighter leading-[0.9]">
-                            Automatiza <br/>
-                            <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-gold via-brand-gold-light to-brand-gold">Tu Cierre</span>
+                        
+                        <h1 className="text-6xl md:text-8xl lg:text-[90px] font-black text-white leading-tight tracking-normal py-2">
+                            Vender en <br />
+                            <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-gold via-brand-gold-light to-brand-gold-dark">Piloto Automático</span>
                         </h1>
-                        <p className="text-gray-400 text-lg max-w-xl mx-auto lg:mx-0 leading-relaxed">
-                            Infraestructura de inteligencia artificial para WhatsApp. 
-                            Filtra curiosos, califica leads y agenda citas en piloto automático.
-                            Sin flujos complejos. Sin código.
+                        <p className="text-xl md:text-2xl text-gray-400 leading-relaxed border-l-4 border-brand-gold/40 pl-8 mx-auto lg:mx-0 max-w-2xl font-medium">
+                           Dominion es la herramienta de IA que responde y califica a tus clientes en WhatsApp 24/7, para que vos o tu equipo solo se dedique a cerrar las ventas que importan.
                         </p>
                         
-                        <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
-                             <button onClick={onRegister} className="px-8 py-4 bg-brand-gold text-black rounded-xl font-black text-sm uppercase tracking-widest hover:scale-105 transition-transform shadow-[0_0_30px_rgba(212,175,55,0.3)]">
-                                Iniciar Ahora
-                             </button>
-                             <button onClick={onAuth} className="px-8 py-4 bg-white/5 text-white border border-white/10 rounded-xl font-black text-sm uppercase tracking-widest hover:bg-white/10 transition-colors">
-                                Acceso Clientes
-                             </button>
+                        <div className="flex flex-col sm:flex-row gap-6 justify-center lg:justify-start pt-6">
+                            <button onClick={onRegister} className="px-12 py-6 bg-brand-gold text-black rounded-2xl font-black text-sm uppercase tracking-[0.2em] shadow-[0_15px_50px_rgba(212,175,55,0.4)] hover:scale-105 active:scale-95 transition-all">Solicitar Acceso</button>
+                            <button onClick={onAuth} className="px-12 py-6 bg-white/5 border border-white/10 text-white rounded-2xl font-black text-sm uppercase tracking-[0.2em] hover:bg-white/10 transition-all">Iniciar Sesión</button>
                         </div>
                     </div>
 
-                    {/* SIMULATOR PREVIEW */}
-                    <div className="relative mx-auto w-full max-w-[400px]">
-                        <div className="absolute -inset-1 bg-gradient-to-br from-brand-gold/50 to-transparent rounded-[34px] blur opacity-30"></div>
-                        <div className="relative bg-brand-surface border border-white/10 rounded-[32px] overflow-hidden shadow-2xl h-[500px] flex flex-col">
-                            <div className="p-4 border-b border-white/10 bg-black/40 flex items-center gap-3">
-                                <div className="w-8 h-8 rounded-full bg-brand-gold flex items-center justify-center font-bold text-black text-xs">D</div>
-                                <div>
-                                    <h3 className="text-xs font-bold text-white">Dominion Bot</h3>
-                                    <p className="text-[9px] text-green-400 font-mono">En línea</p>
+                    <div className="relative w-full mt-12 lg:mt-0">
+                         <div className="absolute inset-0 bg-brand-gold blur-[150px] opacity-10 rounded-full animate-pulse"></div>
+                         <div className="relative bg-[#0a0a0a] border border-white/10 rounded-[40px] shadow-[0_60px_120px_rgba(0,0,0,0.9)] overflow-hidden h-[550px] md:h-[650px] flex flex-col border-t-white/20">
+                            <div className="px-8 py-5 border-b border-white/5 bg-black/80 flex items-center justify-between">
+                                <div className="flex gap-2">
+                                    <div className="w-3 h-3 rounded-full bg-red-500/30"></div>
+                                    <div className="w-3 h-3 rounded-full bg-yellow-500/30"></div>
+                                    <div className="w-3 h-3 rounded-full bg-green-500/30"></div>
+                                </div>
+                                <div className="px-4 py-1.5 bg-brand-gold/10 rounded-full text-[10px] text-brand-gold font-black uppercase tracking-[0.2em] border border-brand-gold/20">
+                                    Signal Pipeline v2.7.6
                                 </div>
                             </div>
-                            <div ref={simScrollRef} className="flex-1 p-4 space-y-4 overflow-y-auto custom-scrollbar bg-black/20">
-                                {visibleMessages.map((m: any) => (
-                                    <div key={m.id} className={`flex flex-col max-w-[85%] ${m.type === 'user' ? 'self-start' : 'self-end items-end'}`}>
-                                         <div className={`p-3 rounded-2xl text-xs leading-relaxed ${m.type === 'user' ? 'bg-white/10 text-gray-200 rounded-bl-none' : 'bg-brand-gold text-black font-bold rounded-br-none'}`}>
-                                            {m.text}
-                                         </div>
-                                         {m.type === 'bot' && (
-                                            <span className={`text-[8px] font-black uppercase mt-1 px-1.5 py-0.5 rounded ${m.statusLabel.includes('CALIENTE') ? 'bg-red-500 text-white' : 'bg-gray-700 text-gray-300'}`}>
-                                                {m.statusLabel}
-                                            </span>
-                                         )}
+                            <div ref={simScrollRef} className="flex-1 p-8 md:p-10 space-y-8 overflow-y-auto scroll-smooth custom-scrollbar bg-[#080808]">
+                                {visibleMessages.map((msg: any, idx: number) => (
+                                    <div key={idx} className={`flex flex-col max-w-[85%] ${msg.type === 'user' ? 'self-start items-start' : 'self-end items-end ml-auto'} animate-fade-in`}>
+                                        <div className={`p-5 md:p-6 rounded-[28px] text-[13px] md:text-[14px] leading-relaxed shadow-2xl whitespace-pre-wrap ${msg.type === 'user' ? 'bg-white/10 text-gray-200 rounded-bl-none border border-white/5' : 'bg-gradient-to-br from-brand-gold to-brand-gold-dark text-black font-bold rounded-br-none shadow-[0_10px_30px_rgba(212,175,55,0.2)]'}`}>{msg.text}</div>
+                                        {msg.statusLabel && (
+                                            <span className={`mt-3 text-[10px] font-black uppercase px-4 py-1.5 rounded-full border tracking-widest ${
+                                                msg.statusLabel.includes('CALIENTE') || msg.statusLabel.includes('CERRADA') 
+                                                ? 'text-red-400 border-red-500/30 bg-red-500/10 shadow-[0_0_15px_rgba(239,68,68,0.2)]' 
+                                                : (msg.statusLabel.includes('TIBIO') ? 'text-yellow-400 border-yellow-500/30 bg-yellow-500/10' : 'text-blue-400 border-blue-500/30 bg-blue-500/10')
+                                            }`}>{msg.statusLabel}</span>
+                                        )}
                                     </div>
                                 ))}
                                 {isSimTyping && (
-                                    <div className="self-end bg-brand-gold/20 p-2 rounded-xl rounded-br-none">
-                                        <div className="flex gap-1">
-                                            <div className="w-1 h-1 bg-brand-gold rounded-full animate-bounce"></div>
-                                            <div className="w-1 h-1 bg-brand-gold rounded-full animate-bounce delay-75"></div>
-                                            <div className="w-1 h-1 bg-brand-gold rounded-full animate-bounce delay-150"></div>
+                                    <div className="self-end animate-fade-in ml-auto">
+                                        <div className="bg-brand-gold/20 p-5 rounded-[28px] rounded-br-none w-24 flex items-center justify-center gap-2 border border-brand-gold/30 shadow-lg">
+                                            <div className="w-2 h-2 bg-brand-gold rounded-full animate-bounce"></div>
+                                            <div className="w-2 h-2 bg-brand-gold rounded-full animate-bounce [animation-delay:0.2s]"></div>
+                                            <div className="w-2 h-2 bg-brand-gold rounded-full animate-bounce [animation-delay:0.4s]"></div>
                                         </div>
                                     </div>
                                 )}
                             </div>
-                        </div>
+                         </div>
                     </div>
                 </div>
-             </section>
+            </section>
+            
+            <HowItWorksArt />
+            <HowItWorksSection />
+            <TestimonialsSection isLoggedIn={isLoggedIn} token={token} showToast={showToast} />
+            <FaqSection />
 
-             <HowItWorksArt />
-             <HowItWorksSection />
-             <TestimonialsSection isLoggedIn={isLoggedIn} token={token} showToast={showToast} />
-             <FaqSection />
-
-             {/* FOOTER */}
-             <footer className="py-12 bg-black border-t border-white/5 text-center">
-                <div className="flex justify-center gap-6 mb-8">
-                    <button onClick={() => onOpenLegal('terms')} className="text-xs text-gray-500 hover:text-brand-gold uppercase tracking-widest font-bold">Términos</button>
-                    <button onClick={() => onOpenLegal('privacy')} className="text-xs text-gray-500 hover:text-brand-gold uppercase tracking-widest font-bold">Privacidad</button>
-                    <button onClick={() => onOpenLegal('manifesto')} className="text-xs text-gray-500 hover:text-brand-gold uppercase tracking-widest font-bold">Manifiesto</button>
+            <footer className="relative z-10 w-full border-t border-white/5 bg-brand-black/95 backdrop-blur-2xl px-12 py-8 flex flex-col md:flex-row justify-between items-center gap-12">
+                <div className="text-center md:text-left space-y-4">
+                    <div className="flex flex-col md:flex-row items-center gap-4">
+                        <p className="text-white font-black text-lg tracking-tight flex items-center justify-center md:justify-start gap-2">
+                            Powered By <a href="https://websoin.netlify.app" target="_blank" rel="noopener noreferrer" className="text-brand-gold hover:text-brand-gold-light transition-colors">SO-&gt;IN</a>
+                        </p>
+                        <div className="flex items-center gap-4 border-l border-white/10 pl-4">
+                            <a href="#" className="text-gray-500 hover:text-brand-gold transition-colors">
+                                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+                            </a>
+                            <a href="#" className="text-gray-500 hover:text-brand-gold transition-colors">
+                                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>
+                            </a>
+                        </div>
+                    </div>
+                    <p className="text-gray-600 text-[10px] font-black uppercase tracking-[0.3em]">Neural Infrastructure Division • Mendoza, ARG</p>
                 </div>
-                <p className="text-[10px] text-gray-700 uppercase tracking-[0.3em] font-black">
-                    Dominion Infrastructure © 2024
-                </p>
-             </footer>
+                <div className="flex flex-col items-center md:items-end gap-6">
+                    <div className="flex gap-8 text-[10px] font-black text-gray-500 uppercase tracking-widest">
+                        <button onClick={() => onOpenLegal('privacy')} className="hover:text-brand-gold transition-colors">Privacidad</button>
+                        <button onClick={() => onOpenLegal('terms')} className="hover:text-brand-gold transition-colors">Términos</button>
+                        <button onClick={() => onOpenLegal('manifesto')} className="hover:text-brand-gold transition-colors">Manifiesto</button>
+                    </div>
+                </div>
+            </footer>
         </div>
     );
-};
+}
+
+// --- END: Landing Page Strategic Sections ---
 
 export default function App() {
   const [token, setToken] = useState<string | null>(localStorage.getItem('saas_token'));
@@ -344,7 +387,6 @@ export default function App() {
   const [showLanding, setShowLanding] = useState(false);
   const [isBotGloballyActive, setIsBotGloballyActive] = useState(true);
   const [auditTarget, setAuditTarget] = useState<User | null>(null);
-  const [supportNumber, setSupportNumber] = useState<string | null>(null);
   
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
@@ -352,16 +394,14 @@ export default function App() {
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(ConnectionStatus.DISCONNECTED);
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [pairingCode, setPairingCode] = useState<string | null>(null);
-  const [backendError, setBackendError] = useState<string | null>(null); 
+  const [backendError, setBackendError] = useState<string | null>(null); // Keep for general backend errors
   const [isTyping, setIsTyping] = useState(false);
   const [isLoadingSettings, setIsLoadingSettings] = useState(false);
   const [toast, setToast] = useState<ToastData | null>(null);
-  const [isRequestingHistory, setIsRequestingHistory] = useState(false); 
 
   // Polling interval refs
   const statusPollingIntervalRef = useRef<number | null>(null);
   const convoPollingIntervalRef = useRef<number | null>(null);
-  const lastErrorSoundTime = useRef<number>(0);
 
   // Simulación de Landing
   const [visibleMessages, setVisibleMessages] = useState<any[]>([]);
@@ -370,12 +410,11 @@ export default function App() {
   
   // Efecto para inicializar el AudioContext y reproducir el sonido de intro en la primera interacción.
   useEffect(() => {
-      console.log(`%c [APP.TSX] BACKEND_URL al montar App: ${BACKEND_URL}`, 'background: #3498db; color: white; font-weight: bold;');
-
       const initAudioAndPlayIntro = () => {
           console.log("[AudioService] User interaction detected, initializing AudioContext.");
           audioService.initContext();
           
+          // Si estamos en la landing page, reproducir el sonido de intro en la primera interacción.
           const isLanding = !localStorage.getItem('saas_token');
           if (isLanding && !sessionStorage.getItem('landing_intro_played')) {
               audioService.play('landing_intro');
@@ -383,6 +422,7 @@ export default function App() {
           }
       };
       
+      // Estos listeners se activan una vez en la primera interacción y luego se eliminan.
       document.addEventListener('click', initAudioAndPlayIntro, { once: true, capture: true });
       document.addEventListener('keydown', initAudioAndPlayIntro, { once: true, capture: true });
       document.addEventListener('touchstart', initAudioAndPlayIntro, { once: true, capture: true });
@@ -392,9 +432,9 @@ export default function App() {
           document.removeEventListener('keydown', initAudioAndPlayIntro, true);
           document.removeEventListener('touchstart', initAudioAndPlayIntro, true);
       };
-  }, []); 
+  }, []); // El array vacío asegura que este efecto se ejecute solo una vez.
 
-  const showToast = (message: string, type: 'success' | 'error' | 'info') => {
+  const showToast = (message: string, type: 'success' | 'error') => {
     if (type === 'error') audioService.play('alert_error_generic');
     setToast({ message, type });
   };
@@ -420,6 +460,7 @@ export default function App() {
       setCurrentView(View.CHATS);
       setAuditTarget(null);
       
+      // Clear polling intervals on logout
       if (statusPollingIntervalRef.current) {
           clearInterval(statusPollingIntervalRef.current);
           statusPollingIntervalRef.current = null;
@@ -428,7 +469,7 @@ export default function App() {
           clearInterval(convoPollingIntervalRef.current);
           convoPollingIntervalRef.current = null;
       }
-      setBackendError(null); 
+      setBackendError(null); // Clear any backend error
   };
 
   useEffect(() => {
@@ -437,103 +478,91 @@ export default function App() {
     }
   }, [currentView, userRole]);
 
-  const triggerErrorAlert = useCallback((message: string, details?: string) => {
-      const now = Date.now();
-      if (now - lastErrorSoundTime.current > 45000) {
-          audioService.play('alert_error_connection');
-          lastErrorSoundTime.current = now;
-      }
-      setBackendError(`${message} ${details ? `(${details})` : ''}`);
-  }, []);
-
-  const fetchStatus = useCallback(async () => {
-      if (!BACKEND_URL) {
-          setBackendError("ERROR CRÍTICO: La URL del backend no está configurada.");
-          return;
-      }
-      if (!token || userRole === 'super_admin') {
-          setConnectionStatus(ConnectionStatus.DISCONNECTED);
-          setQrCode(null);
-          setPairingCode(null);
-          setBackendError(null);
-          return;
-      }
-      try {
-          const res = await fetch(`${BACKEND_URL}/api/status`, { headers: getAuthHeaders(token) });
-          if (res.ok) {
-              const statusData = await res.json();
-              setConnectionStatus(statusData.status);
-              setQrCode(statusData.qr || null);
-              setPairingCode(statusData.pairingCode || null);
-              if (backendError) setBackendError(null);
-          } else {
-              const errorText = await res.text();
-              triggerErrorAlert(`Fallo al obtener estado del nodo (${res.status}).`, errorText.substring(0, 50));
-          }
-      } catch (e: any) {
-          if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
-              triggerErrorAlert("Error de red. Verifique conexión y backend.");
-          } else {
-              triggerErrorAlert("Fallo de conexión con el nodo central.");
-          }
-      }
-  }, [token, userRole, backendError, triggerErrorAlert]); 
-
-  const fetchConversations = useCallback(async () => {
-      if (!BACKEND_URL) return;
-      if (!token || userRole === 'super_admin') {
-          setConversations([]);
-          return;
-      }
-      try {
-          const res = await fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) });
-          if (res.ok) {
-              const latestConversations = await res.json();
-              setConversations(latestConversations.sort((a: Conversation, b: Conversation) => {
-                  const dateA = new Date(a.lastActivity || a.firstMessageAt || 0);
-                  const dateB = new Date(b.lastActivity || b.firstMessageAt || 0);
-                  return dateB.getTime() - dateA.getTime();
-              }));
-              if (backendError) setBackendError(null);
-          } else {
-              const errorText = await res.text();
-              triggerErrorAlert(`Fallo al obtener conversaciones (${res.status}).`, errorText.substring(0, 50));
-          }
-      } catch (e: any) {
-          if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
-              triggerErrorAlert("Error de red al obtener conversaciones.");
-          } else {
-              triggerErrorAlert("Fallo de conexión al obtener conversaciones.");
-          }
-      }
-  }, [token, userRole, backendError, triggerErrorAlert]); 
-
+  // Polling for connection status and conversations
   useEffect(() => {
-    if (!BACKEND_URL) return;
     if (!token || userRole === 'super_admin') {
+        setCurrentUser(null);
         if (statusPollingIntervalRef.current) clearInterval(statusPollingIntervalRef.current);
         if (convoPollingIntervalRef.current) clearInterval(convoPollingIntervalRef.current);
         statusPollingIntervalRef.current = null;
         convoPollingIntervalRef.current = null;
+        setBackendError(null); // Clear any backend error
         return;
     }
 
+    const fetchStatus = async () => {
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/status`, { headers: getAuthHeaders(token) });
+            if (res.ok) {
+                const statusData = await res.json();
+                setConnectionStatus(statusData.status);
+                setQrCode(statusData.qr || null);
+                setPairingCode(statusData.pairingCode || null);
+                // Clear backend error if status fetch is successful
+                if (backendError) setBackendError(null);
+            } else {
+                const errorText = await res.text();
+                const msg = `Fallo al obtener estado del nodo (${res.status}). Posiblemente el backend está inactivo.`;
+                setBackendError(`Alerta: ${msg}. Detalles: ${errorText.substring(0, 100)}`);
+                audioService.play('alert_error_connection');
+            }
+        } catch (e: any) {
+            if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
+                setBackendError("Alerta: Error de red al obtener estado. Verifique su conexión y que el servidor backend esté activo y accesible (Ej: Ngrok funcionando).");
+            } else {
+                setBackendError("Alerta: Fallo de conexión con el nodo central al obtener estado.");
+            }
+            audioService.play('alert_error_connection');
+        }
+    };
+
+    const fetchConversations = async () => {
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) });
+            if (res.ok) {
+                const latestConversations = await res.json();
+                setConversations(latestConversations.sort((a: Conversation, b: Conversation) => {
+                    const dateA = new Date(a.lastActivity || a.firstMessageAt || 0);
+                    const dateB = new Date(b.lastActivity || b.firstMessageAt || 0);
+                    return dateB.getTime() - dateA.getTime();
+                }));
+                // Clear backend error if conversation fetch is successful
+                if (backendError) setBackendError(null);
+            } else {
+                const errorText = await res.text();
+                const msg = `Fallo al obtener conversaciones (${res.status}).`;
+                setBackendError(`Alerta: ${msg}. Detalles: ${errorText.substring(0, 100)}`);
+                audioService.play('alert_error_connection');
+            }
+        } catch (e: any) {
+            if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
+                setBackendError("Alerta: Error de red al obtener conversaciones. Verifique su conexión y que el servidor backend esté activo y accesible (Ej: Ngrok funcionando).");
+            } else {
+                setBackendError("Alerta: Fallo de conexión con el nodo central al obtener conversaciones.");
+            }
+            audioService.play('alert_error_connection');
+        }
+    };
+
+    // Fetch immediately on mount/token change
     fetchStatus();
     fetchConversations();
 
-    statusPollingIntervalRef.current = window.setInterval(fetchStatus, 5000); 
-    convoPollingIntervalRef.current = window.setInterval(fetchConversations, 3000); 
+    // Set up polling intervals
+    statusPollingIntervalRef.current = window.setInterval(fetchStatus, 5000); // Poll status every 5 seconds
+    convoPollingIntervalRef.current = window.setInterval(fetchConversations, 3000); // Poll conversations every 3 seconds
 
     return () => {
         if (statusPollingIntervalRef.current) clearInterval(statusPollingIntervalRef.current);
         if (convoPollingIntervalRef.current) clearInterval(convoPollingIntervalRef.current);
         statusPollingIntervalRef.current = null;
         convoPollingIntervalRef.current = null;
+        setBackendError(null); // Clear error on cleanup
     };
-  }, [token, userRole, fetchStatus, fetchConversations]);
+  }, [token, userRole]); // Dependencies: token and userRole
 
+  // Initial user data load (now integrated with polling logic for status/conversations)
   useEffect(() => {
-    if (!BACKEND_URL) return;
     if (!token) {
         setCurrentUser(null);
         return;
@@ -542,10 +571,10 @@ export default function App() {
     const loadInitialUserData = async () => {
         setIsLoadingSettings(true);
         try {
-            const [userRes, sRes, settingsRes] = await Promise.all([
+            // Fetch initial user and settings data once
+            const [userRes, sRes] = await Promise.all([
                 fetch(`${BACKEND_URL}/api/user/me`, { headers: getAuthHeaders(token) }),
-                fetch(`${BACKEND_URL}/api/settings`, { headers: getAuthHeaders(token) }),
-                fetch(`${BACKEND_URL}/api/system/settings`, { headers: getAuthHeaders(token) }) 
+                fetch(`${BACKEND_URL}/api/settings`, { headers: getAuthHeaders(token) })
             ]);
             
             if ([userRes, sRes].some(res => res.status === 403)) {
@@ -555,26 +584,23 @@ export default function App() {
 
             if (userRes.ok) setCurrentUser(await userRes.json());
             if (sRes.ok) setSettings(await sRes.json());
-            if (settingsRes.ok) {
-                const sysSettings = await settingsRes.json();
-                setSupportNumber(sysSettings.supportWhatsappNumber);
-            }
 
             if (backendError) setBackendError(null);
         } catch (e: any) {
             console.error("DATA ERROR:", e);
             if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
-                triggerErrorAlert("Error de red al cargar datos iniciales.");
+                setBackendError("Alerta: Error de red al cargar datos iniciales. Verifique su conexión a internet y que el servidor backend esté activo y accesible (Ej: Ngrok funcionando).");
             } else {
-                triggerErrorAlert("Fallo de conexión al cargar datos.");
+                setBackendError("Alerta: Fallo de conexión con el nodo central al cargar datos iniciales.");
             }
+            audioService.play('alert_error_connection');
         } finally {
             setIsLoadingSettings(false);
         }
     };
     loadInitialUserData();
     
-  }, [token, triggerErrorAlert]); 
+  }, [token]); // Only depends on token, polling handles continuous updates
   
   useEffect(() => {
     if (token) return; 
@@ -614,45 +640,31 @@ export default function App() {
   };
 
   const handleConnect = async (phoneNumber?: string) => {
-      if (!BACKEND_URL) {
-          setBackendError("ERROR CRÍTICO: Backend no configurado.");
-          return { ok: false, error: "Backend URL not configured." };
-      }
-      if (!token) return { ok: false, error: "No authentication token." };
+      if (!token) return;
       setQrCode(null);
       setPairingCode(null);
-      setConnectionStatus(ConnectionStatus.GENERATING_QR); 
+      setConnectionStatus(ConnectionStatus.GENERATING_QR); // Set status immediately
       
       try {
-          const res = await fetch(`${BACKEND_URL}/api/connect`, {
+          await fetch(`${BACKEND_URL}/api/connect`, {
               method: 'POST',
               headers: getAuthHeaders(token),
               body: JSON.stringify({ phoneNumber }) 
           });
-          if (res.ok) {
-              await fetchStatus(); 
-              return { ok: true };
-          } else {
-              setConnectionStatus(ConnectionStatus.DISCONNECTED); 
-              audioService.play('alert_error_connection');
-              const errorText = await res.text();
-              setBackendError(`Fallo al iniciar conexión (${res.status}). ${errorText.substring(0, 50)}`);
-              return { ok: false, error: `Failed to initiate connection: ${res.status}` };
-          }
+          // Polling will update connectionStatus from here
       } catch (e: any) { 
           if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
-              setBackendError("Alerta: Error de red al iniciar conexión.");
+              setBackendError("Alerta: Error de red al iniciar conexión. Verifique su conexión a internet y que el servidor backend esté activo y accesible (Ej: Ngrok funcionando).");
           } else {
               setBackendError("Fallo al iniciar conexión.");
           }
           audioService.play('alert_error_connection');
-          setConnectionStatus(ConnectionStatus.DISCONNECTED); 
-          return { ok: false, error: e.message };
+          setConnectionStatus(ConnectionStatus.DISCONNECTED); // Revert status on error
       }
   };
 
   const handleSendMessage = async (text: string) => {
-      if (!BACKEND_URL || !selectedConversationId || !token) return;
+      if (!selectedConversationId || !token) return;
       try {
           await fetch(`${BACKEND_URL}/api/send`, {
               method: 'POST',
@@ -663,7 +675,7 @@ export default function App() {
   };
 
   const handleUpdateSettings = async (newSettings: BotSettings) => {
-      if (!BACKEND_URL || !token) return;
+      if (!token) return;
       try {
           const res = await fetch(`${BACKEND_URL}/api/settings`, {
               method: 'POST',
@@ -679,73 +691,13 @@ export default function App() {
           }
       } catch (e: any) { 
           console.error(e); 
+          if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
+              setBackendError("Alerta: Error de red al actualizar configuración. Verifique su conexión a internet y que el servidor backend esté activo y accesible (Ej: Ngrok funcionando).");
+          } else {
+              setBackendError("Alerta: Fallo de conexión con el nodo central al actualizar configuración.");
+          }
           audioService.play('alert_error_connection');
       }
-  };
-  
-  // NEW: Toggle Bot Handler with Optimistic Update
-  const handleToggleBot = async (id: string) => {
-      if (!token) return;
-      
-      // 1. Optimistic Update (Immediate Feedback)
-      setConversations(prev => prev.map(c => 
-          c.id === id ? { ...c, isBotActive: !c.isBotActive } : c
-      ));
-
-      // 2. Network Request
-      try {
-          // Calculate the target state based on the updated state
-          const targetConversation = conversations.find(c => c.id === id);
-          const newBotState = !targetConversation?.isBotActive; // Toggle it
-
-          await fetch(`${BACKEND_URL}/api/conversation/update`, {
-              method: 'POST',
-              headers: getAuthHeaders(token),
-              body: JSON.stringify({ id, updates: { isBotActive: newBotState } })
-          });
-      } catch (error) {
-          console.error("Error toggling bot:", error);
-          showToast('Error al cambiar el estado del bot. Reintentando...', 'error');
-          // State will eventually be consistent via polling
-      }
-  };
-
-  const handleRequestHistory = async () => {
-    if (!BACKEND_URL) return;
-    if (!token || isRequestingHistory) return;
-
-    setIsRequestingHistory(true);
-    showToast('Solicitando historial de mensajes. Esto reiniciará su conexión temporalmente.', 'info'); 
-    audioService.play('connection_establishing'); 
-
-    try {
-        console.log("[handleRequestHistory] Disconnecting existing session...");
-        await fetch(`${BACKEND_URL}/api/disconnect`, { headers: getAuthHeaders(token!) });
-        setConnectionStatus(ConnectionStatus.RESETTING);
-        setQrCode(null);
-        setPairingCode(null);
-        await new Promise(resolve => setTimeout(resolve, 3000)); 
-
-        console.log("[handleRequestHistory] Reconnecting to trigger full history sync...");
-        const connectResult = await handleConnect(); 
-
-        if (connectResult.ok) {
-            showToast('Conexión restablecida. Sincronizando historial...', 'info');
-            await new Promise(resolve => setTimeout(resolve, 8000)); 
-            await fetchConversations();
-            showToast('Historial solicitado y conexión restablecida.', 'success');
-            audioService.play('action_success');
-        } else {
-            showToast('Error al restablecer la conexión. Intente de nuevo.', 'error');
-            audioService.play('alert_error_generic');
-        }
-
-    } catch (e: any) {
-        showToast('Error al solicitar historial. Intente nuevamente.', 'error');
-        audioService.play('alert_error_generic');
-    } finally {
-        setIsRequestingHistory(false);
-    }
   };
 
   const selectedConversation = conversations.find(c => c.id === selectedConversationId) || null;
@@ -756,85 +708,63 @@ export default function App() {
       if (currentView === View.AUDIT_MODE && auditTarget) {
         return <AuditView user={auditTarget} onClose={() => setCurrentView(View.ADMIN_GLOBAL)} onUpdate={(user) => setAuditTarget(user)} showToast={showToast} />;
       }
-      return <AdminDashboard token={token!} backendUrl={BACKEND_URL!} onAudit={(u) => { setAuditTarget(u); setCurrentView(View.ADMIN_GLOBAL); }} showToast={showToast} onLogout={handleLogout} />;
+      return <AdminDashboard token={token!} backendUrl={BACKEND_URL} onAudit={(u) => { setAuditTarget(u); setCurrentView(View.ADMIN_GLOBAL); }} showToast={showToast} onLogout={handleLogout} />;
     }
 
     const handleDisconnect = async () => {
         if (!token) return;
         try {
             await fetch(`${BACKEND_URL}/api/disconnect`, { headers: getAuthHeaders(token!) });
-            setConnectionStatus(ConnectionStatus.DISCONNECTED); 
+            setConnectionStatus(ConnectionStatus.DISCONNECTED); // Optimistic update
             setQrCode(null);
             setPairingCode(null);
+            // Polling will confirm the status change
         } catch(e: any) {
-            showToast('Error al intentar desconectar.', 'error');
+            if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
+                showToast('Error de red al intentar desconectar. Verifique su conexión a internet y el backend.', 'error');
+            } else {
+                showToast('Error al intentar desconectar.', 'error');
+            }
         }
     };
 
     const handleWipeConnection = async () => {
         if (!token) return;
-        setConnectionStatus(ConnectionStatus.RESETTING); 
+        setConnectionStatus(ConnectionStatus.RESETTING); // Optimistic update
         try {
-            await new Promise(resolve => setTimeout(resolve, 1500)); 
+            await new Promise(resolve => setTimeout(resolve, 1500)); // Visual feedback
             await fetch(`${BACKEND_URL}/api/disconnect`, { headers: getAuthHeaders(token!) });
             setQrCode(null);
             setPairingCode(null);
-            setConnectionStatus(ConnectionStatus.DISCONNECTED); 
+            setConnectionStatus(ConnectionStatus.DISCONNECTED); // Optimistic update
             showToast('La sesión anterior fue purgada.', 'success');
+            // Polling will confirm the status change
         } catch(e: any) {
-            showToast('Error al purgar la sesión.', 'error');
-            setConnectionStatus(ConnectionStatus.DISCONNECTED); 
+            if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
+                showToast('Error de red al purgar la sesión. Verifique su conexión a internet y el backend.', 'error');
+            } else {
+                showToast('Error al purgar la sesión.', 'error');
+            }
+            setConnectionStatus(ConnectionStatus.DISCONNECTED); // Revert status on error
         }
     };
 
     switch(currentView) {
         case View.DASHBOARD:
-            return <AgencyDashboard token={token!} backendUrl={BACKEND_URL!} settings={settings!} onUpdateSettings={handleUpdateSettings} currentUser={currentUser} showToast={showToast} />;
+            return <AgencyDashboard token={token!} backendUrl={BACKEND_URL} settings={settings!} onUpdateSettings={handleUpdateSettings} currentUser={currentUser} showToast={showToast} />;
         case View.SETTINGS:
             return <SettingsPanel settings={settings} isLoading={isLoadingSettings} onUpdateSettings={isFunctionalityDisabled ? ()=>{} : handleUpdateSettings} onOpenLegal={setLegalModalType} />;
         case View.CONNECTION:
             return <ConnectionPanel user={currentUser} status={connectionStatus} qrCode={qrCode} pairingCode={pairingCode} onConnect={isFunctionalityDisabled ? async ()=>{} : handleConnect} onDisconnect={handleDisconnect} onWipe={handleWipeConnection} />;
-        case View.BLACKLIST:
-            return <BlacklistPanel settings={settings} conversations={conversations} onUpdateSettings={handleUpdateSettings} />;
         case View.CHATS:
         default:
             return (
                 <div className="flex-1 flex overflow-hidden relative">
                     <div className={`${selectedConversationId ? 'hidden md:flex' : 'flex'} w-full md:w-auto h-full`}>
-                        <ConversationList 
-                            conversations={conversations} 
-                            selectedConversationId={selectedConversationId} 
-                            onSelectConversation={setSelectedConversationId} 
-                            backendError={backendError} 
-                            onRequestHistory={handleRequestHistory} 
-                            isRequestingHistory={isRequestingHistory} 
-                            connectionStatus={connectionStatus} 
-                        />
+                        <ConversationList conversations={conversations} selectedConversationId={selectedConversationId} onSelectConversation={setSelectedConversationId} backendError={backendError} onRequestHistory={()=>{return Promise.resolve()}} isRequestingHistory={false} connectionStatus={connectionStatus} />
                     </div>
                     <div className={`${!selectedConversationId ? 'hidden md:flex' : 'flex'} flex-1 h-full`}>
-                        <ChatWindow 
-                            conversation={selectedConversation} 
-                            onSendMessage={isFunctionalityDisabled ? ()=>{} : handleSendMessage} 
-                            onToggleBot={handleToggleBot} // Pass the new optimized handler
-                            isTyping={isTyping} 
-                            isBotGloballyActive={isBotGloballyActive} 
-                            isMobile={true} 
-                            onBack={() => setSelectedConversationId(null)} 
-                            onUpdateConversation={(id, updates) => { 
-                                setConversations(prev => { 
-                                    const updated = prev.map(c => c.id === id ? { ...c, ...updates } : c); 
-                                    return updated.sort((a, b) => { 
-                                        const dateA = new Date(a.lastActivity || a.firstMessageAt || 0); 
-                                        const dateB = new Date(b.lastActivity || b.firstMessageAt || 0); 
-                                        return dateB.getTime() - dateA.getTime(); 
-                                    }); 
-                                }); 
-                                fetch(`${BACKEND_URL}/api/conversation/update`, { method: 'POST', headers: getAuthHeaders(token!), body: JSON.stringify({ id, updates }) }); 
-                            }} 
-                            isPlanExpired={isFunctionalityDisabled}
-                            settings={settings} // NEW
-                            onUpdateSettings={handleUpdateSettings} // NEW
-                        />
+                        <ChatWindow conversation={selectedConversation} onSendMessage={isFunctionalityDisabled ? ()=>{} : handleSendMessage} onToggleBot={(id) => fetch(`${BACKEND_URL}/api/conversation/update`, { method: 'POST', headers: getAuthHeaders(token!), body: JSON.stringify({ id, updates: { isBotActive: !selectedConversation?.isBotActive } }) }).then(()=>{})} isTyping={isTyping} isBotGloballyActive={isBotGloballyActive} isMobile={true} onBack={() => setSelectedConversationId(null)} onUpdateConversation={(id, updates) => { setConversations(prev => { const updated = prev.map(c => c.id === id ? { ...c, ...updates } : c); return updated.sort((a, b) => { const dateA = new Date(a.lastActivity || a.firstMessageAt || 0); const dateB = new Date(b.lastActivity || b.firstMessageAt || 0); return dateB.getTime() - dateA.getTime(); }); }); fetch(`${BACKEND_URL}/api/conversation/update`, { method: 'POST', headers: getAuthHeaders(token!), body: JSON.stringify({ id, updates }) }); }} settings={settings} onUpdateSettings={handleUpdateSettings} />
                     </div>
                 </div>
             );
@@ -867,22 +797,17 @@ export default function App() {
         onNavigate={handleNavigate} 
         connectionStatus={connectionStatus}
       />
-      {isAppView && <TrialBanner user={currentUser} supportNumber={supportNumber} />}
+      {isAppView && <TrialBanner user={currentUser} />}
 
       <main className={`flex-1 flex relative ${isAppView ? 'overflow-hidden' : ''}`}>
-        {!BACKEND_URL && (
-             <div className="absolute top-0 left-0 right-0 z-[200] flex flex-col items-center justify-center p-3 text-[10px] font-black shadow-xl animate-pulse bg-red-800 text-white">
-                <span>⚠️ ERROR CRÍTICO: La URL del backend NO está configurada.</span>
-            </div>
-        )}
-
-        {backendError && BACKEND_URL && ( 
-            <div className={`absolute top-0 left-0 right-0 z-[200] flex items-center justify-center p-2 text-[10px] font-black shadow-xl animate-pulse
-                bg-red-600/95 text-white`}>
+        {backendError && ( 
+            <div className="absolute top-0 left-0 right-0 z-[200] flex items-center justify-center p-2 text-[10px] font-black shadow-xl animate-pulse
+                bg-red-600/95 text-white">
                 <span>⚠️ {backendError}</span>
             </div>
         )}
         
+
         {(!token || showLanding) ? (
             <LandingPage 
                 onAuth={() => setAuthModal({ isOpen: true, mode: 'login' })} 
@@ -891,7 +816,7 @@ export default function App() {
                 isSimTyping={isSimTyping}
                 simScrollRef={simScrollRef}
                 onOpenLegal={setLegalModalType}
-                isServerReady={!!BACKEND_URL}
+                isServerReady={true}
                 isLoggedIn={!!token}
                 token={token}
                 showToast={showToast}

@@ -30,6 +30,30 @@ import { ConnectionStatus } from './types.js'; // Import ConnectionStatus
 });
 // -----------------------------------------------
 
+// --- SEED DATA: TESTIMONIOS PERSISTENTES ---
+const SEED_TESTIMONIALS = [
+    { name: "Marcos López", location: "Mendoza", text: "Bueno, parece que soy el primero en comentar. La verdad entré medio de curioso y no entendía nada al principio, pero después de usarlo un poco me acomodó bastante el WhatsApp." },
+    { name: "Sofía Romano", location: "Mendoza", text: "No suelo comentar estas cosas, pero hasta ahora viene funcionando bien. Se nota que está pensado para ventas posta." },
+    { name: "Javier Torres", location: "Mendoza", text: "Antes era responder mensajes todo el día sin parar. Ahora por lo menos está más ordenado. Eso ya vale la pena." },
+    { name: "Valentina Giménez", location: "Mendoza", text: "Me gustó que no sea complicado como otros bots que probé. Acá fue conectar y listo." },
+    { name: "Lucas Herrera", location: "Mendoza", text: "La verdad me ahorró bastante desgaste. Antes terminaba el día quemado." },
+    { name: "Camila Fernandez", location: "Mendoza", text: "Buen precio para lo que hace. Pensé que iba a ser más caro." },
+    { name: "Mateo Diaz", location: "Mendoza", text: "No es magia, pero ayuda mucho a filtrar. Para mí cumple." },
+    { name: "Lucía Martinez", location: "Mendoza", text: "Todavía lo estoy probando, pero por ahora viene prolijo." },
+    { name: "Agustín Cruz", location: "Mendoza", text: "Pasé de contestar cualquier cosa a responder solo lo importante. Con eso ya estoy conforme." },
+    { name: "Abril Morales", location: "Mendoza", text: "Me sorprendió que no suene a bot." },
+    { name: "Bautista Ríos", location: "Mendoza", text: "Venía de putear bastante con WhatsApp todos los días. Ahora eso bajó bastante." },
+    { name: "Mía Castillo", location: "Mendoza", text: "Se nota que está pensado para comerciantes y no para programadores." },
+    { name: "Tomás Vega", location: "Mendoza", text: "Probé otros sistemas y siempre algo fallaba. Este por ahora se mantiene estable." },
+    { name: "Isabella Pardo", location: "Mendoza", text: "Me gustó que no invade ni molesta a los clientes." },
+    { name: "Felipe Muñoz", location: "Mendoza", text: "No esperaba mucho y me terminó sorprendiendo." },
+    { name: "Martina Flores", location: "Mendoza", text: "Lo estoy usando hace unos días y la experiencia viene siendo buena." },
+    { name: "Santino Rivas", location: "Mendoza", text: "Simple, directo y sin vueltas. Eso suma." },
+    { name: "Victoria Medina", location: "Mendoza", text: "Se agradece algo así para laburar más tranquilo." },
+    { name: "Benjamín Castro", location: "Mendoza", text: "Después de varios días usándolo, lo seguiría usando sin dudas." },
+    { name: "Emilia Ponce", location: "Mendoza", text: "Ojalá lo sigan mejorando, pero la base está muy bien." },
+];
+
 const app = express();
 
 app.use((req, res, next) => {
@@ -227,6 +251,36 @@ app.listen(Number(PORT), '0.0.0.0', async () => {
     try {
         await db.init();
         logService.info('El sistema backend se ha iniciado correctamente.');
+        
+        // --- TESTIMONIALS SEEDING ---
+        // Verificar si la colección de testimonios está vacía
+        const testimonialsCount = await db.getTestimonialsCount();
+        if (testimonialsCount === 0) {
+            logService.info('[SERVER] Base de datos de testimonios vacía. Iniciando sembrado (seeding)...');
+            
+            // Generate timestamps spread over the last 15 days
+            const seededData = SEED_TESTIMONIALS.map((t, index) => {
+                const daysAgo = Math.floor(Math.random() * 15); // Random between 0 and 15 days ago
+                const hoursAgo = Math.floor(Math.random() * 24);
+                const date = new Date();
+                date.setDate(date.getDate() - daysAgo);
+                date.setHours(date.getHours() - hoursAgo);
+                
+                return {
+                    userId: 'system_seed',
+                    name: t.name,
+                    location: t.location,
+                    text: t.text,
+                    createdAt: date.toISOString(),
+                    updatedAt: date.toISOString()
+                };
+            });
+            
+            await db.seedTestimonials(seededData);
+            logService.info('[SERVER] Testimonios sembrados exitosamente.');
+        }
+        // -----------------------------
+
         await ttsService.init(); // Inicializar el servicio TTS para pre-generar audios
 
         // --- NUEVA LÓGICA DE RECONEXIÓN AUTOMÁTICA DE NODOS ---
