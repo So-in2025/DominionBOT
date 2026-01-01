@@ -5,7 +5,7 @@ import { User, BotSettings, PromptArchetype, GlobalMetrics, GlobalTelemetry, Con
 import { v4 as uuidv4 } from 'uuid';
 import { MONGO_URI } from './env.js';
 import { clearBindedSession } from './whatsapp/mongoAuth.js'; 
-import { logService } from './services/logService.js'; 
+// Removed circular dependency: import { logService } from './services/logService.js'; 
 
 const LogSchema = new Schema({
     timestamp: { type: String, required: true, index: true },
@@ -237,7 +237,7 @@ class Database {
       const doc = await UserModel.findOne({ id: userId }).lean();
       
       if (!doc) {
-          logService.warn(`[DB] [getUser] User with ID ${userId} NOT found.`, userId);
+          console.warn(`[DB] [getUser] User with ID ${userId} NOT found.`);
           return null;
       }
       // FIX: Double cast to bypass TS error when types don't perfectly overlap
@@ -285,7 +285,7 @@ class Database {
       // Filter duplicates based on ID (just in case recursion finds same ref twice or corruption created dupes)
       const uniqueConvos = Array.from(new Map(conversationsArray.map(item => [item.id, item])).values());
 
-      logService.info(`[DB-RECOVERY] [getUserConversations] Deep search found ${uniqueConvos.length} valid conversations for ${userId}.`, userId);
+      // console.log(`[DB-RECOVERY] [getUserConversations] Deep search found ${uniqueConvos.length} valid conversations for ${userId}.`);
       return uniqueConvos;
   }
 
@@ -295,8 +295,6 @@ class Database {
       const safeId = sanitizeKey(conversation.id);
       const updateKey = `conversations.${safeId}`;
       
-      // logService.info(`[DB] Saving conv ${safeId} for ${userId}`, userId);
-
       // Update using the sanitized key. The value (conversation object) keeps the original ID with dots.
       await UserModel.updateOne(
           { id: userId }, 
