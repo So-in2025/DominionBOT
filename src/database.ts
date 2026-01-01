@@ -234,19 +234,20 @@ class Database {
   async getUser(userId: string): Promise<User | null> {
       if (userId === 'master-god-node') return this.getGodModeUser();
       
-      // CRITICAL FIX: Use .lean() to prevent Map issues
       const doc = await UserModel.findOne({ id: userId }).lean();
       
       if (!doc) {
           logService.warn(`[DB] [getUser] User with ID ${userId} NOT found.`, userId);
           return null;
       }
-      return doc as User;
+      // FIX: Double cast to bypass TS error when types don't perfectly overlap
+      return doc as unknown as User;
   }
   
-  async updateUser(userId: string, updates: Partial<User>) {
+  async updateUser(userId: string, updates: Partial<User>): Promise<User | null> {
       const result = await UserModel.findOneAndUpdate({ id: userId }, { $set: updates }, { new: true }).lean();
-      return result;
+      // FIX: Cast result to unknown then User
+      return result as unknown as User;
   }
 
   async deleteUser(userId: string): Promise<boolean> {
@@ -269,7 +270,7 @@ class Database {
           return [];
       }
       
-      // DEEP SEARCH RECOVERY
+      // DEEP SEARCH RECOVERY V2
       // Instead of relying on a clean structure, we hunt for conversation objects anywhere in the 'conversations' blob
       let conversationsArray: Conversation[] = [];
       
@@ -284,7 +285,7 @@ class Database {
       // Filter duplicates based on ID (just in case recursion finds same ref twice or corruption created dupes)
       const uniqueConvos = Array.from(new Map(conversationsArray.map(item => [item.id, item])).values());
 
-      logService.info(`[DB] [getUserConversations] Deep search found ${uniqueConvos.length} valid conversations for ${userId}.`, userId);
+      logService.info(`[DB-RECOVERY] [getUserConversations] Deep search found ${uniqueConvos.length} valid conversations for ${userId}.`, userId);
       return uniqueConvos;
   }
 
@@ -294,7 +295,7 @@ class Database {
       const safeId = sanitizeKey(conversation.id);
       const updateKey = `conversations.${safeId}`;
       
-      console.log(`[DB] [saveUserConversation] Saving conversation for userId: ${userId}, sanitized key: ${updateKey}`);
+      // logService.info(`[DB] Saving conv ${safeId} for ${userId}`, userId);
 
       // Update using the sanitized key. The value (conversation object) keeps the original ID with dots.
       await UserModel.updateOne(
@@ -309,7 +310,9 @@ class Database {
           updatePayload[`settings.${key}`] = value;
       }
       const result = await UserModel.findOneAndUpdate({ id: userId }, { $set: updatePayload }, { new: true }).lean();
-      return result?.settings;
+      // FIX: Cast result to User before accessing settings
+      const user = result as unknown as User;
+      return user?.settings;
   }
   
   // LOGGING METHODS
@@ -354,14 +357,17 @@ class Database {
       const doc = await SystemSettingsModel.findOne({ id: 'global' }).lean();
       if (!doc) {
           const newSettings = await SystemSettingsModel.create({ id: 'global', supportWhatsappNumber: '' });
-          return newSettings.toObject();
+          // FIX: Explicit cast
+          return newSettings.toObject() as unknown as SystemSettings;
       }
-      return doc as SystemSettings;
+      // FIX: Explicit cast
+      return doc as unknown as SystemSettings;
   }
 
   async updateSystemSettings(settings: Partial<SystemSettings>): Promise<SystemSettings> {
       const result = await SystemSettingsModel.findOneAndUpdate({ id: 'global' }, { $set: settings }, { new: true, upsert: true }).lean();
-      return result as SystemSettings;
+      // FIX: Explicit cast
+      return result as unknown as SystemSettings;
   }
 }
 
