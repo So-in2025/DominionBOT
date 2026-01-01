@@ -4,7 +4,8 @@ import makeWASocket, {
   makeCacheableSignalKeyStore,
   WASocket,
   fetchLatestBaileysVersion,
-  Browsers
+  Browsers,
+  proto
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import pino from 'pino';
@@ -28,6 +29,32 @@ const BOOT_TIMESTAMP = Date.now() / 1000;
 const logger = pino({ level: 'silent' }); 
 
 const ELITE_BOT_JID = '5491112345678@s.whatsapp.net';
+
+// Helper to extract text from various message types
+function extractMessageContent(msg: proto.IWebMessageInfo): string | null {
+    const message = msg.message;
+    if (!message) return null;
+
+    // 1. Plain Text
+    if (message.conversation) return message.conversation;
+    if (message.extendedTextMessage?.text) return message.extendedTextMessage.text;
+    
+    // 2. Media with Captions
+    if (message.imageMessage?.caption) return message.imageMessage.caption;
+    if (message.videoMessage?.caption) return message.videoMessage.caption;
+    if (message.documentMessage?.caption) return message.documentMessage.caption;
+
+    // 3. Media Placeholders (so the chat appears in history)
+    if (message.imageMessage) return '📷 [Imagen]';
+    if (message.audioMessage) return '🎤 [Audio]';
+    if (message.videoMessage) return '🎥 [Video]';
+    if (message.documentMessage) return '📄 [Documento]';
+    if (message.stickerMessage) return '👾 [Sticker]';
+    if (message.contactMessage) return '👤 [Contacto]';
+    if (message.locationMessage) return '📍 [Ubicación]';
+
+    return null;
+}
 
 export function getSessionStatus(userId: string): { status: ConnectionStatus, qr?: string, pairingCode?: string } {
     const sock = sessions.get(userId);
@@ -164,13 +191,18 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
         }
 
         sock.ev.on('messages.upsert', async ({ messages, type }) => {
-            if (messages.length === 0) return;
+            // Filter out empty messages immediately
+            if (!messages || messages.length === 0) return;
             
             try {
                 const messagesByJid: Record<string, typeof messages> = {};
+                
                 for (const msg of messages) {
                     const jid = msg.key.remoteJid;
-                    if (!jid || jid.endsWith('@g.us')) continue; 
+                    // Strict filtering: No groups, no broadcasts, no status
+                    // FIX: Added check for @lid to ensure we only get real phone numbers
+                    if (!jid || jid.endsWith('@g.us') || jid === 'status@broadcast' || jid.endsWith('@lid')) continue; 
+                    
                     if (!messagesByJid[jid]) messagesByJid[jid] = [];
                     messagesByJid[jid].push(msg);
                 }
@@ -180,12 +212,13 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                     
                     for (const msg of chatMessages) {
                         try {
-                            if (!msg.message || msg.key.remoteJid === 'status@broadcast') continue;
-
                             const isFromMe = msg.key.fromMe;
-                            const messageText = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
+                            
+                            // Use enhanced extractor to handle media/captions
+                            const messageText = extractMessageContent(msg);
 
-                            if (!jid || !messageText) continue;
+                            // Skip if still no meaningful content (e.g. protocol messages)
+                            if (!messageText) continue;
 
                             const msgTimestamp = typeof msg.messageTimestamp === 'number' ? msg.messageTimestamp : (msg.messageTimestamp as any)?.low || Date.now() / 1000;
                             // Relaxed history check: 30 seconds buffer
@@ -204,6 +237,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
 
                             await conversationService.addMessage(userId, jid, userMessage, senderName, isHistory);
 
+                            // AI Trigger: Only for live messages (not history), not from me, and type notify
                             if (!isFromMe && !isHistory && type === 'notify') {
                                 if (messageDebounceMap.has(jid)) {
                                     clearTimeout(messageDebounceMap.get(jid)!);

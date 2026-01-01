@@ -335,3 +335,35 @@ Proporcionar feedback auditivo para acciones de UI/UX y reforzar la identidad de
 - **Human in the Loop:** El Bot califica, el Humano cierra.
 - **Calidad sobre Cantidad:** Optimizado para ventas de alto valor y consultivas.
 - **Tecnología con Propósito:** Cada feature existe para vender más, sin relleno.
+
+
+
+
+---
+
+## ⚡ ADDENDUM v2.9.2: CAPACIDADES TÁCTICAS AVANZADAS
+
+### 1. Protocolo de Trial Dinámico (Gobernanza de Escasez)
+Para maximizar la conversión del usuario SaaS, hemos endurecido las reglas del período de prueba. Ya no es solo tiempo, es **resultado**.
+- **Límite Híbrido:** El trial finaliza a los **3 días** O al calificar los primeros **3 Leads**, lo que ocurra primero.
+- **Psicología:** Esto fuerza al usuario a valorar cada interacción de la IA. Si la IA le consigue 3 clientes potenciales, el valor está demostrado y el bloqueo se activa, obligando a la compra para continuar operando.
+
+### 2. Ingesta Multimedia (Ojos y Oídos del Sistema)
+El motor de WhatsApp (`client.ts`) ha sido parcheado para reconocer tipos de mensajes no textuales en el historial.
+- **Capacidad:** El sistema ahora detecta `[Imagen]`, `[Audio]`, `[Video]`, `[Ubicación]`.
+- **Utilidad:** Esto evita que el historial se rompa o se ignore si el último mensaje del cliente fue una foto (muy común en talleres, inmobiliarias, etc.). Aunque la IA procesa texto, ahora tiene conciencia de que "algo más" fue enviado.
+
+### 3. Simulador Neural (Client Sandbox)
+Se ha integrado un entorno de pruebas seguro dentro del dashboard del cliente (`AgencyDashboard`).
+- **Función:** Permite al usuario "chatear" consigo mismo (simulando ser un bot) o ejecutar scripts de prueba automatizados para ver cómo su configuración de "Cerebro Neural" reacciona ante objeciones antes de conectar su número real.
+- **Seguridad:** Aísla el entorno de pruebas de la base de datos de producción real.
+
+### 4. Trigger Manual de Inferencia (Botón de Pánico)
+Se ha añadido un control de anulación manual en la interfaz de chat (`ChatWindow`).
+- **Problema:** A veces el *debounce* (espera automática) es muy lento para un vendedor ansioso, o el `webhook` de WhatsApp se retrasa.
+- **Solución:** Un botón **"EJECUTAR IA"** que fuerza una llamada inmediata a Gemini, ignorando los temporizadores de espera y el estado de silencio, permitiendo una intervención táctica instantánea.
+
+### 5. Acceso Universal en Estado 'Trial'
+Se ha reescrito la lógica de permisos (`planService.ts` y `aiService.ts`).
+- **Cambio:** El estado `trial` ahora hereda **todos** los permisos del plan `pro`.
+- **Objetivo:** El usuario no debe encontrar *ninguna* fricción durante su prueba. La experiencia debe ser 100% Premium hasta el momento exacto del corte.
