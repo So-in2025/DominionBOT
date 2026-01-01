@@ -50,10 +50,8 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
         return;
     }
     
-    // SAFETY: Only kill strictly if we are initiating a NEW intentional connection, not a reconnect.
     if (sessions.has(userId)) {
-        // We only log this, we don't aggressively kill unless connection is closed.
-        // logService.warn(`[WA-CLIENT] Session object exists for ${userId}.`, userId);
+        // Session exists, assume valid or let retry logic handle it
     }
 
     connectionAttempts.set(userId, true);
@@ -80,8 +78,9 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
             generateHighQualityLinkPreview: true,
             shouldIgnoreJid: jid => jid?.endsWith('@broadcast'),
             syncFullHistory: true, 
-            // CRITICAL FIX: Keep Alive Interval to prevent "Stream Errored"
-            keepAliveIntervalMs: 10000, 
+            // OPTIMIZATION: Adjusted timeouts to handle large history syncs without dropping stream
+            defaultQueryTimeoutMs: 60000, 
+            keepAliveIntervalMs: 30000, 
             retryRequestDelayMs: 5000
         });
 
@@ -106,33 +105,27 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                 const disconnectError = lastDisconnect?.error as Boom;
                 const statusCode = disconnectError?.output?.statusCode;
                 
-                // Specific Check for 428 (Precondition Required) or Conflict
                 const isConflict = disconnectError?.message === 'Stream Errored' && disconnectError?.data === 'conflict';
                 const isCorruptSession = statusCode === 428;
-                const isRestartRequired = statusCode === DisconnectReason.restartRequired;
-
+                
                 if (isConflict || isCorruptSession) {
                     logService.error(`[WA-CLIENT] 🚨 SESIÓN CORRUPTA (${statusCode}). Purgando sesión para reinicio limpio.`, disconnectError, userId);
                     await clearBindedSession(userId);
                     sessions.delete(userId);
                     qrCache.delete(userId);
                     codeCache.delete(userId);
-                    // Do NOT auto-reconnect immediately here, let user re-scan.
                     return; 
                 }
 
-                // If it's just a Stream Error or Restart Required, we RECONNECT gracefully.
                 const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-                
                 logService.warn(`[WA-CLIENT] Connection closed (${statusCode}). Reason: ${lastDisconnect?.error?.message}. Reconnecting: ${shouldReconnect}`, userId);
                 
-                // Clean caches but keep session data if reconnecting
                 qrCache.delete(userId);
                 codeCache.delete(userId);
 
                 if (shouldReconnect) {
-                    sessions.delete(userId); // Remove old socket object
-                    setTimeout(() => connectToWhatsApp(userId, phoneNumber), isRestartRequired ? 1000 : 3000); 
+                    sessions.delete(userId); 
+                    setTimeout(() => connectToWhatsApp(userId, phoneNumber), 3000); 
                 } else {
                     logService.info(`[WA-CLIENT] User ${userId} logged out. Clearing session.`, userId);
                     await db.updateUser(userId, { whatsapp_number: '' });
@@ -156,7 +149,6 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
         if (phoneNumber) {
             logService.info(`[WA-CLIENT] Requesting pairing code for user ${userId}.`, userId);
             try {
-                // Wait a moment for socket to be ready
                 await new Promise(resolve => setTimeout(resolve, 2000));
                 const code = await sock.requestPairingCode(phoneNumber);
                 if (code) {
@@ -168,45 +160,76 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
             }
         }
 
+        // PERFORMANCE FIX: Optimized message ingestion
         sock.ev.on('messages.upsert', async ({ messages, type }) => {
+            if (messages.length === 0) return;
+            
+            // Log ingestion start for debugging
+            if (messages.length > 10) {
+                logService.info(`[WA-CLIENT] Ingesting batch of ${messages.length} messages...`, userId);
+            }
+
+            // 1. Group messages by Chat JID
+            // This allows us to process different chats in parallel, while maintaining order within a single chat.
+            const messagesByJid: Record<string, typeof messages> = {};
             for (const msg of messages) {
-                if (!msg.message || msg.key.remoteJid === 'status@broadcast') continue;
-
                 const jid = msg.key.remoteJid;
-                const isFromMe = msg.key.fromMe;
-                const contactName = msg.pushName || jid?.split('@')[0];
-                const messageText = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
+                if (!jid) continue;
+                if (!messagesByJid[jid]) messagesByJid[jid] = [];
+                messagesByJid[jid].push(msg);
+            }
 
-                if (!jid || !messageText) continue;
+            // 2. Process each chat concurrently
+            const chatProcessPromises = Object.keys(messagesByJid).map(async (jid) => {
+                const chatMessages = messagesByJid[jid];
+                
+                // Process messages within a single chat sequentially to preserve order
+                for (const msg of chatMessages) {
+                    try {
+                        if (!msg.message || msg.key.remoteJid === 'status@broadcast') continue;
 
-                // Log that we actually received a message!
-                if (Math.random() > 0.95) { // Log occasionally to avoid spam
-                     logService.info(`[WA-CLIENT] Processing message from ${jid}`, userId);
-                }
+                        const isFromMe = msg.key.fromMe;
+                        const contactName = msg.pushName || jid?.split('@')[0];
+                        const messageText = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
 
-                const msgTimestamp = typeof msg.messageTimestamp === 'number' ? msg.messageTimestamp : (msg.messageTimestamp as any).low;
-                const isHistory = msgTimestamp < (BOOT_TIMESTAMP - 10); 
+                        if (!messageText) continue;
 
-                const userMessage: Message = {
-                    id: msg.key.id || Date.now().toString(),
-                    text: messageText,
-                    sender: isFromMe ? 'owner' : 'user', 
-                    timestamp: new Date(msgTimestamp * 1000)
-                };
+                        const msgTimestamp = typeof msg.messageTimestamp === 'number' ? msg.messageTimestamp : (msg.messageTimestamp as any).low;
+                        const isHistory = msgTimestamp < (BOOT_TIMESTAMP - 10); 
 
-                await conversationService.addMessage(userId, jid, userMessage, contactName, isHistory);
+                        const userMessage: Message = {
+                            id: msg.key.id || Date.now().toString(),
+                            text: messageText,
+                            sender: isFromMe ? 'owner' : 'user', 
+                            timestamp: new Date(msgTimestamp * 1000)
+                        };
 
-                if (!isFromMe && !isHistory && type === 'notify') {
-                    if (messageDebounceMap.has(jid)) {
-                        clearTimeout(messageDebounceMap.get(jid)!);
+                        await conversationService.addMessage(userId, jid, userMessage, contactName, isHistory);
+
+                        // AI Trigger only for new, incoming messages (Notify)
+                        if (!isFromMe && !isHistory && type === 'notify') {
+                            if (messageDebounceMap.has(jid)) {
+                                clearTimeout(messageDebounceMap.get(jid)!);
+                            }
+                            messageDebounceMap.set(jid, setTimeout(() => {
+                                processAiResponseForJid(userId, jid).catch(err => {
+                                    logService.error(`[WA-CLIENT] Error processing AI response`, err, userId);
+                                });
+                                messageDebounceMap.delete(jid);
+                            }, DEBOUNCE_TIME_MS));
+                        }
+                    } catch (innerError) {
+                        console.error(`Error processing individual message for ${jid}:`, innerError);
+                        // Continue to next message even if one fails
                     }
-                    messageDebounceMap.set(jid, setTimeout(() => {
-                        processAiResponseForJid(userId, jid).catch(err => {
-                            logService.error(`[WA-CLIENT] Error processing AI response`, err, userId);
-                        });
-                        messageDebounceMap.delete(jid);
-                    }, DEBOUNCE_TIME_MS));
                 }
+            });
+
+            // Wait for all chats to be updated
+            await Promise.all(chatProcessPromises);
+            
+            if (messages.length > 10) {
+                logService.info(`[WA-CLIENT] Batch ingestion complete.`, userId);
             }
         });
 
