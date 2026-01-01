@@ -13,16 +13,6 @@ interface TestBotSimulatorProps {
 
 // --- Test Bot Specifics (Duplicated from Backend for Frontend Logic) ---
 const ELITE_BOT_JID = '5491112345678@s.whatsapp.net';
-const ELITE_BOT_NAME = 'Dominion Elite Test Bot';
-
-// These are messages that the "elite bot" sends to the client's bot
-const TEST_SCRIPT = [
-    { text: "Hola, estoy interesado en tus servicios. ¿Cómo funciona?", delay: 1000 },
-    { text: "¿Podrías explicarme un poco más sobre el plan PRO?", delay: 2000 },
-    { text: "¿Cuál es el costo mensual?", delay: 1500 },
-    { text: "¿Ofrecen alguna garantía o prueba?", delay: 2000 },
-    { text: "Suena interesante. Creo que estoy listo para ver una demo o empezar. ¿Qué debo hacer ahora?", delay: 2500 },
-];
 // --- END Test Bot Specifics ---
 
 interface SimulatedMessage extends Message {
@@ -100,17 +90,41 @@ const TestBotSimulator: React.FC<TestBotSimulatorProps> = ({ token, backendUrl, 
       } else {
         const data = await res.json();
         showToast(data.message || 'Error al iniciar la simulación.', 'error');
+        setIsSimulating(false);
       }
     } catch (error) {
       console.error("Error starting client test bot:", error);
       showToast('Error de red al iniciar la simulación.', 'error');
-    } finally {
       setIsSimulating(false);
     }
   };
 
+  const handleStopSimulation = async () => {
+      try {
+          const res = await fetch(`${backendUrl}/api/client/test-bot/stop`, {
+              method: 'POST',
+              headers: getAuthHeaders(token),
+              body: JSON.stringify({ userId })
+          });
+          if (res.ok) {
+              showToast('Simulación detenida.', 'info');
+              setIsSimulating(false);
+          } else {
+              showToast('Error al detener la simulación.', 'error');
+          }
+      } catch (e) {
+          showToast('Error de conexión al detener.', 'error');
+      }
+  };
+
   const handleClearSimulation = async () => {
-    if (!window.confirm('¿Estás seguro de que quieres eliminar la conversación de prueba?')) return;
+    if (isSimulating) {
+        if (!window.confirm('La simulación está activa. ¿Deseas detenerla y borrar el chat?')) return;
+        await handleStopSimulation();
+    } else {
+        if (!window.confirm('¿Estás seguro de que quieres eliminar la conversación de prueba?')) return;
+    }
+
     try {
       const res = await fetch(`${backendUrl}/api/client/test-bot/clear`, {
         method: 'POST',
@@ -157,19 +171,28 @@ const TestBotSimulator: React.FC<TestBotSimulatorProps> = ({ token, backendUrl, 
         </p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-            <button
-                onClick={handleStartSimulation}
-                disabled={isSimulating}
-                className="w-full py-3 bg-brand-gold text-black rounded-xl font-black text-xs uppercase tracking-[0.2em] hover:scale-[1.02] transition-transform disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-brand-gold/20"
-            >
-                {isSimulating ? 'Iniciando Simulación...' : 'Iniciar Simulación'}
-            </button>
+            {isSimulating ? (
+                <button
+                    onClick={handleStopSimulation}
+                    className="w-full py-3 bg-red-500/20 text-red-400 border border-red-500/50 rounded-xl font-black text-xs uppercase tracking-[0.2em] hover:bg-red-500 hover:text-white transition-all shadow-[0_0_20px_rgba(239,68,68,0.2)] animate-pulse"
+                >
+                    DETENER SIMULACIÓN
+                </button>
+            ) : (
+                <button
+                    onClick={handleStartSimulation}
+                    className="w-full py-3 bg-brand-gold text-black rounded-xl font-black text-xs uppercase tracking-[0.2em] hover:scale-[1.02] transition-transform shadow-lg shadow-brand-gold/20"
+                >
+                    Iniciar Simulación
+                </button>
+            )}
+            
             <button
                 onClick={handleClearSimulation}
-                disabled={isSimulating || messages.length === 0}
-                className="w-full py-3 bg-red-500/10 text-red-400 border border-red-500/20 rounded-xl font-black text-xs uppercase tracking-[0.2em] hover:bg-red-500 hover:text-white transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={messages.length === 0}
+                className="w-full py-3 bg-white/5 text-gray-400 border border-white/10 rounded-xl font-black text-xs uppercase tracking-[0.2em] hover:bg-white/10 hover:text-white transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
             >
-                Limpiar Conversación de Prueba
+                Limpiar Chat
             </button>
         </div>
 
@@ -206,9 +229,10 @@ const TestBotSimulator: React.FC<TestBotSimulatorProps> = ({ token, backendUrl, 
             </div>
             {isSimulating && (
                 <div className="absolute bottom-6 left-6 flex items-center gap-2 text-gray-500 text-[10px] italic animate-pulse uppercase tracking-widest font-bold">
-                    <span>Simulador Analizando</span>
-                    <span className="w-1 h-1 bg-gray-500 rounded-full"></span>
-                    <span className="w-1 h-1 bg-gray-500 rounded-full"></span>
+                    <span>Esperando respuesta de IA...</span>
+                    <span className="w-1 h-1 bg-brand-gold rounded-full animate-bounce"></span>
+                    <span className="w-1 h-1 bg-brand-gold rounded-full animate-bounce delay-75"></span>
+                    <span className="w-1 h-1 bg-brand-gold rounded-full animate-bounce delay-150"></span>
                 </div>
             )}
         </div>

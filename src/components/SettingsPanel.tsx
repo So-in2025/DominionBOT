@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect } from 'react';
 import { BotSettings, PromptArchetype } from '../types';
 import { GoogleGenAI } from '@google/genai';
@@ -224,7 +223,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
   const [current, setCurrent] = useState<BotSettings | null>(null);
   const [isSaved, setIsSaved] = useState(false);
   const [wizardStep, setWizardStep] = useState(0); 
-  const [newIgnored, setNewIgnored] = useState('');
   const [isEnhancing, setIsEnhancing] = useState<keyof WizardState | null>(null);
   const [sessionTokenCount, setSessionTokenCount] = useState(0);
   const [isSavingApiKey, setIsSavingApiKey] = useState(false);
@@ -346,26 +344,6 @@ ${state.rules}
   const handleObjectionChange = (id: number, field: 'objection' | 'response', value: string) => setWizardState(prev => ({ ...prev, objections: prev.objections.map(o => o.id === id ? { ...o, [field]: value } : o) }));
   const addObjection = () => setWizardState(prev => ({ ...prev, objections: [...prev.objections, { id: Date.now(), objection: '', response: '' }] }));
   const removeObjection = (id: number) => setWizardState(prev => ({ ...prev, objections: prev.objections.filter(o => o.id !== id) }));
-
-  const addIgnored = () => {
-      if (!newIgnored.trim() || !current) return;
-      const numbers = newIgnored.split(/[\s,;\n]+/);
-      const newJids: string[] = [];
-
-      numbers.forEach(numStr => {
-          const clean = numStr.replace(/[^0-9]/g, '');
-          if (clean && !current.ignoredJids?.includes(clean) && !newJids.includes(clean)) {
-              newJids.push(clean);
-          }
-      });
-      
-      if (newJids.length > 0) {
-          setCurrent({ ...current, ignoredJids: [...(current.ignoredJids || []), ...newJids] });
-      }
-      setNewIgnored('');
-  };
-
-  const removeIgnored = (num: string) => { if(!current) return; setCurrent({ ...current, ignoredJids: current.ignoredJids.filter(n => n !== num) }); };
 
   const handleSaveApiKey = async () => {
     if (!current?.geminiApiKey || !current.geminiApiKey.trim()) {
@@ -538,16 +516,6 @@ ${state.rules}
                         <p className="text-2xl font-black text-brand-gold">{sessionTokenCount.toLocaleString()}</p>
                         <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">Tokens Usados (Sesión)</p>
                     </div>
-                </section>
-
-                <section className="bg-brand-surface border border-red-500/10 rounded-3xl p-8 shadow-2xl border-l-4 border-l-red-500/30">
-                    <h3 className="text-sm font-black text-white uppercase tracking-widest mb-2">Escudo de Privacidad</h3>
-                    <p className="text-[10px] text-gray-400 uppercase font-bold mb-6 tracking-widest">Ingresa o pega números que el bot ignorará por completo.</p>
-                    <div className="flex flex-col gap-2 mb-6">
-                        <textarea value={newIgnored} onChange={e => setNewIgnored(e.target.value)} placeholder="Pega una lista de números separados por comas, espacios o saltos de línea..." className="flex-1 bg-black/50 border border-white/10 rounded-xl p-3 text-white text-xs outline-none focus:border-brand-gold font-mono h-24 resize-none"/>
-                        <button type="button" onClick={addIgnored} className="px-4 py-3 bg-brand-gold text-black rounded-xl font-black text-[10px] uppercase transition-transform active:scale-95">Añadir a la Lista Negra</button>
-                    </div>
-                    <div className="flex flex-wrap gap-2">{current.ignoredJids?.map(num => (<div key={num} className="flex items-center gap-2 px-3 py-1.5 bg-black/40 border border-white/10 rounded-lg group"><span className="text-[10px] text-gray-400 font-mono group-hover:text-white transition-colors">{num}</span><button type="button" onClick={() => removeIgnored(num)} className="text-red-500 hover:text-red-400 font-bold ml-1">✕</button></div>))}</div>
                 </section>
             </div>
         </div>
