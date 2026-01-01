@@ -187,9 +187,9 @@ const Header: React.FC<HeaderProps> = ({
                 </div>
 
                 <div className="p-6 border-t border-white/10 mt-auto bg-black/20">
-                    <button onClick={() => { onLogoutClick(); setIsMenuOpen(false); }} className="w-full py-4 bg-red-500/10 text-red-400 border border-red-500/20 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95 transition-all">
+                    <button onClick={() => { onLogoutClick(); setIsMenuOpen(false); }} className="w-full py-4 bg-white/5 text-gray-400 hover:text-white border border-white/10 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95 transition-all">
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
-                        Desconectar Nodo
+                        Cerrar Sesión
                     </button>
                 </div>
             </div>

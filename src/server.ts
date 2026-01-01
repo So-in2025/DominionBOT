@@ -9,7 +9,8 @@ import { authenticateToken } from './middleware/auth.js';
 import { optionalAuthenticateToken } from './middleware/optionalAuth.js';
 import { logService } from './services/logService.js';
 import { ttsService } from './services/ttsService.js'; // Importar el nuevo servicio
-import { connectToWhatsApp } from './whatsapp/client.js'; // Import connectToWhatsApp
+import { connectToWhatsApp, getSessionStatus } from './whatsapp/client.js'; // Import connectToWhatsApp AND getSessionStatus
+import { ConnectionStatus } from './types.js'; // Import ConnectionStatus
 
 // --- CRASH PREVENTION: Global Error Handlers ---
 (process as any).on('uncaughtException', (err: any) => {
@@ -249,6 +250,25 @@ app.listen(Number(PORT), '0.0.0.0', async () => {
         }
         logService.info('[SERVER] Proceso de reconexión de nodos iniciado para todos los clientes elegibles.');
         // --- FIN LÓGICA DE RECONEXIÓN ---
+
+        // --- ZOMBIE KICKER: Protocolo de Resurrección de Sesiones (Cada 5 min) ---
+        setInterval(async () => {
+            // console.log('[ZOMBIE-KICKER] Revisando salud de nodos...');
+            const allClients = await db.getAllClients();
+            for (const client of allClients) {
+                const isActivePlan = client.plan_status === 'active' || client.plan_status === 'trial';
+                // Si el usuario paga y quiere el bot activo...
+                if (isActivePlan && client.settings.isActive) {
+                    const status = getSessionStatus(client.id);
+                    // ...pero el nodo está desconectado en memoria RAM
+                    if (status.status === ConnectionStatus.DISCONNECTED) {
+                        logService.warn(`[ZOMBIE-KICKER] 🧟 Reviviendo sesión muerta para ${client.username}`, client.id);
+                        connectToWhatsApp(client.id).catch(e => logService.error(`[ZOMBIE-KICKER] Falló resurrección para ${client.username}`, e, client.id));
+                    }
+                }
+            }
+        }, 5 * 60 * 1000); 
+        // -------------------------------------------------------------------------
 
     } catch(e) {
         logService.error('Fallo crítico al inicializar la base de datos o el servicio TTS', e);
