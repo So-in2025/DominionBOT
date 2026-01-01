@@ -84,6 +84,7 @@ const Header: React.FC<HeaderProps> = ({
                     <>
                         <button className={navBtnClass(View.CHATS)} onClick={() => handleNavClick(View.CHATS)}>Mensajes</button>
                         <button className={navBtnClass(View.DASHBOARD)} onClick={() => handleNavClick(View.DASHBOARD)}>Métricas</button>
+                        <button className={navBtnClass(View.BLACKLIST)} onClick={() => handleNavClick(View.BLACKLIST)}>Lista Negra</button>
                         <button className={navBtnClass(View.CONNECTION)} onClick={() => handleNavClick(View.CONNECTION)}>Conexión</button>
                         <button className={navBtnClass(View.SETTINGS)} onClick={() => handleNavClick(View.SETTINGS)}>Configuración</button>
                     </>
@@ -164,6 +165,10 @@ const Header: React.FC<HeaderProps> = ({
                             <button onClick={() => handleNavClick(View.DASHBOARD)} className={`w-full text-left px-4 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-3 ${currentView === View.DASHBOARD ? 'bg-brand-gold text-black' : 'text-gray-400'}`}>
                                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
                                 Métricas
+                            </button>
+                            <button onClick={() => handleNavClick(View.BLACKLIST)} className={`w-full text-left px-4 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-3 ${currentView === View.BLACKLIST ? 'bg-brand-gold text-black' : 'text-gray-400'}`}>
+                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                                Lista Negra
                             </button>
                             <button onClick={() => handleNavClick(View.CONNECTION)} className={`w-full text-left px-4 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-3 ${currentView === View.CONNECTION ? 'bg-brand-gold text-black' : 'text-gray-400'}`}>
                                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>

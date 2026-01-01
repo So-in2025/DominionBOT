@@ -6,6 +6,7 @@ import ConversationList from './components/ConversationList';
 import ChatWindow from './components/ChatWindow';
 import SettingsPanel from './components/SettingsPanel';
 import ConnectionPanel from './components/ConnectionPanel';
+import BlacklistPanel from './components/BlacklistPanel'; // IMPORTED
 import AdminDashboard from './components/Admin/AdminDashboard';
 import AuditView from './components/Admin/AuditView';
 import AuthModal from './components/AuthModal';
@@ -793,6 +794,8 @@ export default function App() {
             return <SettingsPanel settings={settings} isLoading={isLoadingSettings} onUpdateSettings={isFunctionalityDisabled ? ()=>{} : handleUpdateSettings} onOpenLegal={setLegalModalType} />;
         case View.CONNECTION:
             return <ConnectionPanel user={currentUser} status={connectionStatus} qrCode={qrCode} pairingCode={pairingCode} onConnect={isFunctionalityDisabled ? async ()=>{} : handleConnect} onDisconnect={handleDisconnect} onWipe={handleWipeConnection} />;
+        case View.BLACKLIST:
+            return <BlacklistPanel settings={settings} conversations={conversations} onUpdateSettings={handleUpdateSettings} />;
         case View.CHATS:
         default:
             return (
@@ -829,6 +832,8 @@ export default function App() {
                                 fetch(`${BACKEND_URL}/api/conversation/update`, { method: 'POST', headers: getAuthHeaders(token!), body: JSON.stringify({ id, updates }) }); 
                             }} 
                             isPlanExpired={isFunctionalityDisabled}
+                            settings={settings} // NEW
+                            onUpdateSettings={handleUpdateSettings} // NEW
                         />
                     </div>
                 </div>

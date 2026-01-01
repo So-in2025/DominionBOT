@@ -1,6 +1,6 @@
 
 import React, { useRef, useEffect, useState } from 'react';
-import { Conversation, LeadStatus, InternalNote } from '../types';
+import { Conversation, LeadStatus, InternalNote, BotSettings } from '../types';
 import MessageBubble from './MessageBubble';
 import ChatInput from './ChatInput';
 import SalesContextSidebar from './SalesContextSidebar';
@@ -17,12 +17,15 @@ interface ChatWindowProps {
   onBack: () => void;
   onUpdateConversation?: (id: string, updates: Partial<Conversation>) => void;
   isPlanExpired?: boolean;
+  settings?: BotSettings | null; // Added settings
+  onUpdateSettings?: (newSettings: BotSettings) => void; // Added updater
 }
 
 const statusBadgeClass = {
   [LeadStatus.COLD]: 'text-blue-400 bg-blue-500/10 border-blue-500/20',
   [LeadStatus.WARM]: 'text-orange-400 bg-orange-500/10 border-orange-500/20',
   [LeadStatus.HOT]: 'text-red-400 bg-red-500/10 border-red-500/20 shadow-[0_0_10px_rgba(239,68,68,0.2)]',
+  [LeadStatus.PERSONAL]: 'text-gray-400 bg-gray-500/10 border-gray-500/20',
 };
 
 const ChatWindow: React.FC<ChatWindowProps> = ({ 
@@ -34,7 +37,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   isMobile, 
   onBack,
   onUpdateConversation,
-  isPlanExpired
+  isPlanExpired,
+  settings,
+  onUpdateSettings
 }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [showSidebar, setShowSidebar] = useState(true);
@@ -74,11 +79,28 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
               headers: getAuthHeaders(token),
               body: JSON.stringify({ id: conversation.id })
           });
-          // Visual feedback handled by isTyping coming from parent/polling
       } catch (e) {
           console.error("Failed to force AI run", e);
       } finally {
           setIsForcingAi(false);
+      }
+  };
+
+  const toggleBlacklist = () => {
+      if (!conversation || !settings || !onUpdateSettings) return;
+      
+      const number = conversation.id.split('@')[0];
+      const ignoredJids = settings.ignoredJids || [];
+      const isBlocked = ignoredJids.includes(number);
+
+      if (isBlocked) {
+          if (confirm(`¿Desbloquear a ${conversation.leadName}? La IA volverá a responder.`)) {
+              onUpdateSettings({ ...settings, ignoredJids: ignoredJids.filter(n => n !== number) });
+          }
+      } else {
+          if (confirm(`¿Bloquear a ${conversation.leadName}? La IA ignorará este chat para siempre.`)) {
+              onUpdateSettings({ ...settings, ignoredJids: [...ignoredJids, number] });
+          }
       }
   };
 
@@ -99,6 +121,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       ? conversation.leadName 
       : formatPhoneNumber(conversation.leadName);
 
+  // Check blacklist status
+  const currentNumber = conversation.id.split('@')[0];
+  const isBlacklisted = settings?.ignoredJids?.includes(currentNumber);
+
   return (
     <div className="flex-1 flex flex-row h-full overflow-hidden">
       <div className="flex-1 flex flex-col bg-brand-black h-full relative overflow-hidden">
@@ -118,12 +144,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                       {/* Show initials or icon */}
                       {conversation.leadName.charAt(0).toUpperCase()}
                   </div>
-                  <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-brand-surface rounded-full"></div>
+                  <div className={`absolute bottom-0 right-0 w-3 h-3 border-2 border-brand-surface rounded-full ${isBlacklisted ? 'bg-red-500' : 'bg-green-500'}`}></div>
               </div>
 
               <div>
                 <h2 className="text-sm md:text-base font-bold text-white leading-tight flex items-center gap-2">
                     {displayTitle}
+                    {isBlacklisted && <span className="text-[9px] bg-red-500 text-white px-1.5 py-0.5 rounded uppercase font-black tracking-wider">Bloqueado</span>}
                 </h2>
                 <p className="text-[10px] text-gray-500 font-mono mt-0.5 tracking-wider">{formatPhoneNumber(conversation.leadIdentifier)}</p>
               </div>
@@ -141,8 +168,19 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 </div>
             ) : (
                 <div className="flex items-center gap-2">
-                    {/* NEW: FORCE AI BUTTON - Only shows when bot is active and not muted */}
-                    {conversation.isBotActive && !conversation.isMuted && isBotGloballyActive && (
+                    {/* BLACKLIST TOGGLE BUTTON */}
+                    {settings && (
+                        <button 
+                            onClick={toggleBlacklist}
+                            className={`p-2 rounded-lg border transition-all ${isBlacklisted ? 'bg-red-500 text-white border-red-600' : 'bg-white/5 text-gray-400 border-white/10 hover:text-red-400 hover:border-red-500/50'}`}
+                            title={isBlacklisted ? "Desbloquear número" : "Bloquear número (Lista Negra)"}
+                        >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                        </button>
+                    )}
+
+                    {/* NEW: FORCE AI BUTTON */}
+                    {conversation.isBotActive && !conversation.isMuted && isBotGloballyActive && !isBlacklisted && (
                         <button 
                             onClick={handleForceAiRun}
                             disabled={isForcingAi}
@@ -160,13 +198,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
 
                     <button 
                     onClick={handleToggleClick}
-                    disabled={!isBotGloballyActive || conversation.isMuted || isTogglingBot}
+                    disabled={!isBotGloballyActive || conversation.isMuted || isTogglingBot || isBlacklisted}
                     className={`
                         flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all min-w-[100px] justify-center
                         ${conversation.isBotActive 
                             ? 'bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500 hover:text-white' 
                             : 'bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-green-500 hover:text-white'}
-                        ${(!isBotGloballyActive || conversation.isMuted) ? 'opacity-50 cursor-not-allowed grayscale' : ''}
+                        ${(!isBotGloballyActive || conversation.isMuted || isBlacklisted) ? 'opacity-50 cursor-not-allowed grayscale' : ''}
                     `}
                     >
                     {isTogglingBot ? (
@@ -194,7 +232,20 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
 
         {/* MESSAGES AREA */}
         <div className="flex-1 overflow-y-auto px-4 py-6 md:px-8 space-y-4 md:space-y-6 custom-scrollbar relative z-0 pb-32">
-          {conversation.isMuted && !conversation.suggestedReplies && !isPlanExpired && (
+          
+          {isBlacklisted && (
+              <div className="bg-red-500/20 border border-red-500/40 p-4 rounded-xl mb-6 flex items-start gap-4 animate-fade-in shadow-lg">
+                  <div className="p-2 bg-red-500 text-white rounded-lg">
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
+                  </div>
+                  <div>
+                      <h4 className="text-sm font-bold text-white uppercase tracking-tight">Escudo Activado</h4>
+                      <p className="text-xs text-gray-300 mt-1">Este contacto está en la lista negra. La IA ignorará todos los mensajes entrantes.</p>
+                  </div>
+              </div>
+          )}
+
+          {conversation.isMuted && !conversation.suggestedReplies && !isPlanExpired && !isBlacklisted && (
               <div className="bg-brand-gold/10 border border-brand-gold/20 p-4 rounded-xl mb-6 flex items-start gap-4 animate-fade-in shadow-[0_4px_20px_rgba(212,175,55,0.05)]">
                   <div className="p-2 bg-brand-gold/20 rounded-lg text-brand-gold">
                       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
@@ -206,22 +257,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
               </div>
           )}
 
-          {isPlanExpired && (
-              <div className="bg-red-900/10 border border-red-500/30 p-4 rounded-xl mb-6 flex items-start gap-4 animate-fade-in shadow-lg">
-                  <div className="p-2 bg-red-500/10 rounded-lg text-red-400">
-                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
-                  </div>
-                  <div>
-                      <h4 className="text-sm font-bold text-white uppercase tracking-tight">Modo Fallback Activado</h4>
-                      <p className="text-xs text-gray-400 mt-1">La IA está en modo pasivo. Responde educadamente pero no califica. Activa tu licencia para retomar el control total.</p>
-                  </div>
-              </div>
-          )}
-
           {conversation.messages.map(msg => (
             <MessageBubble key={msg.id} message={msg} />
           ))}
-          {isTyping && (
+          {isTyping && !isBlacklisted && (
                <div className="flex items-center gap-2 text-gray-500 text-[10px] italic ml-4 animate-pulse uppercase tracking-widest font-bold">
                   <span>Signal Core Procesando</span>
                   <span className="w-1 h-1 bg-gray-500 rounded-full"></span>
@@ -232,7 +271,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
         </div>
 
         {/* COPILOT SUGGESTIONS PANEL */}
-        {conversation.suggestedReplies && conversation.suggestedReplies.length > 0 && (
+        {conversation.suggestedReplies && conversation.suggestedReplies.length > 0 && !isBlacklisted && (
             <div className="absolute bottom-[88px] left-0 right-0 p-4 bg-gradient-to-t from-brand-black via-brand-black/95 to-transparent z-20">
                 <div className="flex items-center gap-2 mb-2 px-2">
                     <span className="w-2 h-2 bg-brand-gold rounded-full animate-pulse"></span>
@@ -255,8 +294,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
 
         <ChatInput
           onSendMessage={onSendMessage}
-          disabled={!isBotGloballyActive || (conversation.isBotActive && !conversation.isMuted) || (isPlanExpired && conversation.isBotActive)}
-          placeholder={isPlanExpired ? 'Modo Lectura - Licencia Requerida' : (conversation.isMuted ? 'Escribe o selecciona una sugerencia...' : (conversation.isBotActive ? 'La IA está respondiendo...' : 'Escribe un mensaje...'))}
+          disabled={!isBotGloballyActive || (conversation.isBotActive && !conversation.isMuted) || (isPlanExpired && conversation.isBotActive) || isBlacklisted}
+          placeholder={isPlanExpired ? 'Modo Lectura - Licencia Requerida' : (isBlacklisted ? 'Conversación Bloqueada' : (conversation.isMuted ? 'Escribe o selecciona una sugerencia...' : (conversation.isBotActive ? 'La IA está respondiendo...' : 'Escribe un mensaje...')))}
         />
       </div>
 
