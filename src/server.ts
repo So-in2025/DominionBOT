@@ -1,5 +1,4 @@
 
-
 // 1. CARGA DE ENTORNO CRÍTICA
 import { JWT_SECRET, PORT } from './env.js';
 import express from 'express';
@@ -11,6 +10,24 @@ import { optionalAuthenticateToken } from './middleware/optionalAuth.js';
 import { logService } from './services/logService.js';
 import { ttsService } from './services/ttsService.js'; // Importar el nuevo servicio
 import { connectToWhatsApp } from './whatsapp/client.js'; // Import connectToWhatsApp
+
+// --- CRASH PREVENTION: Global Error Handlers ---
+(process as any).on('uncaughtException', (err: any) => {
+    console.error('🔥 [CRITICAL] Uncaught Exception:', err);
+    logService.error('UNCAUGHT EXCEPTION - SERVER KEPT ALIVE', err);
+    // No salimos del proceso para mantener el servidor vivo ante fallos de Baileys
+});
+
+(process as any).on('unhandledRejection', (reason: any, promise: any) => {
+    console.error('🔥 [CRITICAL] Unhandled Rejection:', reason);
+    // Detectar error 428 específico de Baileys para no llenar el log
+    if (reason?.output?.statusCode === 428 || reason?.message === 'Connection Closed') {
+        logService.warn('WhatsApp Session Conflict (428) detected in background. Session needs reset.');
+    } else {
+        logService.error('UNHANDLED REJECTION - SERVER KEPT ALIVE', reason);
+    }
+});
+// -----------------------------------------------
 
 const app = express();
 
@@ -186,8 +203,8 @@ app.use('/api', (req: any, res) => {
 
 // Global 404 for non-/api routes (typically caught by frontend's index.html rewrite in Vercel)
 app.use((req: any, res) => {
-    console.warn(`[SERVER-404-FALLBACK] Request fell through to global HTML 404 handler: ${req.method} ${req.originalUrl}`);
-    logService.warn(`Ruta no encontrada: ${req.method} ${req.originalUrl}`, req.user?.id, req.user?.username);
+    // console.warn(`[SERVER-404-FALLBACK] Request fell through to global HTML 404 handler: ${req.method} ${req.originalUrl}`);
+    // logService.warn(`Ruta no encontrada: ${req.method} ${req.originalUrl}`, req.user?.id, req.user?.username);
     res.status(404).send('Página no encontrada.'); // Still send HTML for non-API paths for clarity
 });
 
