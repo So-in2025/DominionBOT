@@ -61,7 +61,8 @@ const UserSchema = new Schema({
         isWizardCompleted: { type: Boolean, default: false }, 
         ignoredJids: { type: Array, default: [] }
     },
-    conversations: { type: Map, of: Object, default: {} },
+    // CRITICAL CHANGE: Use Mixed type to allow flexibility and avoid Map dot notation issues
+    conversations: { type: Schema.Types.Mixed, default: {} },
     governance: {
         systemState: { type: String, enum: ['ACTIVE', 'WARNING', 'LIMITED', 'SUSPENDED'], default: 'ACTIVE' },
         riskScore: { type: Number, default: 0 },
@@ -79,6 +80,29 @@ const SystemSettingsModel = (mongoose.models.SystemSettings || mongoose.model('S
 
 // Helper to sanitize keys for MongoDB (dots are forbidden in keys for update operations)
 export const sanitizeKey = (key: string) => key.replace(/\./g, '_');
+
+// Recursive function to find conversations hidden in nested structures
+const extractConversationsRecursive = (obj: any, found: Conversation[] = []) => {
+    if (!obj || typeof obj !== 'object') return found;
+
+    // Check if this object IS a conversation
+    if ('id' in obj && 'messages' in obj && Array.isArray(obj.messages) && 'leadIdentifier' in obj) {
+        found.push(obj as Conversation);
+        // Don't recurse deeper into a valid conversation object
+        return found;
+    }
+
+    // Otherwise, check all properties
+    for (const key in obj) {
+        if (Object.prototype.hasOwnProperty.call(obj, key)) {
+            // Avoid circular refs or going too deep if not needed (basic check)
+            if (key !== 'settings' && key !== 'governance' && typeof obj[key] === 'object') {
+                extractConversationsRecursive(obj[key], found);
+            }
+        }
+    }
+    return found;
+};
 
 class Database {
   private isInitialized = false;
@@ -245,45 +269,23 @@ class Database {
           return [];
       }
       
+      // DEEP SEARCH RECOVERY
+      // Instead of relying on a clean structure, we hunt for conversation objects anywhere in the 'conversations' blob
       let conversationsArray: Conversation[] = [];
       
       if (user.conversations) {
-          // Normalize if somehow it's still a Map
           const rawConvos = (user.conversations instanceof Map) 
               ? Object.fromEntries(user.conversations) 
               : user.conversations;
-
-          // RECOVERY LOGIC: Extract conversations that were nested due to dot notation bug
-          conversationsArray = Object.values(rawConvos).map((c: any) => {
-              // 1. If it's a valid conversation, return it.
-              if (c.id && Array.isArray(c.messages)) return c as Conversation;
-
-              // 2. If it's nested (e.g. { "us": { id: "..." } } or { "whatsapp": { "net": { ... } } })
-              // We try to find the inner object that has 'id' and 'messages'.
-              const values = Object.values(c);
-              if (values.length > 0) {
-                  // Check depth 1
-                  for (const val of values) {
-                      if (val && typeof val === 'object' && 'id' in val && 'messages' in val) {
-                          return val as Conversation;
-                      }
-                      // Check depth 2 (for multiple dots)
-                      if (val && typeof val === 'object') {
-                          const deepValues = Object.values(val);
-                          for (const deepVal of deepValues) {
-                              if (deepVal && typeof deepVal === 'object' && 'id' in deepVal && 'messages' in deepVal) {
-                                  return deepVal as Conversation;
-                              }
-                          }
-                      }
-                  }
-              }
-              return null;
-          }).filter((c): c is Conversation => c !== null);
+          
+          conversationsArray = extractConversationsRecursive(rawConvos);
       }
 
-      logService.info(`[DB] [getUserConversations] Returning ${conversationsArray.length} conversations for ${userId}.`, userId);
-      return conversationsArray;
+      // Filter duplicates based on ID (just in case recursion finds same ref twice or corruption created dupes)
+      const uniqueConvos = Array.from(new Map(conversationsArray.map(item => [item.id, item])).values());
+
+      logService.info(`[DB] [getUserConversations] Deep search found ${uniqueConvos.length} valid conversations for ${userId}.`, userId);
+      return uniqueConvos;
   }
 
   async saveUserConversation(userId: string, conversation: Conversation) {
@@ -292,6 +294,8 @@ class Database {
       const safeId = sanitizeKey(conversation.id);
       const updateKey = `conversations.${safeId}`;
       
+      console.log(`[DB] [saveUserConversation] Saving conversation for userId: ${userId}, sanitized key: ${updateKey}`);
+
       // Update using the sanitized key. The value (conversation object) keeps the original ID with dots.
       await UserModel.updateOne(
           { id: userId }, 

@@ -81,9 +81,10 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                 keys: makeCacheableSignalKeyStore(state.keys, logger),
             },
             browser: Browsers.macOS('Chrome'),
-            agent: user?.settings?.proxyUrl ? new HttpsProxyAgent(user.settings.proxyUrl) : undefined,
+            agent: user?.settings?.proxyUrl ? new HttpsProxyAgent(user.settings.proxyUrl) as any : undefined,
             generateHighQualityLinkPreview: true,
-            shouldIgnoreJid: jid => jid?.endsWith('@broadcast'),
+            // IGNORE BROADCASTS AND GROUPS by default to prevent spamming
+            shouldIgnoreJid: jid => jid?.endsWith('@broadcast') || jid?.endsWith('@g.us'),
             syncFullHistory: true, 
             defaultQueryTimeoutMs: 60000, 
             keepAliveIntervalMs: 10000, 
@@ -181,6 +182,9 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                 for (const msg of messages) {
                     const jid = msg.key.remoteJid;
                     if (!jid) continue;
+                    // Ignore groups explicitly here as well, just in case
+                    if (jid.endsWith('@g.us')) continue; 
+                    
                     if (!messagesByJid[jid]) messagesByJid[jid] = [];
                     messagesByJid[jid].push(msg);
                 }
@@ -285,7 +289,9 @@ async function _commonAiProcessingLogic(userId: string, jid: string, user: User,
 
     await sock.sendPresenceUpdate('composing', jid);
     const latestUser = await db.getUser(userId); 
-    const latestConversation = latestUser?.conversations?.[jid];
+    // FIX: Access safely with sanitized key or raw key, since getUser returns Mixed now
+    const safeJid = jid.replace(/\./g, '_');
+    const latestConversation = latestUser?.conversations?.[safeJid] || latestUser?.conversations?.[jid];
 
     if (!latestConversation) return;
 
