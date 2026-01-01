@@ -1,3 +1,4 @@
+
 /**
  * DOMINION BOT - Configuración de Infraestructura
  * Este archivo es compartido entre el Frontend (Vite) y el Backend (Node.js).
@@ -7,8 +8,8 @@
 const g = (typeof globalThis !== 'undefined' ? globalThis : {}) as any;
 
 // --- ZONA DE EMERGENCIA: HARDCODE ---
-// Ponemos tu URL de Ngrok directamente aquí para que funcione SÍ o SÍ.
-// Si cambia tu Ngrok, solo actualiza esta línea y redeploya.
+// Si estás probando localmente, deja esto VACÍO ("").
+// Si usas Vercel + Ngrok, pon tu URL de Ngrok activa aquí.
 const MANUAL_BACKEND_URL = "https://unblanketed-waylon-arbitrarily.ngrok-free.dev"; 
 // ------------------------------------
 
@@ -34,7 +35,18 @@ const getEnvUrl = () => {
     } catch (e) {
         // Suppress client-side errors
     }
-    return undefined; 
+    
+    // 4. Fallback para desarrollo local
+    // Si estamos en el navegador y no hay URL configurada, asumimos localhost:3001
+    if (typeof g.window !== 'undefined') {
+        const hostname = g.window.location.hostname;
+        if (hostname === 'localhost' || hostname === '127.0.0.1') {
+            return "http://localhost:3001";
+        }
+    }
+
+    // Default final
+    return "http://localhost:3001"; 
 };
 
 /**
