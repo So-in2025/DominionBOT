@@ -17,6 +17,7 @@ import { generateBotResponse } from '../services/aiService.js';
 import { useMongoDBAuthState, clearBindedSession } from './mongoAuth.js';
 import { logService } from '../services/logService.js';
 import * as QRCode from 'qrcode';
+import { radarService } from '../services/radarService.js'; // Import Radar Service
 
 const sessions = new Map<string, WASocket>();
 const qrCache = new Map<string, string>(); 
@@ -199,9 +200,6 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                 
                 for (const msg of messages) {
                     const jid = msg.key.remoteJid;
-                    // Ignore status broadcasts, but ALLOW group messages now (g.us) for context if needed, 
-                    // though for now we are focusing on DMs. 
-                    // IMPORTANT: We still filter out group messages for AI processing unless explicitly enabled later.
                     if (!jid || jid === 'status@broadcast' || jid.endsWith('@lid')) continue; 
                     
                     if (!messagesByJid[jid]) messagesByJid[jid] = [];
@@ -209,11 +207,31 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                 }
 
                 const chatProcessPromises = Object.keys(messagesByJid).map(async (jid) => {
-                    // FILTER: Do not process group messages for standard AI flow yet
-                    if (jid.endsWith('@g.us')) return; 
-
                     const chatMessages = messagesByJid[jid];
                     
+                    // --- RADAR 3.0 HOOK ---
+                    // If message is from a group, route to RadarService
+                    if (jid.endsWith('@g.us')) {
+                        for (const msg of chatMessages) {
+                            if (msg.key.fromMe) continue;
+                            const text = extractMessageContent(msg);
+                            if (!text) continue;
+                            
+                            // Extract sender info
+                            const sender = msg.key.participant || msg.participant || jid; 
+                            const senderName = msg.pushName || 'Unknown';
+                            
+                            // We need group metadata for name, but fetching it every time is slow.
+                            // Ideally cached. For now we use JID or try minimal fetch if critical.
+                            // Passing JID as name fallback.
+                            
+                            // Async call to not block
+                            radarService.processGroupMessage(userId, jid, jid, sender, senderName, text).catch(e => console.error(e));
+                        }
+                        return; // Stop processing group messages for standard bot logic
+                    }
+                    // ----------------------
+
                     for (const msg of chatMessages) {
                         try {
                             const isFromMe = msg.key.fromMe;

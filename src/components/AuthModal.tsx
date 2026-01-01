@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { IntendedUse } from '../types';
 import { BACKEND_URL, API_HEADERS } from '../config';
@@ -166,7 +167,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
                                 <h2 className="text-2xl md:text-3xl font-black text-white tracking-tighter mb-2">
                                     {mode === 'login' ? 'Bienvenido' : (mode === 'register' ? 'Nuevo Nodo' : 'Recuperación')}
                                 </h2>
-                                <p className="text-[10px] text-brand-gold uppercase tracking-[0.4em] font-black opacity-80">Infrastructure v2.7.6 Elite</p>
+                                <p className="text-[10px] text-brand-gold uppercase tracking-[0.4em] font-black opacity-80">Infrastructure v3.0.0 Elite</p>
                             </div>
 
                             {successMsg && (

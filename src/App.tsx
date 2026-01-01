@@ -6,12 +6,14 @@ import ConversationList from './components/ConversationList';
 import ChatWindow from './components/ChatWindow';
 import SettingsPanel from './components/SettingsPanel';
 import ConnectionPanel from './components/ConnectionPanel';
+import BlacklistPanel from './components/BlacklistPanel'; // Importación recuperada
 import AdminDashboard from './components/Admin/AdminDashboard';
 import AuditView from './components/Admin/AuditView';
 import AuthModal from './components/AuthModal';
 import LegalModal from './components/LegalModal'; 
 import AgencyDashboard from './components/AgencyDashboard';
-import CampaignsPanel from './components/CampaignsPanel'; // IMPORT NEW COMPONENT
+import CampaignsPanel from './components/CampaignsPanel'; 
+import RadarPanel from './components/RadarPanel'; // NEW IMPORT
 import Toast, { ToastData } from './components/Toast';
 import HowItWorksArt from './components/HowItWorksArt';
 import HowItWorksSection from './components/HowItWorksSection';
@@ -757,12 +759,16 @@ export default function App() {
     switch(currentView) {
         case View.DASHBOARD:
             return <AgencyDashboard token={token!} backendUrl={BACKEND_URL} settings={settings!} onUpdateSettings={handleUpdateSettings} currentUser={currentUser} showToast={showToast} />;
-        case View.CAMPAIGNS: // NEW VIEW CASE
+        case View.CAMPAIGNS: 
             return <CampaignsPanel token={token!} backendUrl={BACKEND_URL} showToast={showToast} />;
+        case View.RADAR: // NEW VIEW
+            return <RadarPanel token={token!} backendUrl={BACKEND_URL} showToast={showToast} />;
         case View.SETTINGS:
             return <SettingsPanel settings={settings} isLoading={isLoadingSettings} onUpdateSettings={isFunctionalityDisabled ? ()=>{} : handleUpdateSettings} onOpenLegal={setLegalModalType} />;
         case View.CONNECTION:
             return <ConnectionPanel user={currentUser} status={connectionStatus} qrCode={qrCode} pairingCode={pairingCode} onConnect={isFunctionalityDisabled ? async ()=>{} : handleConnect} onDisconnect={handleDisconnect} onWipe={handleWipeConnection} />;
+        case View.BLACKLIST:
+            return <BlacklistPanel settings={settings} conversations={conversations} onUpdateSettings={handleUpdateSettings} />;
         case View.CHATS:
         default:
             return (

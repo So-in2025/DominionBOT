@@ -1,6 +1,6 @@
 
-/* Dominion SW v2.7 */
-const CACHE_NAME = 'dominion-v2.7-cache';
+/* Dominion SW v3.0 */
+const CACHE_NAME = 'dominion-v3.0-cache';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();

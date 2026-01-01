@@ -168,7 +168,8 @@ app.get('/api/metrics', authenticateToken, async (req: any, res: any) => {
 
 import { 
     handleConnect, handleDisconnect, handleSendMessage, handleUpdateConversation, handleGetStatus, handleGetConversations, handleGetTestimonials, handlePostTestimonial, handleGetTtsAudio, handleStartClientTestBot, handleClearClientTestBotConversation, handleForceAiRun, handleStopClientTestBot,
-    handleGetCampaigns, handleCreateCampaign, handleUpdateCampaign, handleDeleteCampaign, handleGetWhatsAppGroups
+    handleGetCampaigns, handleCreateCampaign, handleUpdateCampaign, handleDeleteCampaign, handleGetWhatsAppGroups,
+    handleGetRadarSignals, handleGetRadarSettings, handleUpdateRadarSettings, handleDismissRadarSignal, handleConvertRadarSignal
 } from './controllers/apiController.js';
 import { handleGetAllClients, handleUpdateClient, handleRenewClient, handleGetLogs, handleGetDashboardMetrics, handleActivateClient, handleGetSystemSettings, handleUpdateSystemSettings, handleDeleteClient, handleStartTestBot, handleClearTestBotConversation } from './controllers/adminController.js';
 
@@ -192,6 +193,13 @@ app.post('/api/campaigns', authenticateToken, handleCreateCampaign);
 app.put('/api/campaigns/:id', authenticateToken, handleUpdateCampaign);
 app.delete('/api/campaigns/:id', authenticateToken, handleDeleteCampaign);
 app.get('/api/whatsapp/groups', authenticateToken, handleGetWhatsAppGroups);
+
+// Radar Routes (NEW RADAR 3.0)
+app.get('/api/radar/signals', authenticateToken, handleGetRadarSignals);
+app.get('/api/radar/settings', authenticateToken, handleGetRadarSettings);
+app.post('/api/radar/settings', authenticateToken, handleUpdateRadarSettings);
+app.post('/api/radar/signals/:id/dismiss', authenticateToken, handleDismissRadarSignal);
+app.post('/api/radar/signals/:id/convert', authenticateToken, handleConvertRadarSignal); // BRIDGE TO LEAD
 
 // Public/Shared Routes
 app.get('/api/system/settings', authenticateToken, handleGetSystemSettings); // Clients need this for support number
@@ -271,41 +279,47 @@ app.listen(Number(PORT), '0.0.0.0', async () => {
         logService.info('El sistema backend se ha iniciado correctamente.');
         
         // --- TESTIMONIALS DRIP SEEDING ---
-        // Verificar si la colección de testimonios está vacía
-        const testimonialsCount = await db.getTestimonialsCount();
-        if (testimonialsCount === 0) {
-            logService.info('[SERVER] Base de datos de testimonios vacía. Iniciando sembrado DRIP (Goteo)...');
+        // VERIFICACIÓN MEJORADA: Comprobar específicamente los testimonios del sistema
+        const seedCount = await db.countSeedTestimonials();
+        
+        if (seedCount === 0) {
+            logService.info('[SERVER] No se detectaron testimonios de sistema ("system_seed"). Iniciando inyección DRIP...');
             
             // DRIP STRATEGY:
-            // - Primeros 5: Ya publicados (entre hace 3 días y hoy).
-            // - Siguientes 15: Programados en el futuro con intervalos de 12 horas.
+            // - Primeros 3: Ya publicados (entre hace 3 días y hoy). Visibles.
+            // - Siguientes 17: Programados en el futuro. Ocultos hasta que pase el tiempo.
             
             const seededData = SEED_TESTIMONIALS.map((t, index) => {
                 let date = new Date();
                 
-                if (index < 5) {
-                    // Histórico: Hace 1-3 días
-                    const hoursAgo = Math.floor(Math.random() * 72); // 0-72 hours ago
+                if (index < 3) {
+                    // Histórico: Hace 1-24 horas (VISIBLES YA)
+                    const hoursAgo = 20 - (index * 8); 
                     date.setHours(date.getHours() - hoursAgo);
                 } else {
-                    // Futuro: Goteo cada 12 horas
-                    // index 5 -> +12h, index 6 -> +24h, etc.
-                    const hoursInFuture = (index - 4) * 12; 
-                    date.setHours(date.getHours() + hoursInFuture);
+                    // Futuro: Goteo cada 24 horas (OCULTOS POR AHORA)
+                    const daysInFuture = (index - 2); 
+                    date.setDate(date.getDate() + daysInFuture);
                 }
                 
                 return {
                     userId: 'system_seed',
                     name: t.name,
-                    location: t.location,
+                    location: t.location, 
                     text: t.text,
-                    createdAt: date.toISOString(), // ISO string for sorting
+                    createdAt: date.toISOString(), 
                     updatedAt: date.toISOString()
                 };
             });
             
-            await db.seedTestimonials(seededData);
-            logService.info('[SERVER] Testimonios sembrados con cronograma de goteo (Drip Schedule).');
+            try {
+                await db.seedTestimonials(seededData);
+                logService.info(`[SERVER] ✅ Inyección exitosa: 3 visibles, ${seededData.length - 3} programados.`);
+            } catch (err) {
+                logService.error('[SERVER] ❌ Error crítico inyectando testimonios:', err);
+            }
+        } else {
+            logService.info(`[SERVER] Testimonios de sistema verificados (${seedCount}). Integridad OK.`);
         }
         // -----------------------------
 

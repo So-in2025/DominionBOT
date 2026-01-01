@@ -229,7 +229,7 @@ const TestBotSimulator: React.FC<TestBotSimulatorProps> = ({ token, backendUrl, 
             <div>
                 <h3 className="text-xl font-black text-white uppercase tracking-widest flex items-center gap-3">
                     <span className="w-2 h-2 bg-brand-gold rounded-full animate-pulse shadow-[0_0_10px_rgba(212,175,55,0.8)]"></span>
-                    Laboratorio Elite++ <span className="text-brand-gold">v3.1</span>
+                    Laboratorio Elite++ <span className="text-brand-gold">v3.0.0</span>
                 </h3>
                 <p className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.3em] mt-1 ml-5">
                     Entrenamiento Adversarial y Evaluación de Robustez

@@ -327,7 +327,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
             <div className="max-w-7xl mx-auto space-y-8 animate-fade-in">
                 <header className="border-b border-white/10 pb-6">
                     <h2 className="text-xl md:text-2xl font-black text-white uppercase tracking-tighter">Nodo de Control Global</h2>
-                    <p className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.2em] mt-1">SaaS Governance v2.9 Elite</p>
+                    <p className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.2em] mt-1">SaaS Governance v3.0.0 Elite</p>
                 </header>
 
                 <div className="flex gap-2 p-1 bg-brand-surface border border-white/5 rounded-xl">

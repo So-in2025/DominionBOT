@@ -1,7 +1,7 @@
 
 import bcrypt from 'bcrypt';
 import mongoose, { Schema, Model } from 'mongoose';
-import { User, BotSettings, PromptArchetype, GlobalMetrics, GlobalTelemetry, Conversation, IntendedUse, LogEntry, Testimonial, SystemSettings, Campaign } from './types.js';
+import { User, BotSettings, PromptArchetype, GlobalMetrics, GlobalTelemetry, Conversation, IntendedUse, LogEntry, Testimonial, SystemSettings, Campaign, RadarSignal, RadarSettings, GroupMarketMemory } from './types.js';
 import { v4 as uuidv4 } from 'uuid';
 import { MONGO_URI } from './env.js';
 import { clearBindedSession } from './whatsapp/mongoAuth.js'; 
@@ -25,6 +25,64 @@ const TestimonialSchema = new Schema({
 const SystemSettingsSchema = new Schema({
     id: { type: String, default: 'global', unique: true },
     supportWhatsappNumber: { type: String, default: '' } 
+});
+
+// RADAR 4.0 EXTENDED SCHEMA
+const RadarSignalSchema = new Schema({
+    id: { type: String, required: true, unique: true },
+    userId: { type: String, required: true, index: true },
+    groupJid: { type: String, required: true },
+    groupName: { type: String },
+    senderJid: { type: String, required: true },
+    senderName: { type: String },
+    messageContent: { type: String },
+    timestamp: { type: String },
+    
+    // Core (v3)
+    analysis: {
+        score: { type: Number },
+        category: { type: String },
+        intentType: { type: String },
+        reasoning: { type: String },
+        suggestedAction: { type: String }
+    },
+
+    // Predictive (v4)
+    strategicScore: { type: Number, default: 0 },
+    marketContext: {
+        momentum: String,
+        sentiment: String,
+        activeTopics: [String],
+        noiseLevel: Number
+    },
+    predictedWindow: {
+        confidenceScore: Number,
+        urgencyLevel: String,
+        delayRisk: String,
+        reasoning: String
+    },
+    hiddenSignals: [{
+        type: { type: String }, // Renamed from 'type' to allow Schema definition if needed, but simple obj works here
+        description: String,
+        intensity: Number
+    }],
+    actionIntelligence: {
+        suggestedEntryType: String,
+        communicationFraming: String,
+        spamRiskLevel: String,
+        recommendedWaitTimeSeconds: Number
+    },
+
+    status: { type: String, enum: ['NEW', 'ACTED', 'DISMISSED'], default: 'NEW' }
+}, { timestamps: true });
+
+// NEW GROUP MEMORY SCHEMA
+const GroupMarketMemorySchema = new Schema({
+    groupJid: { type: String, required: true, unique: true },
+    lastUpdated: { type: String },
+    avgResponseTime: { type: Number, default: 0 },
+    successfulWindows: { type: Number, default: 0 },
+    sentimentHistory: { type: [String], default: [] }
 });
 
 const CampaignSchema = new Schema({
@@ -85,6 +143,13 @@ const UserSchema = new Schema({
         isWizardCompleted: { type: Boolean, default: false }, 
         ignoredJids: { type: Array, default: [] }
     },
+    // NEW RADAR SETTINGS
+    radar: {
+        isEnabled: { type: Boolean, default: false },
+        monitoredGroups: { type: [String], default: [] },
+        keywordsInclude: { type: [String], default: [] },
+        keywordsExclude: { type: [String], default: [] }
+    },
     conversations: { type: Schema.Types.Mixed, default: {} },
     governance: {
         systemState: { type: String, enum: ['ACTIVE', 'WARNING', 'LIMITED', 'SUSPENDED'], default: 'ACTIVE' },
@@ -106,6 +171,8 @@ const LogModel = (mongoose.models.LogEntry || mongoose.model('LogEntry', LogSche
 const TestimonialModel = (mongoose.models.Testimonial || mongoose.model('Testimonial', TestimonialSchema)) as Model<Testimonial>;
 const SystemSettingsModel = (mongoose.models.SystemSettings || mongoose.model('SystemSettings', SystemSettingsSchema)) as Model<any>;
 const CampaignModel = (mongoose.models.Campaign || mongoose.model('Campaign', CampaignSchema)) as Model<Campaign>;
+const RadarSignalModel = (mongoose.models.RadarSignal || mongoose.model('RadarSignal', RadarSignalSchema)) as Model<RadarSignal>;
+const GroupMemoryModel = (mongoose.models.GroupMemory || mongoose.model('GroupMemory', GroupMarketMemorySchema)) as Model<GroupMarketMemory>;
 
 export const sanitizeKey = (key: string) => key.replace(/\./g, '_');
 
@@ -198,6 +265,7 @@ class Database {
             isWizardCompleted: false, 
             ignoredJids: []
         },
+        radar: { isEnabled: false, monitoredGroups: [], keywordsInclude: [], keywordsExclude: [] },
         conversations: {},
         governance: { 
             systemState: 'ACTIVE', 
@@ -332,7 +400,7 @@ class Database {
       const newTestimonial = await TestimonialModel.create({
           userId,
           name,
-          location: 'Mendoza',
+          location: 'Mendoza', // Default for new user posts
           text
       });
       return newTestimonial.toObject();
@@ -344,6 +412,16 @@ class Database {
 
   async getTestimonialsCount(): Promise<number> {
       return await TestimonialModel.countDocuments();
+  }
+
+  async countSeedTestimonials(): Promise<number> {
+      return await TestimonialModel.countDocuments({ userId: 'system_seed' });
+  }
+
+  // --- FORCE CLEAR METHOD ---
+  async clearTestimonials() {
+      // NUCLEAR OPTION: Eliminar TODO para purgar datos viejos sin 'system_seed'
+      await TestimonialModel.deleteMany({}); 
   }
 
   async seedTestimonials(testimonials: any[]) {
@@ -394,6 +472,62 @@ class Database {
           status: 'ACTIVE',
           'stats.nextRunAt': { $lte: now }
       }).lean();
+  }
+
+  // --- RADAR METHODS ---
+  async getRadarSettings(userId: string): Promise<RadarSettings> {
+      const user = await this.getUser(userId);
+      return user?.radar || { isEnabled: false, monitoredGroups: [], keywordsInclude: [], keywordsExclude: [] };
+  }
+
+  async updateRadarSettings(userId: string, settings: Partial<RadarSettings>): Promise<RadarSettings | undefined> {
+      const user = await this.getUser(userId);
+      if (!user) return undefined;
+      
+      const newRadar = { ...user.radar, ...settings };
+      // Sanitize arrays
+      if (!newRadar.monitoredGroups) newRadar.monitoredGroups = [];
+      
+      await UserModel.updateOne({ id: userId }, { $set: { radar: newRadar } });
+      return newRadar as RadarSettings;
+  }
+
+  async createRadarSignal(signal: RadarSignal): Promise<RadarSignal> {
+      const newSignal = await RadarSignalModel.create(signal);
+      return newSignal.toObject();
+  }
+
+  async getRadarSignals(userId: string, limit = 50): Promise<RadarSignal[]> {
+      // V4: Added strategicScore sort
+      return await RadarSignalModel.find({ userId, status: { $ne: 'DISMISSED' } })
+          .sort({ strategicScore: -1, 'analysis.score': -1, createdAt: -1 })
+          .limit(limit)
+          .lean();
+  }
+
+  async getRecentGroupSignals(groupJid: string, limit = 5): Promise<RadarSignal[]> {
+      // Used for context building in V4
+      return await RadarSignalModel.find({ groupJid })
+          .sort({ createdAt: -1 })
+          .limit(limit)
+          .lean();
+  }
+
+  async updateRadarSignalStatus(signalId: string, status: 'NEW' | 'ACTED' | 'DISMISSED'): Promise<void> {
+      await RadarSignalModel.findOneAndUpdate({ id: signalId }, { status });
+  }
+
+  // --- GROUP MEMORY METHODS (V4) ---
+  async getGroupMemory(groupJid: string): Promise<GroupMarketMemory | null> {
+      return await GroupMemoryModel.findOne({ groupJid }).lean();
+  }
+
+  async updateGroupMemory(groupJid: string, updates: Partial<GroupMarketMemory>): Promise<void> {
+      await GroupMemoryModel.findOneAndUpdate(
+          { groupJid }, 
+          { $set: updates }, 
+          { upsert: true, new: true }
+      );
   }
 }
 

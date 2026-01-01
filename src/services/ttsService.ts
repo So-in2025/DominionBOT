@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Modality } from '@google/genai';
 import fs from 'fs';
 import path from 'path';
@@ -24,7 +25,9 @@ const AUDIO_EVENTS: Record<string, string> = {
     alert_error_connection: "Alerta: Fallo de conexión con el nodo central.",
     alert_warning_trial_ended: "Atención: Tu período de prueba ha finalizado.",
     alert_error_generic: "Acción fallida. Por favor, intenta nuevamente.",
-    alert_error_credentials: "Algun dato parece incorrecto, revisa e intenta nuevamente."
+    alert_error_credentials: "Algun dato parece incorrecto, revisa e intenta nuevamente.",
+    // RADAR 3.0
+    radar_ping: "Atención: Oportunidad comercial de alto valor detectada en el radar."
 };
 
 

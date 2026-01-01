@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { BACKEND_URL, API_HEADERS } from '../config.js';
 
@@ -169,7 +170,7 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin }) => {
 
                     <div className="mt-8 text-center">
                         <p className="text-[9px] text-gray-600 uppercase tracking-widest font-bold">
-                           Acceso monitoreado vía Neural Guard v2.7.6
+                           Acceso monitoreado vía Neural Guard v3.0.0
                         </p>
                     </div>
                 </div>

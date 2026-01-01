@@ -69,6 +69,54 @@ El sistema analiza el resultado de cada simulación y genera un **Evaluation Res
 
 ---
 
+## 📡 RADAR DE OPORTUNIDADES 3.0 (SIGNAL DISCOVERY LAYER)
+
+> "La mejor venta es la que ganas antes de que otros sepan que existe."
+
+El Radar transforma Dominion de una herramienta reactiva (esperar mensajes) a un sistema proactivo de inteligencia comercial.
+
+### 1. Filosofía: Escucha Pasiva Inteligente
+A diferencia del bot conversacional, el Radar opera en **silencio absoluto**. Escanea grupos de WhatsApp donde el usuario ya participa, buscando señales de intención de compra (ej: "Alguien conoce una buena agencia?", "Busco alquiler en zona centro").
+
+### 2. Signal Engine & Scoring
+No es un simple buscador de palabras clave. Utilizamos un motor de inferencia dedicado que analiza:
+- **Contexto:** ¿Es una pregunta o una oferta?
+- **Urgencia:** ¿Necesita solución inmediata?
+- **Intención:** Clasificamos en *Búsqueda Activa*, *Comparación* o *Exploración*.
+
+Cada señal recibe un **Opportunity Score (0-100)**. Solo las señales de alto valor (Score > 50) se notifican al usuario.
+
+### 3. Safety Layer (Protección de Marca)
+- **Cero Spam:** El Radar JAMÁS envía mensajes automáticos. Su única función es alertar al humano.
+- **Filtro de Ruido:** Ignora mensajes del propio usuario y descarta conversaciones irrelevantes para proteger la cuota de IA.
+
+---
+
+## 🔮 RADAR 4.0: PREDICTIVE ADVANTAGE ENGINE
+
+> "Radar 4.0 no detecta intención. Detecta el momento exacto donde la intención va a nacer."
+
+Esta evolución convierte al sistema de un "detector" a un "motor predictivo de mercado".
+
+### 1. Market Context Engine
+Analiza el contexto colectivo del grupo, no solo mensajes aislados.
+- **Momentum:** Detecta si la actividad del grupo está acelerando (Hot) o enfriándose (Cooling).
+- **Sentimiento Colectivo:** Mide la tensión o positividad general del grupo antes de sugerir una intervención.
+
+### 2. Ventana Predictiva (The Window)
+Cada oportunidad viene con una predicción temporal:
+- **Confidence Score:** Probabilidad de que la oportunidad sea real.
+- **Urgency Level:** (CRITICAL / HIGH / MEDIUM / LOW).
+- **Action Intelligence:** Recomendación estratégica sobre CÓMO y CUÁNDO entrar (ej: "Entrada Directa", "Esperar 10 mins").
+
+### 3. Señales Invisibles (Hidden Signals)
+La IA busca patrones subyacentes que un humano podría perder:
+- **Micro-lenguaje:** Cambios sutiles en la forma de preguntar.
+- **Patrones de Silencio:** Pausas estratégicas después de una oferta.
+- **Convergencia:** Cuando varios usuarios empiezan a hablar de lo mismo.
+
+---
+
 ## 💰 MODELO SAAS Y ESTRATEGIA COMERCIAL
 
 Este documento detalla el modelo de negocio y la estructura de planes.
@@ -207,6 +255,7 @@ Dominion simplifica la oferta comercial. **Solo existe UN plan comercial complet
 ├── middleware/         # Middlewares de Express (ej: autenticación)
 ├── services/           # Lógica de negocio y comunicación con APIs externas
 │   ├── aiService.ts      # Lógica de construcción de prompts y llamada a Gemini
+│   ├── radarService.ts   # Motor de detección de oportunidades grupales (Radar 3.0)
 │   ├── audioService.ts   # (Frontend) Gestión de reproducción de audio y TTS
 │   ├── conversationService.ts # Orquesta la lógica de las conversaciones
 │   ├── logService.ts     # Sistema centralizado de logging
@@ -333,6 +382,7 @@ Proporcionar feedback auditivo para acciones de UI/UX y reforzar la identidad de
 - **Infraestructura Robusta:** Polling optimizado y reconexión automática de nodos (Zombie Kicker).
 - **Audio Feedback:** Sistema TTS integrado para eventos del sistema.
 - **Elite++ Training:** Simulador adversarial con detección de patrones de fallo.
+- **Motor de Campañas:** Sistema de difusión masiva con programación y jitter anti-ban.
 
 ### 🚀 v3.1 (Próximo Sprint)
 - **Mejoras de PWA:** Implementar notificaciones push para alertas de leads calientes.
@@ -387,3 +437,8 @@ Se ha añadido un control de anulación manual en la interfaz de chat (`ChatWind
 Se ha eliminado cualquier dependencia de `localStorage` para simular datos en la Landing Page o Dashboard.
 - **Implementación:** El servidor (`server.ts` y `database.ts`) verifica al inicio si la base de datos está vacía. Si lo está, inyecta ("siembra") testimonios y datos iniciales directamente en MongoDB con fechas pre-calculadas.
 - **Resultado:** Los datos son consistentes a través de dispositivos y resistentes al borrado de caché del navegador. Lo que el usuario ve es real desde la perspectiva de la aplicación.
+
+### 6. Motor de Campañas (Broadcast Táctico)
+Implementado en `campaignService.ts`, permite la programación y envío de mensajes a grupos.
+- **Anti-Ban Jitter:** Retrasos aleatorios entre mensajes (configurables) para imitar comportamiento humano.
+- **Scheduler:** Ejecución basada en cron (Diario, Semanal) o envío único.

@@ -13,7 +13,8 @@ export enum View {
   BLACKLIST = 'LISTA NEGRA',
   SETTINGS = 'CONFIGURACIÓN',
   SANDBOX = 'SIMULADOR',
-  CAMPAIGNS = 'CAMPAÑAS', // NEW VIEW
+  CAMPAIGNS = 'CAMPAÑAS',
+  RADAR = 'RADAR', // NEW
   ADMIN_GLOBAL = 'DASHBOARD_GLOBAL', 
   AUDIT_MODE = 'AUDIT_MODE'
 }
@@ -52,6 +53,80 @@ export type IntendedUse =
 export type PlanType = 'starter' | 'pro';
 export type PlanStatus = 'active' | 'expired' | 'suspended' | 'trial';
 export type LogLevel = 'INFO' | 'WARN' | 'ERROR' | 'AUDIT';
+
+// --- RADAR 4.0 TYPES (PREDICTIVE ENGINE) ---
+
+export interface MarketContextSnapshot {
+    momentum: 'ACCELERATING' | 'STABLE' | 'COOLING';
+    sentiment: 'POSITIVE' | 'NEUTRAL' | 'NEGATIVE' | 'TENSE';
+    activeTopics: string[];
+    noiseLevel: number; // 0-100
+}
+
+export interface PredictiveWindow {
+    confidenceScore: number; // 0-100 (Probabilidad de que la ventana sea real)
+    urgencyLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+    delayRisk: 'LOW' | 'MEDIUM' | 'HIGH';
+    reasoning: string;
+}
+
+export interface HiddenSignal {
+    type: 'MICRO_LANGUAGE' | 'EMOTIONAL_SHIFT' | 'SILENCE_PATTERN' | 'CONVERGENCE';
+    description: string;
+    intensity: number; // 1-10
+}
+
+export interface ActionIntelligence {
+    suggestedEntryType: 'DIRECT' | 'CONSULTATIVE' | 'PRIVATE' | 'WAIT';
+    communicationFraming: string; // "Focus on empathy", "Focus on speed"
+    spamRiskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
+    recommendedWaitTimeSeconds?: number;
+}
+
+export interface RadarSignal {
+    id: string;
+    userId: string;
+    groupJid: string;
+    groupName: string;
+    senderJid: string;
+    senderName?: string;
+    messageContent: string;
+    timestamp: string;
+    
+    // Core Analysis (v3.0)
+    analysis: {
+        score: number; // 0-100
+        category: string; 
+        intentType: 'SEARCH' | 'COMPARISON' | 'QUESTION' | 'URGENT';
+        reasoning: string;
+        suggestedAction: string;
+    };
+
+    // Predictive Layer (v4.0)
+    marketContext?: MarketContextSnapshot;
+    predictedWindow?: PredictiveWindow;
+    hiddenSignals?: HiddenSignal[];
+    actionIntelligence?: ActionIntelligence;
+    strategicScore?: number; // 0-100 (Weighted Score)
+
+    status: 'NEW' | 'ACTED' | 'DISMISSED';
+}
+
+export interface RadarSettings {
+    isEnabled: boolean;
+    monitoredGroups: string[]; // List of Group JIDs
+    keywordsInclude: string[]; // Optional pre-filter
+    keywordsExclude: string[];
+}
+
+export interface GroupMarketMemory {
+    groupJid: string;
+    lastUpdated: string;
+    avgResponseTime: number;
+    successfulWindows: number;
+    sentimentHistory: string[]; // Last 10 sentiments
+}
+// -----------------------
 
 // --- CAMPAIGN MODULE TYPES ---
 export type CampaignStatus = 'DRAFT' | 'ACTIVE' | 'PAUSED' | 'COMPLETED';
@@ -190,6 +265,9 @@ export interface User {
   settings: BotSettings;
   conversations: Record<string, Conversation>;
   
+  // NEW RADAR SETTINGS
+  radar?: RadarSettings;
+
   governance: {
     systemState: SystemState;
     riskScore: number;
