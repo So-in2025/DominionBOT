@@ -31,8 +31,9 @@ const PLANS: Record<PlanType, PlanFeatures> = {
 
 class PlanService {
     public getClientFeatures(user: User): PlanFeatures {
-        // If plan is not active, return a basic feature set (or starter)
-        if (user.plan_status !== 'active') {
+        // If plan is not active OR trial, return a basic feature set (or starter)
+        // FIX: Treat 'trial' as having access to features
+        if (user.plan_status !== 'active' && user.plan_status !== 'trial') {
             return PLANS.starter;
         }
         return PLANS[user.plan_type] || PLANS.starter;

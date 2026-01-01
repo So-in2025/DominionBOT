@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { Message, LeadStatus, User, PromptArchetype } from '../types.js';
 import { planService } from './planService.js';
@@ -10,7 +11,8 @@ export const generateBotResponse = async (
   user: User
 ): Promise<{ responseText?: string, suggestedReplies?: string[], newStatus: LeadStatus, tags: string[], recommendedAction?: string } | null> => {
   
-  if (!user.settings.isActive || user.plan_status !== 'active') {
+  // FIX: Allow 'trial' status to operate as active
+  if (!user.settings.isActive || (user.plan_status !== 'active' && user.plan_status !== 'trial')) {
       // If plan is expired or suspended, or bot is off, send a generic polite message or do nothing
       if(user.plan_status === 'expired') {
           return { responseText: "Disculpa la demora, en breve te atenderemos.", newStatus: LeadStatus.COLD, tags: [] };
@@ -120,7 +122,7 @@ ${JSON.stringify(Object.keys(responseSchema.properties))}
       if (!features.close_assist) result.suggestedReplies = undefined;
 
       return result;
-    } catch (err) { 
+    } catch (err: any) { 
         logService.warn(`[AI FAILOVER] Fallo con ${modelName}, intentando siguiente...`, user.id, user.username, { error: err.message }); 
     }
   }
