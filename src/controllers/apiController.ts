@@ -6,7 +6,7 @@ import { Buffer } from 'buffer';
 import { connectToWhatsApp, disconnectWhatsApp, sendMessage, getSessionStatus, processAiResponseForJid } from '../whatsapp/client.js'; // Import processAiResponseForJid
 import { conversationService } from '../services/conversationService.js';
 import { Message, LeadStatus, User, Conversation } from '../types.js';
-import { db } from '../database.js';
+import { db, sanitizeKey } from '../database.js'; // Import sanitizeKey
 import { logService } from '../services/logService.js';
 import fs from 'fs';
 import path from 'path';
@@ -95,11 +95,14 @@ export const handleUpdateConversation = async (req: any, res: any) => {
   const { id, updates } = req.body;
   
   const user = await db.getUser(userId);
-  if (!user || !user.conversations || !user.conversations[id]) {
+  // FIX: Check for sanitized key in the map
+  const sanitizedId = sanitizeKey(id);
+  const conversation = user?.conversations?.[sanitizedId] || user?.conversations?.[id]; // Fallback to raw id if old structure
+
+  if (!user || !conversation) {
       return res.status(404).json({ message: 'Conversación no encontrada.' });
   }
 
-  const conversation = user.conversations[id];
   Object.assign(conversation, updates);
   
   await db.saveUserConversation(userId, conversation);
@@ -260,10 +263,15 @@ export const handleClearClientTestBotConversation = async (req: any, res: any) =
             return res.status(404).json({ message: 'Cliente objetivo no encontrado.' });
         }
 
-        if (targetUser.conversations && targetUser.conversations[ELITE_BOT_JID]) {
-            delete targetUser.conversations[ELITE_BOT_JID];
+        const safeJid = sanitizeKey(ELITE_BOT_JID);
+        if (targetUser.conversations && targetUser.conversations[safeJid]) {
+            delete targetUser.conversations[safeJid];
             await db.updateUser(userId, { conversations: targetUser.conversations });
             logService.audit(`Conversación de bot élite eliminada para cliente (autodirigida): ${targetUser.username}`, userId, user.username);
+        } else if (targetUser.conversations && targetUser.conversations[ELITE_BOT_JID]) {
+             // Fallback for old structure
+             delete targetUser.conversations[ELITE_BOT_JID];
+             await db.updateUser(userId, { conversations: targetUser.conversations });
         } else {
             logService.info(`No se encontró conversación de bot élite para eliminar en cliente (autodirigida): ${targetUser.username}`, userId, user.username);
         }

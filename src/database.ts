@@ -4,8 +4,8 @@ import mongoose, { Schema, Model } from 'mongoose';
 import { User, BotSettings, PromptArchetype, GlobalMetrics, GlobalTelemetry, Conversation, IntendedUse, LogEntry, Testimonial, SystemSettings } from './types.js';
 import { v4 as uuidv4 } from 'uuid';
 import { MONGO_URI } from './env.js';
-import { clearBindedSession } from './whatsapp/mongoAuth.js'; // Import Session cleaner
-import { logService } from './services/logService.js'; // Import logService
+import { clearBindedSession } from './whatsapp/mongoAuth.js'; 
+import { logService } from './services/logService.js'; 
 
 const LogSchema = new Schema({
     timestamp: { type: String, required: true, index: true },
@@ -25,7 +25,7 @@ const TestimonialSchema = new Schema({
 
 const SystemSettingsSchema = new Schema({
     id: { type: String, default: 'global', unique: true },
-    supportWhatsappNumber: { type: String, default: '' } // Default to empty to detect unconfigured state
+    supportWhatsappNumber: { type: String, default: '' } 
 });
 
 const UserSchema = new Schema({
@@ -58,7 +58,7 @@ const UserSchema = new Schema({
         toneValue: { type: Number, default: 3 },
         rhythmValue: { type: Number, default: 3 },
         intensityValue: { type: Number, default: 3 },
-        isWizardCompleted: { type: Boolean, default: false }, // Added for wizard state
+        isWizardCompleted: { type: Boolean, default: false }, 
         ignoredJids: { type: Array, default: [] }
     },
     conversations: { type: Map, of: Object, default: {} },
@@ -77,9 +77,8 @@ const LogModel = (mongoose.models.LogEntry || mongoose.model('LogEntry', LogSche
 const TestimonialModel = (mongoose.models.Testimonial || mongoose.model('Testimonial', TestimonialSchema)) as Model<Testimonial>;
 const SystemSettingsModel = (mongoose.models.SystemSettings || mongoose.model('SystemSettings', SystemSettingsSchema)) as Model<any>;
 
-// --- Test Bot Specifics (Duplicated for clarity) ---
-const ELITE_BOT_JID = '5491112345678@s.whatsapp.net';
-// --- END Test Bot Specifics ---
+// Helper to sanitize keys for MongoDB (dots are forbidden in keys for update operations)
+export const sanitizeKey = (key: string) => key.replace(/\./g, '_');
 
 class Database {
   private isInitialized = false;
@@ -97,7 +96,7 @@ class Database {
               maxPoolSize: 10
           });
           this.isInitialized = true;
-          console.log(`✅ [DB] Conexión establecida a la base de datos: ${mongoose.connection.db.databaseName}`); // Log database name
+          console.log(`✅ [DB] Conexión establecida a la base de datos: ${mongoose.connection.db.databaseName}`); 
       } catch (e) {
           console.error("❌ [DB] ERROR FATAL DE CONEXIÓN:", e);
           throw e; 
@@ -152,7 +151,7 @@ class Database {
             toneValue: 3, 
             rhythmValue: 3, 
             intensityValue: 3,
-            isWizardCompleted: false, // Default to false for new users
+            isWizardCompleted: false, 
             ignoredJids: []
         },
         conversations: {},
@@ -205,23 +204,19 @@ class Database {
   }
 
   async getAllClients() {
-      // FIX: Removed `conversations: 0` to ensure conversation data is fetched for dashboard metrics.
       return await UserModel.find({ role: 'client' }, { password: 0, recoveryKey: 0 }).lean();
   }
 
   async getUser(userId: string): Promise<User | null> {
       if (userId === 'master-god-node') return this.getGodModeUser();
       
-      // CRITICAL FIX: Usar .lean() es OBLIGATORIO para evitar problemas con Mapas de Mongoose
-      // Esto devuelve un objeto JSON puro en lugar de un Documento Mongoose complejo.
+      // CRITICAL FIX: Use .lean() to prevent Map issues
       const doc = await UserModel.findOne({ id: userId }).lean();
       
       if (!doc) {
           logService.warn(`[DB] [getUser] User with ID ${userId} NOT found.`, userId);
           return null;
       }
-
-      // NO necesitamos convertir .toObject() porque .lean() ya nos dio un objeto plano.
       return doc as User;
   }
   
@@ -245,24 +240,46 @@ class Database {
   }
 
   async getUserConversations(userId: string): Promise<Conversation[]> {
-      const user = await this.getUser(userId); // Esto ahora usa .lean(), devolviendo un objeto plano
+      const user = await this.getUser(userId);
       if (!user) {
-          logService.warn(`[DB] [getUserConversations] User ${userId} not found, returning empty conversations.`, userId);
           return [];
       }
       
-      // FIX: Robust handling. Si user.conversations es un objeto plano (gracias a lean()), Object.values funciona.
       let conversationsArray: Conversation[] = [];
       
       if (user.conversations) {
-          // Si por alguna razón sigue siendo un Map (raro con lean()), lo manejamos.
-          if (user.conversations instanceof Map) {
-               // @ts-ignore
-               conversationsArray = Array.from(user.conversations.values());
-          } else {
-               // Esto es lo estándar para objetos planos
-               conversationsArray = Object.values(user.conversations);
-          }
+          // Normalize if somehow it's still a Map
+          const rawConvos = (user.conversations instanceof Map) 
+              ? Object.fromEntries(user.conversations) 
+              : user.conversations;
+
+          // RECOVERY LOGIC: Extract conversations that were nested due to dot notation bug
+          conversationsArray = Object.values(rawConvos).map((c: any) => {
+              // 1. If it's a valid conversation, return it.
+              if (c.id && Array.isArray(c.messages)) return c as Conversation;
+
+              // 2. If it's nested (e.g. { "us": { id: "..." } } or { "whatsapp": { "net": { ... } } })
+              // We try to find the inner object that has 'id' and 'messages'.
+              const values = Object.values(c);
+              if (values.length > 0) {
+                  // Check depth 1
+                  for (const val of values) {
+                      if (val && typeof val === 'object' && 'id' in val && 'messages' in val) {
+                          return val as Conversation;
+                      }
+                      // Check depth 2 (for multiple dots)
+                      if (val && typeof val === 'object') {
+                          const deepValues = Object.values(val);
+                          for (const deepVal of deepValues) {
+                              if (deepVal && typeof deepVal === 'object' && 'id' in deepVal && 'messages' in deepVal) {
+                                  return deepVal as Conversation;
+                              }
+                          }
+                      }
+                  }
+              }
+              return null;
+          }).filter((c): c is Conversation => c !== null);
       }
 
       logService.info(`[DB] [getUserConversations] Returning ${conversationsArray.length} conversations for ${userId}.`, userId);
@@ -270,9 +287,16 @@ class Database {
   }
 
   async saveUserConversation(userId: string, conversation: Conversation) {
-      const updateKey = `conversations.${conversation.id}`;
-      // Note: $set works fine with Maps using dot notation for keys
-      const result = await UserModel.updateOne({ id: userId }, { $set: { [updateKey]: conversation, last_activity_at: new Date().toISOString() } });
+      // CRITICAL FIX: Replace dots in key to prevent MongoDB from nesting it.
+      // E.g. "123@s.whatsapp.net" -> "123@s_whatsapp_net"
+      const safeId = sanitizeKey(conversation.id);
+      const updateKey = `conversations.${safeId}`;
+      
+      // Update using the sanitized key. The value (conversation object) keeps the original ID with dots.
+      await UserModel.updateOne(
+          { id: userId }, 
+          { $set: { [updateKey]: conversation, last_activity_at: new Date().toISOString() } }
+      );
   }
 
   async updateUserSettings(userId: string, settings: Partial<BotSettings>) {
@@ -325,7 +349,6 @@ class Database {
   async getSystemSettings(): Promise<SystemSettings> {
       const doc = await SystemSettingsModel.findOne({ id: 'global' }).lean();
       if (!doc) {
-          // Create default if not exists
           const newSettings = await SystemSettingsModel.create({ id: 'global', supportWhatsappNumber: '' });
           return newSettings.toObject();
       }

@@ -5,7 +5,7 @@ interface ConnectionPanelProps {
     status: ConnectionStatus;
     qrCode: string | null;
     pairingCode?: string | null;
-    onConnect: (phoneNumber?: string) => Promise<void>; 
+    onConnect: (phoneNumber?: string) => Promise<any>; 
     onDisconnect: () => void;
     onWipe: () => void;
     user: User | null;

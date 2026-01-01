@@ -1,6 +1,6 @@
 
 import { Request, Response } from 'express';
-import { db } from '../database.js';
+import { db, sanitizeKey } from '../database.js'; // Import sanitizeKey
 import { logService } from '../services/logService.js';
 // FIX: Import ConnectionStatus enum for type-safe comparisons.
 import { ConnectionStatus, User, SystemSettings, Message, LeadStatus, Conversation } from '../types.js';
@@ -307,10 +307,15 @@ export const handleClearTestBotConversation = async (req: any, res: any) => {
             return res.status(404).json({ message: 'Cliente objetivo no encontrado.' });
         }
 
-        if (user.conversations && user.conversations[ELITE_BOT_JID]) {
-            delete user.conversations[ELITE_BOT_JID];
+        const safeJid = sanitizeKey(ELITE_BOT_JID);
+        if (user.conversations && user.conversations[safeJid]) {
+            delete user.conversations[safeJid];
             await db.updateUser(targetUserId, { conversations: user.conversations });
             logService.audit(`Conversación de bot élite eliminada para cliente: ${user.username}`, admin.id, admin.username, { targetUserId });
+        } else if (user.conversations && user.conversations[ELITE_BOT_JID]) {
+             // Fallback for old structure
+             delete user.conversations[ELITE_BOT_JID];
+             await db.updateUser(targetUserId, { conversations: user.conversations });
         } else {
             logService.info(`No se encontró conversación de bot élite para eliminar en cliente: ${user.username}`, admin.id, admin.username, { targetUserId });
         }
