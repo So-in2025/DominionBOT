@@ -1,13 +1,16 @@
+
 import React, { useRef, useEffect, useState } from 'react';
 import { Conversation, LeadStatus, InternalNote } from '../types';
 import MessageBubble from './MessageBubble';
 import ChatInput from './ChatInput';
 import SalesContextSidebar from './SalesContextSidebar';
+import { formatPhoneNumber } from '../utils/textUtils';
+import { BACKEND_URL, getAuthHeaders } from '../config';
 
 interface ChatWindowProps {
   conversation: Conversation | null;
   onSendMessage: (text: string) => void;
-  onToggleBot: (id: string) => void;
+  onToggleBot: (id: string) => Promise<void>; 
   isTyping: boolean;
   isBotGloballyActive: boolean;
   isMobile: boolean;
@@ -35,6 +38,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
 }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [showSidebar, setShowSidebar] = useState(true);
+  const [isTogglingBot, setIsTogglingBot] = useState(false);
+  const [isForcingAi, setIsForcingAi] = useState(false);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -44,9 +49,36 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
 
   const handleSuggestionClick = (suggestion: string) => {
       onSendMessage(suggestion);
-      // Limpiar sugerencias después de usar una
       if (conversation && onUpdateConversation) {
           onUpdateConversation(conversation.id, { suggestedReplies: undefined });
+      }
+  };
+
+  const handleToggleClick = async () => {
+      if (!conversation) return;
+      setIsTogglingBot(true);
+      try {
+          await onToggleBot(conversation.id);
+      } finally {
+          setIsTogglingBot(false);
+      }
+  };
+
+  const handleForceAiRun = async () => {
+      if (!conversation) return;
+      setIsForcingAi(true);
+      try {
+          const token = localStorage.getItem('saas_token');
+          await fetch(`${BACKEND_URL}/api/conversation/force-run`, {
+              method: 'POST',
+              headers: getAuthHeaders(token),
+              body: JSON.stringify({ id: conversation.id })
+          });
+          // Visual feedback handled by isTyping coming from parent/polling
+      } catch (e) {
+          console.error("Failed to force AI run", e);
+      } finally {
+          setIsForcingAi(false);
       }
   };
 
@@ -63,6 +95,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   }
   
   const currentBadge = statusBadgeClass[conversation.status];
+  const displayTitle = isNaN(Number(conversation.leadName.replace(/\+/g, ''))) 
+      ? conversation.leadName 
+      : formatPhoneNumber(conversation.leadName);
 
   return (
     <div className="flex-1 flex flex-row h-full overflow-hidden">
@@ -79,7 +114,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
               )}
               
               <div className="relative">
-                  <div className="w-10 h-10 md:w-11 md:h-11 rounded-full bg-gradient-to-br from-gray-700 to-black border border-white/10 flex items-center justify-center font-bold text-white shadow-inner">
+                  <div className="w-10 h-10 md:w-11 md:h-11 rounded-full bg-gradient-to-br from-gray-700 to-black border border-white/10 flex items-center justify-center font-bold text-white shadow-inner overflow-hidden">
+                      {/* Show initials or icon */}
                       {conversation.leadName.charAt(0).toUpperCase()}
                   </div>
                   <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-brand-surface rounded-full"></div>
@@ -87,9 +123,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
 
               <div>
                 <h2 className="text-sm md:text-base font-bold text-white leading-tight flex items-center gap-2">
-                    {conversation.leadName}
+                    {displayTitle}
                 </h2>
-                <p className="text-[10px] text-gray-500 font-mono mt-0.5">{conversation.leadIdentifier}</p>
+                <p className="text-[10px] text-gray-500 font-mono mt-0.5 tracking-wider">{formatPhoneNumber(conversation.leadIdentifier)}</p>
               </div>
           </div>
           
@@ -104,23 +140,46 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                     Licencia Requerida
                 </div>
             ) : (
-                <button 
-                onClick={() => onToggleBot(conversation.id)}
-                disabled={!isBotGloballyActive || conversation.isMuted}
-                className={`
-                    flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all
-                    ${conversation.isBotActive 
-                        ? 'bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500 hover:text-white' 
-                        : 'bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-green-500 hover:text-white'}
-                    ${(!isBotGloballyActive || conversation.isMuted) ? 'opacity-50 cursor-not-allowed grayscale' : ''}
-                `}
-                >
-                {conversation.isMuted ? (
-                    <><svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"/></svg> Copiloto</>
-                ) : (
-                    conversation.isBotActive ? "Bot ON" : "Bot OFF"
-                )}
-                </button>
+                <div className="flex items-center gap-2">
+                    {/* NEW: FORCE AI BUTTON - Only shows when bot is active and not muted */}
+                    {conversation.isBotActive && !conversation.isMuted && isBotGloballyActive && (
+                        <button 
+                            onClick={handleForceAiRun}
+                            disabled={isForcingAi}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-gold/10 hover:bg-brand-gold/20 text-brand-gold border border-brand-gold/30 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all disabled:opacity-50"
+                            title="Forzar análisis de historial"
+                        >
+                            {isForcingAi ? (
+                                <div className="w-3 h-3 border-2 border-brand-gold border-t-transparent rounded-full animate-spin"></div>
+                            ) : (
+                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                            )}
+                            <span className="hidden md:inline">Ejecutar IA</span>
+                        </button>
+                    )}
+
+                    <button 
+                    onClick={handleToggleClick}
+                    disabled={!isBotGloballyActive || conversation.isMuted || isTogglingBot}
+                    className={`
+                        flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all min-w-[100px] justify-center
+                        ${conversation.isBotActive 
+                            ? 'bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500 hover:text-white' 
+                            : 'bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-green-500 hover:text-white'}
+                        ${(!isBotGloballyActive || conversation.isMuted) ? 'opacity-50 cursor-not-allowed grayscale' : ''}
+                    `}
+                    >
+                    {isTogglingBot ? (
+                        <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                    ) : (
+                        conversation.isMuted ? (
+                            <><svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"/></svg> Copiloto</>
+                        ) : (
+                            conversation.isBotActive ? "PAUSAR IA" : "ACTIVAR IA"
+                        )
+                    )}
+                    </button>
+                </div>
             )}
 
             <button 
@@ -197,7 +256,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
         <ChatInput
           onSendMessage={onSendMessage}
           disabled={!isBotGloballyActive || (conversation.isBotActive && !conversation.isMuted) || (isPlanExpired && conversation.isBotActive)}
-          placeholder={isPlanExpired ? 'Modo Lectura - Licencia Requerida' : (conversation.isMuted ? 'Escribe o selecciona una sugerencia...' : (conversation.isBotActive ? 'El bot tiene el control...' : 'Escribe un mensaje...'))}
+          placeholder={isPlanExpired ? 'Modo Lectura - Licencia Requerida' : (conversation.isMuted ? 'Escribe o selecciona una sugerencia...' : (conversation.isBotActive ? 'La IA está respondiendo...' : 'Escribe un mensaje...'))}
         />
       </div>
 

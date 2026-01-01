@@ -212,8 +212,11 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                                 timestamp: new Date(msgTimestamp * 1000)
                             };
 
+                            // Capture PushName (Real Name)
+                            const senderName = msg.pushName || undefined;
+
                             // Guardar mensaje en BD
-                            await conversationService.addMessage(userId, jid, userMessage, undefined, isHistory);
+                            await conversationService.addMessage(userId, jid, userMessage, senderName, isHistory);
 
                             // IA Trigger (Solo si hay API Key y no es history)
                             if (!isFromMe && !isHistory && type === 'notify') {

@@ -130,7 +130,7 @@ app.get('/api/metrics', authenticateToken, async (req: any, res: any) => {
 });
 
 import { 
-    handleConnect, handleDisconnect, handleSendMessage, handleUpdateConversation, handleGetStatus, handleGetConversations, handleGetTestimonials, handlePostTestimonial, handleGetTtsAudio, handleStartClientTestBot, handleClearClientTestBotConversation
+    handleConnect, handleDisconnect, handleSendMessage, handleUpdateConversation, handleGetStatus, handleGetConversations, handleGetTestimonials, handlePostTestimonial, handleGetTtsAudio, handleStartClientTestBot, handleClearClientTestBotConversation, handleForceAiRun
 } from './controllers/apiController.js';
 import { handleGetAllClients, handleUpdateClient, handleRenewClient, handleGetLogs, handleGetDashboardMetrics, handleActivateClient, handleGetSystemSettings, handleUpdateSystemSettings, handleDeleteClient, handleStartTestBot, handleClearTestBotConversation } from './controllers/adminController.js';
 
@@ -140,6 +140,7 @@ app.post('/api/connect', authenticateToken, handleConnect);
 app.get('/api/disconnect', authenticateToken, handleDisconnect);
 app.post('/api/send', authenticateToken, handleSendMessage);
 app.post('/api/conversation/update', authenticateToken, handleUpdateConversation);
+app.post('/api/conversation/force-run', authenticateToken, handleForceAiRun); // NEW ROUTE
 app.get('/api/conversations', authenticateToken, handleGetConversations);
 
 // Client Test Bot Routes

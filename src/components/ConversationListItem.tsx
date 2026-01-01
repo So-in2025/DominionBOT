@@ -1,6 +1,7 @@
 
 import React from 'react';
 import { Conversation, LeadStatus } from '../types';
+import { formatPhoneNumber } from '../utils/textUtils';
 
 interface ConversationListItemProps {
   conversation: Conversation;
@@ -17,6 +18,10 @@ const statusColorClass = {
 const ConversationListItem: React.FC<ConversationListItemProps> = ({ conversation, isSelected, onSelect }) => {
   const lastMessage = conversation.messages[conversation.messages.length - 1];
   const colorClass = statusColorClass[conversation.status];
+  
+  const displayTitle = isNaN(Number(conversation.leadName.replace(/\+/g, ''))) 
+      ? conversation.leadName 
+      : formatPhoneNumber(conversation.leadName);
 
   return (
     <li
@@ -42,7 +47,7 @@ const ConversationListItem: React.FC<ConversationListItemProps> = ({ conversatio
       <div className="flex-1 min-w-0">
         <div className="flex justify-between items-center mb-1">
           <h3 className={`text-sm font-semibold truncate transition-colors ${isSelected ? 'text-brand-gold' : 'text-gray-200 group-hover:text-white'}`}>
-            {conversation.leadName}
+            {displayTitle}
           </h3>
           <span className="text-[10px] text-gray-500 flex-shrink-0 ml-2 font-mono">
             {new Date(lastMessage?.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}

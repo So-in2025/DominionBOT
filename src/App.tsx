@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Conversation, BotSettings, Message, View, ConnectionStatus, User, LeadStatus, PromptArchetype, Testimonial } from './types';
 import Header from './components/Header';
@@ -107,324 +108,227 @@ const TrialBanner: React.FC<{ user: User | null, supportNumber: string | null }>
     return null;
 };
 
-// --- START: Landing Page Strategic Sections ---
-
 const TestimonialsSection = ({ isLoggedIn, token, showToast }: { isLoggedIn: boolean, token: string | null, showToast: (message: string, type: 'success' | 'error' | 'info') => void }) => {
-    const [simulatedTestimonials, setSimulatedTestimonials] = useState<any[]>([]);
-    const [realTestimonials, setRealTestimonials] = useState<Testimonial[]>([]);
-    const [newTestimonialText, setNewTestimonialText] = useState('');
-    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [testimonials, setTestimonials] = useState<Testimonial[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [newTestimonial, setNewTestimonial] = useState("");
+    const [submitting, setSubmitting] = useState(false);
 
     useEffect(() => {
-        const fetchRealTestimonials = async () => {
+        const fetchTestimonials = async () => {
+            if (!BACKEND_URL) {
+                 // Fallback if no backend
+                 setTestimonials(PREDEFINED_TESTIMONIALS as any);
+                 setLoading(false);
+                 return;
+            }
             try {
-                if (!BACKEND_URL) {
-                    console.warn("BACKEND_URL no está configurada. No se pueden cargar las reseñas.");
-                    return;
-                }
-                const res = await fetch(`${BACKEND_URL}/api/testimonials`, { headers: API_HEADERS });
-
-                if (!res.ok) {
-                    console.error(`Fallo al cargar reseñas: El servidor respondió con estado ${res.status}`);
-                    return;
-                }
-
-                const resClone = res.clone();
-                const bodyText = await resClone.text();
-
-                if (!bodyText) {
-                    setRealTestimonials([]);
-                    return;
-                }
-
-                const contentType = res.headers.get("content-type");
-                if (contentType && contentType.includes("application/json")) {
+                const res = await fetch(`${BACKEND_URL}/api/testimonials`);
+                if (res.ok) {
                     const data = await res.json();
-                    setRealTestimonials(data);
+                    setTestimonials(data.length > 0 ? data : PREDEFINED_TESTIMONIALS);
                 } else {
-                    console.warn("Fallo al cargar reseñas: La respuesta no es un JSON válido, probablemente una página de advertencia de proxy.");
-                    setRealTestimonials([]);
+                     setTestimonials(PREDEFINED_TESTIMONIALS as any);
                 }
-            } catch (e) { 
-                // FIX: Consolidated error handling, removed specific audio call here as it's handled globally.
-                console.error("Fallo de red o de parseo al cargar reseñas:", e); 
-                setRealTestimonials([]);
+            } catch (error) {
+                setTestimonials(PREDEFINED_TESTIMONIALS as any);
+            } finally {
+                setLoading(false);
             }
         };
-        fetchRealTestimonials();
+        fetchTestimonials();
     }, []);
 
-    useEffect(() => {
-        const LAUNCH_KEY = 'dominion_launch_date';
-        const MAX_DAYS = 10;
-        const INTERVAL_MS = 12 * 60 * 60 * 1000;
-
-        let launchDate = localStorage.getItem(LAUNCH_KEY);
-        if (!launchDate) {
-            launchDate = new Date().toISOString();
-            localStorage.setItem(LAUNCH_KEY, launchDate);
-        }
-
-        const updateVisible = () => {
-            const msSinceLaunch = new Date().getTime() - new Date(launchDate!).getTime();
-            const daysSinceLaunch = msSinceLaunch / (1000 * 60 * 60 * 24);
-            
-            if (daysSinceLaunch > MAX_DAYS) {
-                setSimulatedTestimonials(PREDEFINED_TESTIMONIALS);
-                return;
-            }
-
-            const intervalsPassed = Math.floor(msSinceLaunch / INTERVAL_MS);
-            const count = Math.min(intervalsPassed + 1, PREDEFINED_TESTIMONIALS.length);
-            setSimulatedTestimonials(PREDEFINED_TESTIMONIALS.slice(0, count));
-        };
-        
-        updateVisible();
-        const intervalId = setInterval(updateVisible, INTERVAL_MS);
-        return () => clearInterval(intervalId);
-    }, []);
-
-    const allTestimonials = useMemo(() => {
-        const launchDate = new Date(localStorage.getItem('dominion_launch_date') || new Date().toISOString());
-        const INTERVAL_MS = 12 * 60 * 60 * 1000;
-
-        const simulatedWithDates = simulatedTestimonials.map((t, i) => ({
-            ...t,
-            createdAt: new Date(launchDate.getTime() + i * INTERVAL_MS).toISOString(),
-            _id: `sim_${i}`
-        }));
-
-        const combined = [...realTestimonials, ...simulatedWithDates];
-        combined.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        return combined;
-    }, [realTestimonials, simulatedTestimonials]);
-
-    const handleSubmitTestimonial = async (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!newTestimonialText.trim() || !token) return;
-
-        setIsSubmitting(true);
+        if (!newTestimonial.trim() || !token) return;
+        setSubmitting(true);
         try {
-            const res = await fetch(`${BACKEND_URL}/api/testimonials`, {
+             const res = await fetch(`${BACKEND_URL}/api/testimonials`, {
                 method: 'POST',
                 headers: getAuthHeaders(token),
-                body: JSON.stringify({ text: newTestimonialText })
+                body: JSON.stringify({ text: newTestimonial })
             });
-
             if (res.ok) {
-                const newTestimonial = await res.json();
-                setRealTestimonials(prev => [newTestimonial, ...prev]);
-                setNewTestimonialText('');
-                showToast('¡Gracias por tu reseña!', 'success');
-                audioService.play('action_success_feedback');
+                const added = await res.json();
+                setTestimonials(prev => [added, ...prev]);
+                setNewTestimonial("");
+                showToast("Testimonio publicado. ¡Gracias!", 'success');
             } else {
-                showToast('Hubo un error al enviar tu reseña.', 'error');
+                showToast("Error al publicar testimonio.", 'error');
             }
-        } catch (error) {
-            showToast('Error de red al enviar la reseña.', 'error');
+        } catch (e) {
+             showToast("Error de conexión.", 'error');
         } finally {
-            setIsSubmitting(false);
+            setSubmitting(false);
         }
-    };
-    
-    const renderTestimonialForm = () => {
-        if (!isLoggedIn) {
-            return (
-                 <div className="mt-20 text-center relative group">
-                    <input type="text" placeholder="Dejá tu reseña..." disabled className="w-full max-w-2xl mx-auto bg-brand-black border border-dashed border-white/20 rounded-2xl py-6 px-8 text-center text-gray-500 cursor-not-allowed" />
-                    <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 w-max opacity-0 group-hover:opacity-100 transition-opacity bg-brand-gold text-black text-xs font-bold px-4 py-2 rounded-lg shadow-lg">
-                        Inicia sesión para compartir tu experiencia
-                    </div>
-                </div>
-            );
-        }
-
-        return (
-            <form onSubmit={handleSubmitTestimonial} className="mt-20 max-w-2xl mx-auto animate-fade-in">
-                <h3 className="text-center font-bold text-brand-gold mb-4 uppercase text-xs tracking-widest">Comparte tu experiencia</h3>
-                <div className="relative">
-                    <textarea value={newTestimonialText} onChange={(e) => setNewTestimonialText(e.target.value)} placeholder="Escribe tu reseña aquí..." className="w-full bg-brand-black border border-white/20 rounded-2xl py-4 px-6 text-white h-28 resize-none focus:border-brand-gold focus:ring-brand-gold/50 outline-none transition" maxLength={250} />
-                    <p className="absolute bottom-3 right-4 text-[10px] text-gray-500 font-mono">{newTestimonialText.length} / 250{'}'}</p>
-                </div>
-                <button type="submit" disabled={isSubmitting || !newTestimonialText.trim()} className="w-full mt-4 py-4 bg-brand-gold text-black rounded-xl font-black text-xs uppercase tracking-[0.2em] shadow-lg shadow-brand-gold/20 hover:scale-[1.02] transition-transform disabled:opacity-50 disabled:cursor-not-allowed">
-                    {isSubmitting ? 'Publicando...' : 'Publicar Reseña'}
-                </button>
-            </form>
-        );
     };
 
     return (
-        <section className="bg-brand-surface py-20 sm:py-32">
-            <div className="mx-auto max-w-7xl px-6 lg:px-8">
-                <div className="mx-auto max-w-xl text-center">
-                    <h2 className="text-lg font-semibold leading-8 tracking-tight text-brand-gold uppercase">El Muro de la Verdad</h2>
-                    <p className="mt-2 text-3xl font-black tracking-tight text-white sm:text-4xl">Resultados Reales de Negocios Reales</p>
+        <section className="py-20 bg-black relative border-t border-white/5">
+             <div className="max-w-7xl mx-auto px-6">
+                <div className="text-center mb-16">
+                     <h2 className="text-3xl font-black text-white uppercase tracking-tighter mb-4">La Voz de la Red</h2>
+                     <p className="text-gray-400 text-sm max-w-2xl mx-auto">Lo que dicen quienes ya operan con Dominion.</p>
                 </div>
-                <div className="mx-auto mt-16 flow-root max-w-2xl sm:mt-20 lg:mx-0 lg:max-w-none">
-                    <div className="columns-1 sm:columns-2 lg:columns-3 gap-8 space-y-8">
-                        {allTestimonials.map((testimonial) => (
-                            <div key={testimonial._id} className="break-inside-avoid p-8 bg-brand-black border border-white/10 rounded-3xl shadow-lg hover:shadow-brand-gold/10 transition-shadow duration-300">
-                                <div className="flex items-center gap-x-4">
-                                    <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center text-brand-gold font-bold text-lg">{testimonial.name.charAt(0)}</div>
-                                    <div>
-                                        <div className="font-semibold text-white">{testimonial.name}</div>
-                                        <div className="text-gray-500 text-xs">{testimonial.location}</div>
-                                    </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {testimonials.map((t, i) => (
+                        <div key={i} className="bg-white/5 border border-white/5 p-6 rounded-2xl relative">
+                             <div className="flex items-center gap-3 mb-4">
+                                <div className="w-10 h-10 rounded-full bg-brand-gold/20 flex items-center justify-center text-brand-gold font-bold text-lg">
+                                    {t.name.charAt(0)}
                                 </div>
-                                <div className="relative mt-6">
-                                    <p className="text-sm leading-6 text-gray-300">“{testimonial.text}”</p>
+                                <div>
+                                    <h4 className="text-white font-bold text-sm">{t.name}</h4>
+                                    <p className="text-gray-500 text-xs">{t.location}</p>
                                 </div>
-                                <div className="flex items-center justify-between mt-6">
-                                    <div className="flex text-yellow-400">
-                                        {[...Array(5)].map((_, i) => <svg key={i} className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>)}
-                                    </div>
-                                    <div className="text-[9px] font-bold uppercase tracking-widest text-green-400/60 bg-green-500/10 px-2 py-1 rounded-full border border-green-500/20">Cliente Verificado</div>
-                                </div>
-                            </div>
-                        ))}
+                             </div>
+                             <p className="text-gray-300 text-sm italic">"{t.text}"</p>
+                        </div>
+                    ))}
+                </div>
+
+                {isLoggedIn && (
+                    <div className="mt-16 max-w-xl mx-auto bg-brand-surface border border-brand-gold/20 p-8 rounded-3xl shadow-2xl">
+                        <h3 className="text-white font-bold text-lg mb-4 text-center uppercase tracking-widest">Deja tu huella en el sistema</h3>
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            <textarea 
+                                value={newTestimonial} 
+                                onChange={e => setNewTestimonial(e.target.value)}
+                                className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm focus:border-brand-gold outline-none resize-none h-32"
+                                placeholder="Comparte tu experiencia..."
+                                maxLength={250}
+                            />
+                            <button disabled={submitting || !newTestimonial.trim()} className="w-full py-3 bg-brand-gold text-black font-black uppercase tracking-widest rounded-xl hover:scale-[1.02] transition-transform disabled:opacity-50">
+                                {submitting ? 'Publicando...' : 'Publicar Testimonio'}
+                            </button>
+                        </form>
                     </div>
-                </div>
-                 {renderTestimonialForm()}
-            </div>
+                )}
+             </div>
         </section>
     );
 };
 
 const FaqSection = () => {
-    const [openFaq, setOpenFaq] = useState<number | null>(0);
     const faqs = [
-        { q: "¿En qué se diferencia de otros bots de WhatsApp?", a: "Dominion no es un bot de flujos; es una infraestructura de calificación. Usamos IA avanzada (Google Gemini) para entender la intención real de compra, no solo para seguir un script predefinido." },
-        { q: "¿Es seguro para mi número? ¿Hay riesgo de bloqueo?", a: "Nuestra arquitectura está diseñada para mitigar activamente los riesgos emulando un comportamiento humano y profesional. No permitimos envíos masivos (spam), que es la principal causa de bloqueo. Si bien ningún sistema no oficial puede eliminar el riesgo al 100%, Dominion está construido para un uso seguro en ventas consultivas." },
-        { q: "¿Necesito conocimientos técnicos para usarlo?", a: "No. La configuración inicial es un proceso guiado paso a paso. Una vez que el 'Cerebro Neural' está configurado y el nodo está conectado, el sistema funciona de forma 100% autónoma." },
-        { q: "¿Qué significa 'BYOK' (Bring Your Own Key)?", a: "Significa que tú tienes el control total. Conectas tu propia clave de la API de Google Gemini, lo que asegura que tus datos, tus conversaciones y tus costos de IA son tuyos y de nadie más. Soberanía total." },
-        { q: "¿Qué pasa cuando mi plan expira?", a: "Tu bot no se apaga. Para evitar que pierdas leads, el sistema revierte a las funcionalidades básicas de respuesta (Plan Starter), dándote tiempo para renovar sin interrumpir el servicio." }
+        { q: "¿Necesito saber programar?", a: "No. Dominion está diseñado para dueños de negocio. Se configura en 3 pasos simples." },
+        { q: "¿Es seguro conectar mi WhatsApp?", a: "Utilizamos un sistema de aislamiento de sesiones. Tu conexión es privada y encriptada." },
+        { q: "¿Qué pasa si supero la capa gratuita de Gemini?", a: "Dominion sigue funcionando, pero Google podría facturarte el excedente. La capa gratuita es muy generosa para uso normal." },
+        { q: "¿Puedo cancelar cuando quiera?", a: "Sí. No hay contratos forzosos. Eres dueño de tu nodo." }
     ];
 
-    const toggleFaq = (index: number) => {
-        setOpenFaq(prev => (prev === index ? null : index));
-    };
-
     return (
-        <section className="bg-brand-black py-20 sm:py-32">
-            <div className="mx-auto max-w-4xl px-6 lg:px-8">
-                <div className="mx-auto max-w-2xl text-center">
-                     <h2 className="text-base font-semibold leading-7 text-brand-gold uppercase tracking-widest">Protocolo de Claridad</h2>
-                     <p className="mt-2 text-3xl font-black tracking-tight text-white sm:text-4xl">Respuestas a Preguntas Estratégicas</p>
-                </div>
-                <div className="mt-16 space-y-4">
-                    {faqs.map((faq, index) => (
-                        <div key={index} className="border border-white/10 rounded-2xl bg-brand-surface overflow-hidden transition-all duration-300">
-                            <button onClick={() => toggleFaq(index)} className="w-full flex justify-between items-center text-left p-6">
-                                <span className={`text-base font-semibold ${openFaq === index ? 'text-brand-gold' : 'text-white'}`}>{faq.q}</span>
-                                <svg className={`w-6 h-6 flex-shrink-0 transition-transform duration-300 ${openFaq === index ? 'rotate-45 text-brand-gold' : 'text-gray-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
-                            </button>
-                            <div className={`transition-all duration-500 ease-in-out ${openFaq === index ? 'max-h-96' : 'max-h-0'}`}>
-                                <div className="px-6 pb-6 text-gray-300 text-sm leading-relaxed">
-                                    {faq.a}
-                                </div>
-                            </div>
+        <section className="py-20 bg-brand-black border-t border-white/5">
+             <div className="max-w-4xl mx-auto px-6">
+                <h2 className="text-3xl font-black text-white uppercase tracking-tighter mb-12 text-center">Preguntas Frecuentes</h2>
+                <div className="space-y-4">
+                    {faqs.map((faq, i) => (
+                        <div key={i} className="bg-white/5 rounded-xl p-6 border border-white/5 hover:border-brand-gold/30 transition-colors">
+                            <h3 className="text-white font-bold text-sm uppercase tracking-widest mb-2">{faq.q}</h3>
+                            <p className="text-gray-400 text-sm">{faq.a}</p>
                         </div>
                     ))}
                 </div>
-            </div>
+             </div>
         </section>
     );
-}
+};
 
-function LandingPage({ onAuth, onRegister, visibleMessages, isSimTyping, simScrollRef, onOpenLegal, isServerReady, isLoggedIn, token, showToast }: any) {
+const LandingPage = ({ onAuth, onRegister, visibleMessages, isSimTyping, simScrollRef, onOpenLegal, isServerReady, isLoggedIn, token, showToast }: any) => {
     return (
-        <div className="relative flex-1 bg-brand-black flex flex-col font-sans">
-            <div className="absolute inset-0 neural-grid opacity-40 z-0 pointer-events-none"></div>
-            
-            {/* HERO SECTION - INTOCABLE */}
-            <section className="relative z-10 flex flex-col items-center justify-center p-6 md:p-12 pt-24 pb-32">
-                <div className="max-w-7xl w-full grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-24 items-center">
-                    <div className="space-y-10 text-center lg:text-left">
-                        <div className={`inline-flex items-center gap-3 px-4 py-1.5 border rounded-full text-[11px] font-black uppercase tracking-[0.3em] backdrop-blur-xl transition-all ${isServerReady ? 'border-green-500/30 bg-green-500/10 text-green-400 shadow-[0_0_20px_rgba(34,197,94,0.2)]' : 'border-red-500/30 bg-red-500/10 text-red-400'}`}>
-                            <span className={`w-2 h-2 rounded-full ${isServerReady ? 'bg-green-500 animate-pulse' : 'bg-red-500 animate-pulse'}`}></span>
-                            {isServerReady ? 'SISTEMA ONLINE' : 'CONECTANDO NODO...'}
+        <div className="flex-1 flex flex-col font-sans">
+             {/* HERO SECTION */}
+             <section className="relative pt-20 pb-32 lg:pt-32 lg:pb-40 overflow-hidden">
+                <div className="absolute inset-0 bg-brand-black">
+                     <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[500px] bg-brand-gold opacity-10 blur-[120px] rounded-full pointer-events-none"></div>
+                </div>
+
+                <div className="relative z-10 max-w-7xl mx-auto px-6 grid lg:grid-cols-2 gap-16 items-center">
+                    <div className="space-y-8 text-center lg:text-left">
+                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-gold/10 border border-brand-gold/20 text-brand-gold text-[10px] font-black uppercase tracking-widest animate-fade-in">
+                            <span className="w-2 h-2 rounded-full bg-brand-gold animate-pulse"></span>
+                            Sistema Online v2.7
                         </div>
-                        
-                        <h1 className="text-6xl md:text-8xl lg:text-[90px] font-black text-white leading-tight tracking-normal py-2">
-                            Vender en <br />
-                            <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-gold via-brand-gold-light to-brand-gold-dark">Piloto Automático</span>
+                        <h1 className="text-5xl lg:text-7xl font-black text-white tracking-tighter leading-[0.9]">
+                            Automatiza <br/>
+                            <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-gold via-brand-gold-light to-brand-gold">Tu Cierre</span>
                         </h1>
-                        <p className="text-xl md:text-2xl text-gray-400 leading-relaxed border-l-4 border-brand-gold/40 pl-8 mx-auto lg:mx-0 max-w-2xl font-medium">
-                           Dominion es la herramienta de IA que responde y califica a tus clientes en WhatsApp 24/7, para que vos o tu equipo solo se dedique a cerrar las ventas que importan.
+                        <p className="text-gray-400 text-lg max-w-xl mx-auto lg:mx-0 leading-relaxed">
+                            Infraestructura de inteligencia artificial para WhatsApp. 
+                            Filtra curiosos, califica leads y agenda citas en piloto automático.
+                            Sin flujos complejos. Sin código.
                         </p>
                         
-                        <div className="flex flex-col sm:flex-row gap-6 justify-center lg:justify-start pt-6">
-                            <button onClick={onRegister} className="px-12 py-6 bg-brand-gold text-black rounded-2xl font-black text-sm uppercase tracking-[0.2em] shadow-[0_15px_50px_rgba(212,175,55,0.4)] hover:scale-105 active:scale-95 transition-all">Solicitar Acceso</button>
-                            <button onClick={onAuth} className="px-12 py-6 bg-white/5 border border-white/10 text-white rounded-2xl font-black text-sm uppercase tracking-[0.2em] hover:bg-white/10 transition-all">Iniciar Sesión</button>
+                        <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
+                             <button onClick={onRegister} className="px-8 py-4 bg-brand-gold text-black rounded-xl font-black text-sm uppercase tracking-widest hover:scale-105 transition-transform shadow-[0_0_30px_rgba(212,175,55,0.3)]">
+                                Iniciar Ahora
+                             </button>
+                             <button onClick={onAuth} className="px-8 py-4 bg-white/5 text-white border border-white/10 rounded-xl font-black text-sm uppercase tracking-widest hover:bg-white/10 transition-colors">
+                                Acceso Clientes
+                             </button>
                         </div>
                     </div>
 
-                    <div className="relative w-full mt-12 lg:mt-0">
-                         <div className="absolute inset-0 bg-brand-gold blur-[150px] opacity-10 rounded-full animate-pulse"></div>
-                         <div className="relative bg-[#0a0a0a] border border-white/10 rounded-[40px] shadow-[0_60px_120px_rgba(0,0,0,0.9)] overflow-hidden h-[550px] md:h-[650px] flex flex-col border-t-white/20">
-                            <div className="px-8 py-5 border-b border-white/5 bg-black/80 flex items-center justify-between">
-                                <div className="flex gap-2">
-                                    <div className="w-3 h-3 rounded-full bg-red-500/30"></div>
-                                    <div className="w-3 h-3 rounded-full bg-yellow-500/30"></div>
-                                    <div className="w-3 h-3 rounded-full bg-green-500/30"></div>
-                                </div>
-                                <div className="px-4 py-1.5 bg-brand-gold/10 rounded-full text-[10px] text-brand-gold font-black uppercase tracking-[0.2em] border border-brand-gold/20">
-                                    Signal Pipeline v2.7.6
+                    {/* SIMULATOR PREVIEW */}
+                    <div className="relative mx-auto w-full max-w-[400px]">
+                        <div className="absolute -inset-1 bg-gradient-to-br from-brand-gold/50 to-transparent rounded-[34px] blur opacity-30"></div>
+                        <div className="relative bg-brand-surface border border-white/10 rounded-[32px] overflow-hidden shadow-2xl h-[500px] flex flex-col">
+                            <div className="p-4 border-b border-white/10 bg-black/40 flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-full bg-brand-gold flex items-center justify-center font-bold text-black text-xs">D</div>
+                                <div>
+                                    <h3 className="text-xs font-bold text-white">Dominion Bot</h3>
+                                    <p className="text-[9px] text-green-400 font-mono">En línea</p>
                                 </div>
                             </div>
-                            <div ref={simScrollRef} className="flex-1 p-8 md:p-10 space-y-8 overflow-y-auto scroll-smooth custom-scrollbar bg-[#080808]">
-                                {visibleMessages.map((msg: any, idx: number) => (
-                                    <div key={idx} className={`flex flex-col max-w-[85%] ${msg.type === 'user' ? 'self-start items-start' : 'self-end items-end ml-auto'} animate-fade-in`}>
-                                        <div className={`p-5 md:p-6 rounded-[28px] text-[13px] md:text-[14px] leading-relaxed shadow-2xl whitespace-pre-wrap ${msg.type === 'user' ? 'bg-white/10 text-gray-200 rounded-bl-none border border-white/5' : 'bg-gradient-to-br from-brand-gold to-brand-gold-dark text-black font-bold rounded-br-none shadow-[0_10px_30px_rgba(212,175,55,0.2)]'}`}>{msg.text}</div>
-                                        {msg.statusLabel && (
-                                            <span className={`mt-3 text-[10px] font-black uppercase px-4 py-1.5 rounded-full border tracking-widest ${
-                                                msg.statusLabel.includes('CALIENTE') || msg.statusLabel.includes('CERRADA') 
-                                                ? 'text-red-400 border-red-500/30 bg-red-500/10 shadow-[0_0_15px_rgba(239,68,68,0.2)]' 
-                                                : (msg.statusLabel.includes('TIBIO') ? 'text-yellow-400 border-yellow-500/30 bg-yellow-500/10' : 'text-blue-400 border-blue-500/30 bg-blue-500/10')
-                                            }`}>{msg.statusLabel}</span>
-                                        )}
+                            <div ref={simScrollRef} className="flex-1 p-4 space-y-4 overflow-y-auto custom-scrollbar bg-black/20">
+                                {visibleMessages.map((m: any) => (
+                                    <div key={m.id} className={`flex flex-col max-w-[85%] ${m.type === 'user' ? 'self-start' : 'self-end items-end'}`}>
+                                         <div className={`p-3 rounded-2xl text-xs leading-relaxed ${m.type === 'user' ? 'bg-white/10 text-gray-200 rounded-bl-none' : 'bg-brand-gold text-black font-bold rounded-br-none'}`}>
+                                            {m.text}
+                                         </div>
+                                         {m.type === 'bot' && (
+                                            <span className={`text-[8px] font-black uppercase mt-1 px-1.5 py-0.5 rounded ${m.statusLabel.includes('CALIENTE') ? 'bg-red-500 text-white' : 'bg-gray-700 text-gray-300'}`}>
+                                                {m.statusLabel}
+                                            </span>
+                                         )}
                                     </div>
                                 ))}
                                 {isSimTyping && (
-                                    <div className="self-end animate-fade-in ml-auto">
-                                        <div className="bg-brand-gold/20 p-5 rounded-[28px] rounded-br-none w-24 flex items-center justify-center gap-2 border border-brand-gold/30 shadow-lg">
-                                            <div className="w-2 h-2 bg-brand-gold rounded-full animate-bounce"></div>
-                                            <div className="w-2 h-2 bg-brand-gold rounded-full animate-bounce [animation-delay:0.2s]"></div>
-                                            <div className="w-2 h-2 bg-brand-gold rounded-full animate-bounce [animation-delay:0.4s]"></div>
+                                    <div className="self-end bg-brand-gold/20 p-2 rounded-xl rounded-br-none">
+                                        <div className="flex gap-1">
+                                            <div className="w-1 h-1 bg-brand-gold rounded-full animate-bounce"></div>
+                                            <div className="w-1 h-1 bg-brand-gold rounded-full animate-bounce delay-75"></div>
+                                            <div className="w-1 h-1 bg-brand-gold rounded-full animate-bounce delay-150"></div>
                                         </div>
                                     </div>
                                 )}
                             </div>
-                         </div>
+                        </div>
                     </div>
                 </div>
-            </section>
-            
-            <HowItWorksArt />
-            <HowItWorksSection />
-            <TestimonialsSection isLoggedIn={isLoggedIn} token={token} showToast={showToast} />
-            <FaqSection />
+             </section>
 
-            <footer className="relative z-10 w-full border-t border-white/5 bg-brand-black/95 backdrop-blur-2xl px-12 py-8 flex flex-col md:flex-row justify-between items-center gap-12">
-                <div className="text-center md:text-left space-y-4">
-                    <p className="text-white font-black text-lg tracking-tight flex items-center justify-center md:justify-start gap-2">
-                        Dominion Bot by <a href="https://websoin.netlify.app" target="_blank" rel="noopener noreferrer" className="text-brand-gold hover:text-brand-gold-light transition-colors">SO-&gt;IN</a>
-                    </p>
-                    <p className="text-gray-600 text-[10px] font-black uppercase tracking-[0.3em]">Neural Infrastructure Division • Mendoza, ARG</p>
+             <HowItWorksArt />
+             <HowItWorksSection />
+             <TestimonialsSection isLoggedIn={isLoggedIn} token={token} showToast={showToast} />
+             <FaqSection />
+
+             {/* FOOTER */}
+             <footer className="py-12 bg-black border-t border-white/5 text-center">
+                <div className="flex justify-center gap-6 mb-8">
+                    <button onClick={() => onOpenLegal('terms')} className="text-xs text-gray-500 hover:text-brand-gold uppercase tracking-widest font-bold">Términos</button>
+                    <button onClick={() => onOpenLegal('privacy')} className="text-xs text-gray-500 hover:text-brand-gold uppercase tracking-widest font-bold">Privacidad</button>
+                    <button onClick={() => onOpenLegal('manifesto')} className="text-xs text-gray-500 hover:text-brand-gold uppercase tracking-widest font-bold">Manifiesto</button>
                 </div>
-                <div className="flex flex-col items-center md:items-end gap-6">
-                    <div className="flex gap-8 text-[10px] font-gray-500 uppercase tracking-widest font-black">
-                        <button onClick={() => onOpenLegal('privacy')} className="hover:text-brand-gold transition-colors">Privacidad</button>
-                        <button onClick={() => onOpenLegal('terms')} className="hover:text-brand-gold transition-colors">Términos</button>
-                        <button onClick={() => onOpenLegal('manifesto')} className="hover:text-brand-gold transition-colors">Manifiesto</button>
-                    </div>
-                </div>
-            </footer>
+                <p className="text-[10px] text-gray-700 uppercase tracking-[0.3em] font-black">
+                    Dominion Infrastructure © 2024
+                </p>
+             </footer>
         </div>
     );
-}
-
-// --- END: Landing Page Strategic Sections ---
+};
 
 export default function App() {
   const [token, setToken] = useState<string | null>(localStorage.getItem('saas_token'));
@@ -447,11 +351,11 @@ export default function App() {
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(ConnectionStatus.DISCONNECTED);
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [pairingCode, setPairingCode] = useState<string | null>(null);
-  const [backendError, setBackendError] = useState<string | null>(null); // Keep for general backend errors
+  const [backendError, setBackendError] = useState<string | null>(null); 
   const [isTyping, setIsTyping] = useState(false);
   const [isLoadingSettings, setIsLoadingSettings] = useState(false);
   const [toast, setToast] = useState<ToastData | null>(null);
-  const [isRequestingHistory, setIsRequestingHistory] = useState(false); // NEW: State for history request
+  const [isRequestingHistory, setIsRequestingHistory] = useState(false); 
 
   // Polling interval refs
   const statusPollingIntervalRef = useRef<number | null>(null);
@@ -465,14 +369,12 @@ export default function App() {
   
   // Efecto para inicializar el AudioContext y reproducir el sonido de intro en la primera interacción.
   useEffect(() => {
-      // DEBUG: Log BACKEND_URL in App component itself
       console.log(`%c [APP.TSX] BACKEND_URL al montar App: ${BACKEND_URL}`, 'background: #3498db; color: white; font-weight: bold;');
 
       const initAudioAndPlayIntro = () => {
           console.log("[AudioService] User interaction detected, initializing AudioContext.");
           audioService.initContext();
           
-          // Si estamos en la landing page, reproducir el sonido de intro en la primera interacción.
           const isLanding = !localStorage.getItem('saas_token');
           if (isLanding && !sessionStorage.getItem('landing_intro_played')) {
               audioService.play('landing_intro');
@@ -480,7 +382,6 @@ export default function App() {
           }
       };
       
-      // Estos listeners se activan una vez en la primera interacción y luego se eliminan.
       document.addEventListener('click', initAudioAndPlayIntro, { once: true, capture: true });
       document.addEventListener('keydown', initAudioAndPlayIntro, { once: true, capture: true });
       document.addEventListener('touchstart', initAudioAndPlayIntro, { once: true, capture: true });
@@ -490,7 +391,7 @@ export default function App() {
           document.removeEventListener('keydown', initAudioAndPlayIntro, true);
           document.removeEventListener('touchstart', initAudioAndPlayIntro, true);
       };
-  }, []); // El array vacío asegura que este efecto se ejecute solo una vez.
+  }, []); 
 
   const showToast = (message: string, type: 'success' | 'error' | 'info') => {
     if (type === 'error') audioService.play('alert_error_generic');
@@ -518,7 +419,6 @@ export default function App() {
       setCurrentView(View.CHATS);
       setAuditTarget(null);
       
-      // Clear polling intervals on logout
       if (statusPollingIntervalRef.current) {
           clearInterval(statusPollingIntervalRef.current);
           statusPollingIntervalRef.current = null;
@@ -527,7 +427,7 @@ export default function App() {
           clearInterval(convoPollingIntervalRef.current);
           convoPollingIntervalRef.current = null;
       }
-      setBackendError(null); // Clear any backend error
+      setBackendError(null); 
   };
 
   useEffect(() => {
@@ -536,22 +436,18 @@ export default function App() {
     }
   }, [currentView, userRole]);
 
-  // Helper to prevent audio spam during server downtime
   const triggerErrorAlert = useCallback((message: string, details?: string) => {
       const now = Date.now();
-      // Throttle: Only play sound once every 45 seconds max
       if (now - lastErrorSoundTime.current > 45000) {
           audioService.play('alert_error_connection');
           lastErrorSoundTime.current = now;
       }
-      // Update the visual message regardless of audio throttling
       setBackendError(`${message} ${details ? `(${details})` : ''}`);
   }, []);
 
-  // Define fetchStatus and fetchConversations as useCallback hooks
   const fetchStatus = useCallback(async () => {
       if (!BACKEND_URL) {
-          setBackendError("ERROR CRÍTICO: La URL del backend no está configurada. Verifica VITE_BACKEND_URL en Vercel o tu archivo .env.local si estás en desarrollo.");
+          setBackendError("ERROR CRÍTICO: La URL del backend no está configurada.");
           return;
       }
       if (!token || userRole === 'super_admin') {
@@ -583,10 +479,7 @@ export default function App() {
   }, [token, userRole, backendError, triggerErrorAlert]); 
 
   const fetchConversations = useCallback(async () => {
-      if (!BACKEND_URL) {
-          setBackendError("ERROR CRÍTICO: La URL del backend no está configurada. Verifica VITE_BACKEND_URL en Vercel o tu archivo .env.local si estás en desarrollo.");
-          return;
-      }
+      if (!BACKEND_URL) return;
       if (!token || userRole === 'super_admin') {
           setConversations([]);
           return;
@@ -595,12 +488,6 @@ export default function App() {
           const res = await fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) });
           if (res.ok) {
               const latestConversations = await res.json();
-              // NEW LOG: Check what's received from the API
-              console.log(`[App.tsx] Fetched ${latestConversations.length} conversations from API.`);
-              if (latestConversations.length > 0) {
-                  console.log(`[App.tsx] First 2 conversation IDs: ${latestConversations.slice(0, 2).map((c: any) => c.id).join(', ')}`);
-              }
-
               setConversations(latestConversations.sort((a: Conversation, b: Conversation) => {
                   const dateA = new Date(a.lastActivity || a.firstMessageAt || 0);
                   const dateB = new Date(b.lastActivity || b.firstMessageAt || 0);
@@ -620,14 +507,8 @@ export default function App() {
       }
   }, [token, userRole, backendError, triggerErrorAlert]); 
 
-  // Polling for connection status and conversations
   useEffect(() => {
-    // If backend URL is not set, don't even start polling
-    if (!BACKEND_URL) {
-        setBackendError("ERROR CRÍTICO: La URL del backend no está configurada. Verifica VITE_BACKEND_URL en Vercel o tu archivo .env.local si estás en desarrollo.");
-        return;
-    }
-
+    if (!BACKEND_URL) return;
     if (!token || userRole === 'super_admin') {
         if (statusPollingIntervalRef.current) clearInterval(statusPollingIntervalRef.current);
         if (convoPollingIntervalRef.current) clearInterval(convoPollingIntervalRef.current);
@@ -636,13 +517,11 @@ export default function App() {
         return;
     }
 
-    // Fetch immediately on mount/token change
     fetchStatus();
     fetchConversations();
 
-    // Set up polling intervals
-    statusPollingIntervalRef.current = window.setInterval(fetchStatus, 5000); // Poll status every 5 seconds
-    convoPollingIntervalRef.current = window.setInterval(fetchConversations, 3000); // Poll conversations every 3 seconds
+    statusPollingIntervalRef.current = window.setInterval(fetchStatus, 5000); 
+    convoPollingIntervalRef.current = window.setInterval(fetchConversations, 3000); 
 
     return () => {
         if (statusPollingIntervalRef.current) clearInterval(statusPollingIntervalRef.current);
@@ -650,16 +529,10 @@ export default function App() {
         statusPollingIntervalRef.current = null;
         convoPollingIntervalRef.current = null;
     };
-  }, [token, userRole, fetchStatus, fetchConversations]); // Dependencies: token, userRole, and the memoized callbacks
+  }, [token, userRole, fetchStatus, fetchConversations]);
 
-  // Initial user data load (now integrated with polling logic for status/conversations)
   useEffect(() => {
-    // If backend URL is not set, don't attempt to load user data
-    if (!BACKEND_URL) {
-        setBackendError("ERROR CRÍTICO: La URL del backend no está configurada. Verifica VITE_BACKEND_URL en Vercel o tu archivo .env.local si estás en desarrollo.");
-        return;
-    }
-
+    if (!BACKEND_URL) return;
     if (!token) {
         setCurrentUser(null);
         return;
@@ -668,11 +541,10 @@ export default function App() {
     const loadInitialUserData = async () => {
         setIsLoadingSettings(true);
         try {
-            // Fetch initial user and settings data once
             const [userRes, sRes, settingsRes] = await Promise.all([
                 fetch(`${BACKEND_URL}/api/user/me`, { headers: getAuthHeaders(token) }),
                 fetch(`${BACKEND_URL}/api/settings`, { headers: getAuthHeaders(token) }),
-                fetch(`${BACKEND_URL}/api/system/settings`, { headers: getAuthHeaders(token) }) // Fetch global settings
+                fetch(`${BACKEND_URL}/api/system/settings`, { headers: getAuthHeaders(token) }) 
             ]);
             
             if ([userRes, sRes].some(res => res.status === 403)) {
@@ -701,7 +573,7 @@ export default function App() {
     };
     loadInitialUserData();
     
-  }, [token, triggerErrorAlert]); // Only depends on token, polling handles continuous updates
+  }, [token, triggerErrorAlert]); 
   
   useEffect(() => {
     if (token) return; 
@@ -742,13 +614,13 @@ export default function App() {
 
   const handleConnect = async (phoneNumber?: string) => {
       if (!BACKEND_URL) {
-          setBackendError("ERROR CRÍTICO: La URL del backend no está configurada. Verifica VITE_BACKEND_URL en Vercel o tu archivo .env.local si estás en desarrollo.");
+          setBackendError("ERROR CRÍTICO: Backend no configurado.");
           return { ok: false, error: "Backend URL not configured." };
       }
       if (!token) return { ok: false, error: "No authentication token." };
       setQrCode(null);
       setPairingCode(null);
-      setConnectionStatus(ConnectionStatus.GENERATING_QR); // Set status immediately
+      setConnectionStatus(ConnectionStatus.GENERATING_QR); 
       
       try {
           const res = await fetch(`${BACKEND_URL}/api/connect`, {
@@ -767,9 +639,8 @@ export default function App() {
               return { ok: false, error: `Failed to initiate connection: ${res.status}` };
           }
       } catch (e: any) { 
-          console.error("Fallo de conexión en handleConnect:", e);
           if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
-              setBackendError("Alerta: Error de red al iniciar conexión. Verifique su conexión a internet y que el servidor backend esté activo y accesible (Ej: Ngrok funcionando).");
+              setBackendError("Alerta: Error de red al iniciar conexión.");
           } else {
               setBackendError("Fallo al iniciar conexión.");
           }
@@ -780,11 +651,7 @@ export default function App() {
   };
 
   const handleSendMessage = async (text: string) => {
-      if (!BACKEND_URL) {
-          setBackendError("ERROR CRÍTICO: La URL del backend no está configurada. Verifica VITE_BACKEND_URL en Vercel o tu archivo .env.local si estás en desarrollo.");
-          return;
-      }
-      if (!selectedConversationId || !token) return;
+      if (!BACKEND_URL || !selectedConversationId || !token) return;
       try {
           await fetch(`${BACKEND_URL}/api/send`, {
               method: 'POST',
@@ -795,11 +662,7 @@ export default function App() {
   };
 
   const handleUpdateSettings = async (newSettings: BotSettings) => {
-      if (!BACKEND_URL) {
-          setBackendError("ERROR CRÍTICO: La URL del backend no está configurada. Verifica VITE_BACKEND_URL en Vercel o tu archivo .env.local si estás en desarrollo.");
-          return;
-      }
-      if (!token) return;
+      if (!BACKEND_URL || !token) return;
       try {
           const res = await fetch(`${BACKEND_URL}/api/settings`, {
               method: 'POST',
@@ -815,21 +678,39 @@ export default function App() {
           }
       } catch (e: any) { 
           console.error(e); 
-          if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
-              setBackendError("Alerta: Error de red al actualizar configuración. Verifique su conexión a internet y que el servidor backend esté activo y accesible (Ej: Ngrok funcionando).");
-          } else {
-              setBackendError("Alerta: Fallo de conexión con el nodo central al actualizar configuración.");
-          }
           audioService.play('alert_error_connection');
       }
   };
   
-  // NEW: Handler for requesting history
+  // NEW: Toggle Bot Handler with Optimistic Update
+  const handleToggleBot = async (id: string) => {
+      if (!token) return;
+      
+      // 1. Optimistic Update (Immediate Feedback)
+      setConversations(prev => prev.map(c => 
+          c.id === id ? { ...c, isBotActive: !c.isBotActive } : c
+      ));
+
+      // 2. Network Request
+      try {
+          // Calculate the target state based on the updated state
+          const targetConversation = conversations.find(c => c.id === id);
+          const newBotState = !targetConversation?.isBotActive; // Toggle it
+
+          await fetch(`${BACKEND_URL}/api/conversation/update`, {
+              method: 'POST',
+              headers: getAuthHeaders(token),
+              body: JSON.stringify({ id, updates: { isBotActive: newBotState } })
+          });
+      } catch (error) {
+          console.error("Error toggling bot:", error);
+          showToast('Error al cambiar el estado del bot. Reintentando...', 'error');
+          // State will eventually be consistent via polling
+      }
+  };
+
   const handleRequestHistory = async () => {
-    if (!BACKEND_URL) {
-        setBackendError("ERROR CRÍTICO: La URL del backend no está configurada. Verifica VITE_BACKEND_URL en Vercel o tu archivo .env.local si estás en desarrollo.");
-        return;
-    }
+    if (!BACKEND_URL) return;
     if (!token || isRequestingHistory) return;
 
     setIsRequestingHistory(true);
@@ -837,35 +718,28 @@ export default function App() {
     audioService.play('connection_establishing'); 
 
     try {
-        // Disconnect first
         console.log("[handleRequestHistory] Disconnecting existing session...");
         await fetch(`${BACKEND_URL}/api/disconnect`, { headers: getAuthHeaders(token!) });
         setConnectionStatus(ConnectionStatus.RESETTING);
         setQrCode(null);
         setPairingCode(null);
-        await new Promise(resolve => setTimeout(resolve, 3000)); // Pause to allow backend to process disconnect
+        await new Promise(resolve => setTimeout(resolve, 3000)); 
 
-        // Then connect again, which should trigger full history sync
         console.log("[handleRequestHistory] Reconnecting to trigger full history sync...");
-        const connectResult = await handleConnect(); // Use handleConnect, which returns a promise with {ok: boolean}
+        const connectResult = await handleConnect(); 
 
         if (connectResult.ok) {
             showToast('Conexión restablecida. Sincronizando historial...', 'info');
-            // Give Baileys more time to sync history before fetching conversations
             await new Promise(resolve => setTimeout(resolve, 8000)); 
-            
-            console.log("[handleRequestHistory] Fetching conversations after reconnect and sync delay...");
             await fetchConversations();
-
             showToast('Historial solicitado y conexión restablecida.', 'success');
             audioService.play('action_success');
         } else {
-            showToast('Error al restablecer la conexión después de desconectar. Intente de nuevo.', 'error');
+            showToast('Error al restablecer la conexión. Intente de nuevo.', 'error');
             audioService.play('alert_error_generic');
         }
 
     } catch (e: any) {
-        console.error("Error requesting history:", e);
         showToast('Error al solicitar historial. Intente nuevamente.', 'error');
         audioService.play('alert_error_generic');
     } finally {
@@ -885,48 +759,30 @@ export default function App() {
     }
 
     const handleDisconnect = async () => {
-        if (!BACKEND_URL) {
-            setBackendError("ERROR CRÍTICO: La URL del backend no está configurada. Verifica VITE_BACKEND_URL en Vercel o tu archivo .env.local si estás en desarrollo.");
-            return;
-        }
         if (!token) return;
         try {
             await fetch(`${BACKEND_URL}/api/disconnect`, { headers: getAuthHeaders(token!) });
-            setConnectionStatus(ConnectionStatus.DISCONNECTED); // Optimistic update
+            setConnectionStatus(ConnectionStatus.DISCONNECTED); 
             setQrCode(null);
             setPairingCode(null);
-            // Polling will confirm the status change
         } catch(e: any) {
-            if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
-                showToast('Error de red al intentar desconectar. Verifique su conexión a internet y el backend.', 'error');
-            } else {
-                showToast('Error al intentar desconectar.', 'error');
-            }
+            showToast('Error al intentar desconectar.', 'error');
         }
     };
 
     const handleWipeConnection = async () => {
-        if (!BACKEND_URL) {
-            setBackendError("ERROR CRÍTICO: La URL del backend no está configurada. Verifica VITE_BACKEND_URL en Vercel o tu archivo .env.local si estás en desarrollo.");
-            return;
-        }
         if (!token) return;
-        setConnectionStatus(ConnectionStatus.RESETTING); // Optimistic update
+        setConnectionStatus(ConnectionStatus.RESETTING); 
         try {
-            await new Promise(resolve => setTimeout(resolve, 1500)); // Visual feedback
+            await new Promise(resolve => setTimeout(resolve, 1500)); 
             await fetch(`${BACKEND_URL}/api/disconnect`, { headers: getAuthHeaders(token!) });
             setQrCode(null);
             setPairingCode(null);
-            setConnectionStatus(ConnectionStatus.DISCONNECTED); // Optimistic update
+            setConnectionStatus(ConnectionStatus.DISCONNECTED); 
             showToast('La sesión anterior fue purgada.', 'success');
-            // Polling will confirm the status change
         } catch(e: any) {
-            if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
-                showToast('Error de red al purgar la sesión. Verifique su conexión a internet y el backend.', 'error');
-            } else {
-                showToast('Error al purgar la sesión.', 'error');
-            }
-            setConnectionStatus(ConnectionStatus.DISCONNECTED); // Revert status on error
+            showToast('Error al purgar la sesión.', 'error');
+            setConnectionStatus(ConnectionStatus.DISCONNECTED); 
         }
     };
 
@@ -947,21 +803,31 @@ export default function App() {
                             selectedConversationId={selectedConversationId} 
                             onSelectConversation={setSelectedConversationId} 
                             backendError={backendError} 
-                            onRequestHistory={handleRequestHistory} // NEW PROP
-                            isRequestingHistory={isRequestingHistory} // NEW PROP
-                            connectionStatus={connectionStatus} // NEW PROP
+                            onRequestHistory={handleRequestHistory} 
+                            isRequestingHistory={isRequestingHistory} 
+                            connectionStatus={connectionStatus} 
                         />
                     </div>
                     <div className={`${!selectedConversationId ? 'hidden md:flex' : 'flex'} flex-1 h-full`}>
                         <ChatWindow 
                             conversation={selectedConversation} 
                             onSendMessage={isFunctionalityDisabled ? ()=>{} : handleSendMessage} 
-                            onToggleBot={(id) => fetch(`${BACKEND_URL}/api/conversation/update`, { method: 'POST', headers: getAuthHeaders(token!), body: JSON.stringify({ id, updates: { isBotActive: !selectedConversation?.isBotActive } }) })} 
+                            onToggleBot={handleToggleBot} // Pass the new optimized handler
                             isTyping={isTyping} 
                             isBotGloballyActive={isBotGloballyActive} 
                             isMobile={true} 
                             onBack={() => setSelectedConversationId(null)} 
-                            onUpdateConversation={(id, updates) => { setConversations(prev => { const updated = prev.map(c => c.id === id ? { ...c, ...updates } : c); return updated.sort((a, b) => { const dateA = new Date(a.lastActivity || a.firstMessageAt || 0); const dateB = new Date(b.lastActivity || b.firstMessageAt || 0); return dateB.getTime() - dateA.getTime(); }); }); fetch(`${BACKEND_URL}/api/conversation/update`, { method: 'POST', headers: getAuthHeaders(token!), body: JSON.stringify({ id, updates }) }); }} 
+                            onUpdateConversation={(id, updates) => { 
+                                setConversations(prev => { 
+                                    const updated = prev.map(c => c.id === id ? { ...c, ...updates } : c); 
+                                    return updated.sort((a, b) => { 
+                                        const dateA = new Date(a.lastActivity || a.firstMessageAt || 0); 
+                                        const dateB = new Date(b.lastActivity || b.firstMessageAt || 0); 
+                                        return dateB.getTime() - dateA.getTime(); 
+                                    }); 
+                                }); 
+                                fetch(`${BACKEND_URL}/api/conversation/update`, { method: 'POST', headers: getAuthHeaders(token!), body: JSON.stringify({ id, updates }) }); 
+                            }} 
                             isPlanExpired={isFunctionalityDisabled}
                         />
                     </div>
@@ -999,16 +865,9 @@ export default function App() {
       {isAppView && <TrialBanner user={currentUser} supportNumber={supportNumber} />}
 
       <main className={`flex-1 flex relative ${isAppView ? 'overflow-hidden' : ''}`}>
-        {/* CRITICAL: Backend URL Not Configured */}
         {!BACKEND_URL && (
              <div className="absolute top-0 left-0 right-0 z-[200] flex flex-col items-center justify-center p-3 text-[10px] font-black shadow-xl animate-pulse bg-red-800 text-white">
                 <span>⚠️ ERROR CRÍTICO: La URL del backend NO está configurada.</span>
-                <span className="mt-1">
-                    Verifica `VITE_BACKEND_URL` en las variables de entorno de Vercel (o en tu `.env.local`). 
-                    <a href="https://vercel.com/docs/concepts/projects/environment-variables" target="_blank" rel="noopener noreferrer" className="ml-1 underline">
-                        [Guía Vercel]
-                    </a>
-                </span>
             </div>
         )}
 
@@ -1019,7 +878,6 @@ export default function App() {
             </div>
         )}
         
-
         {(!token || showLanding) ? (
             <LandingPage 
                 onAuth={() => setAuthModal({ isOpen: true, mode: 'login' })} 
@@ -1028,7 +886,7 @@ export default function App() {
                 isSimTyping={isSimTyping}
                 simScrollRef={simScrollRef}
                 onOpenLegal={setLegalModalType}
-                isServerReady={!!BACKEND_URL} // Landing page should show "online" only if backend URL is configured
+                isServerReady={!!BACKEND_URL}
                 isLoggedIn={!!token}
                 token={token}
                 showToast={showToast}

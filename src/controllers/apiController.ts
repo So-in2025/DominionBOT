@@ -109,6 +109,27 @@ export const handleUpdateConversation = async (req: any, res: any) => {
   res.json(conversation);
 };
 
+// NEW: Force AI Response Endpoint
+export const handleForceAiRun = async (req: any, res: any) => {
+    const userId = getUserId(req);
+    const { id: jid } = req.body; // conversation id
+
+    if (!jid) return res.status(400).json({ message: 'Falta el ID de conversación.' });
+
+    try {
+        logService.info(`[API] Solicitud manual de ejecución de IA para ${jid}`, userId);
+        // This is async, we trigger it and return OK.
+        processAiResponseForJid(userId, jid).catch(e => {
+            logService.error(`[API] Error ejecutando IA manual para ${jid}`, e, userId);
+        });
+        
+        res.status(200).json({ message: 'Procesamiento de IA iniciado.' });
+    } catch (error) {
+        logService.error('Error al forzar ejecución de IA', error, userId);
+        res.status(500).json({ message: 'Error interno.' });
+    }
+};
+
 // FIX: Changed res type from Response to any to avoid type conflicts.
 export const handleGetTestimonials = async (req: Request, res: any) => {
   try {

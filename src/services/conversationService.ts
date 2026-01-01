@@ -53,19 +53,33 @@ class ConversationService {
         isAiSignalsEnabled: true,
         isTestBotConversation: isEliteBotJid, 
       };
-    } else if (isEliteBotJid) { // Only update these flags if it's explicitly the Elite Bot
-        // NEW: Ensure existing Elite Bot conversations are marked as active and not muted
-        if (!conversation.isTestBotConversation) { // Mark if not already marked
-            logService.info(`[ConversationService] [addMessage] Marking existing conversation ${jid} as test bot conversation.`, userId);
-            conversation.isTestBotConversation = true;
+    } else {
+        // Update logic for existing conversations
+        if (isEliteBotJid) { // Only update these flags if it's explicitly the Elite Bot
+            // NEW: Ensure existing Elite Bot conversations are marked as active and not muted
+            if (!conversation.isTestBotConversation) { // Mark if not already marked
+                logService.info(`[ConversationService] [addMessage] Marking existing conversation ${jid} as test bot conversation.`, userId);
+                conversation.isTestBotConversation = true;
+            }
+            if (!conversation.isBotActive) { // Ensure bot is active for test convos
+                logService.info(`[ConversationService] [addMessage] Activating bot for existing Elite Bot conversation ${jid}.`, userId);
+                conversation.isBotActive = true;
+            }
+            if (conversation.isMuted) { // Ensure bot is not muted for test convos
+                logService.info(`[ConversationService] [addMessage] Unmuting existing Elite Bot conversation ${jid}.`, userId);
+                conversation.isMuted = false;
+            }
         }
-        if (!conversation.isBotActive) { // Ensure bot is active for test convos
-            logService.info(`[ConversationService] [addMessage] Activating bot for existing Elite Bot conversation ${jid}.`, userId);
-            conversation.isBotActive = true;
-        }
-        if (conversation.isMuted) { // Ensure bot is not muted for test convos
-            logService.info(`[ConversationService] [addMessage] Unmuting existing Elite Bot conversation ${jid}.`, userId);
-            conversation.isMuted = false;
+
+        // Update Lead Name if provided and better than current
+        if (leadName && leadName !== conversation.leadName) {
+             const currentIsNumber = !isNaN(Number(conversation.leadName.replace(/[^0-9]/g, '')));
+             const newIsNumber = !isNaN(Number(leadName.replace(/[^0-9]/g, '')));
+             
+             // Prefer non-numbers names (PushNames) over numbers
+             if (currentIsNumber && !newIsNumber) {
+                 conversation.leadName = leadName;
+             }
         }
     }
     
