@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { getAuthHeaders } from '../config';
-import { User, IntentSignal, ConnectionOpportunity, NetworkProfile, BotSettings, PermissionStatus } from '../types';
+import { User, IntentSignal, ConnectionOpportunity, NetworkProfile, BotSettings } from '../types';
 import { formatPhoneNumber } from '../utils/textUtils';
 
 interface NetworkPanelProps {
@@ -21,14 +21,14 @@ const NETWORK_CATEGORIES = [
 
 const NetworkPanel: React.FC<NetworkPanelProps> = ({ token, backendUrl, currentUser, settings, onUpdateSettings, showToast }) => {
     const [activeTab, setActiveTab] = useState<'CONTRIBUTIONS' | 'OPPORTUNITIES' | 'SETTINGS'>('OPPORTUNITIES');
-    const [loading, setLoading] = useState(true);
+    const [isInitialLoading, setIsInitialLoading] = useState(true); // Changed from simple loading
     const [intentSignals, setIntentSignals] = useState<IntentSignal[]>([]);
     const [opportunities, setOpportunities] = useState<ConnectionOpportunity[]>([]
 );
     const [networkProfile, setNetworkProfile] = useState<NetworkProfile | null>(null);
 
-    const fetchNetworkData = useCallback(async () => {
-        setLoading(true);
+    const fetchNetworkData = useCallback(async (isPolling = false) => {
+        if (!isPolling) setIsInitialLoading(true);
         try {
             const [signalsRes, opportunitiesRes, profileRes] = await Promise.all([
                 fetch(`${backendUrl}/api/network/signals`, { headers: getAuthHeaders(token) }),
@@ -42,15 +42,15 @@ const NetworkPanel: React.FC<NetworkPanelProps> = ({ token, backendUrl, currentU
 
         } catch (error) {
             console.error("Error fetching network data:", error);
-            showToast("Error al cargar datos de la red.", "error");
+            if(!isPolling) showToast("Error al cargar datos de la red.", "error");
         } finally {
-            setLoading(false);
+            if (!isPolling) setIsInitialLoading(false);
         }
     }, [token, backendUrl, showToast]);
 
     useEffect(() => {
-        fetchNetworkData();
-        const interval = setInterval(fetchNetworkData, 15000); // Poll every 15 seconds
+        fetchNetworkData(false);
+        const interval = setInterval(() => fetchNetworkData(true), 15000); // Silent poll every 15s
         return () => clearInterval(interval);
     }, [fetchNetworkData]);
 
@@ -67,8 +67,7 @@ const NetworkPanel: React.FC<NetworkPanelProps> = ({ token, backendUrl, currentU
             await saveNetworkProfile({ networkEnabled: newStatus, categoriesOfInterest: [], contributionScore: 0, receptionScore: 0 });
         }
         showToast(`Red Dominion ${newStatus ? 'Activada' : 'Desactivada'}`, 'info');
-        // Refresh data to reflect state
-        setTimeout(fetchNetworkData, 500);
+        setTimeout(() => fetchNetworkData(true), 500);
     };
 
     const handleToggleCategory = (category: string) => {
@@ -110,7 +109,7 @@ const NetworkPanel: React.FC<NetworkPanelProps> = ({ token, backendUrl, currentU
             });
             if (res.ok) {
                 showToast("Solicitud de permiso enviada al prospecto.", "success");
-                fetchNetworkData();
+                fetchNetworkData(true);
             } else {
                 showToast("Error al solicitar permiso.", "error");
             }
@@ -129,7 +128,6 @@ const NetworkPanel: React.FC<NetworkPanelProps> = ({ token, backendUrl, currentU
             if (res.ok) {
                 const data = await res.json();
                 const formattedNumber = formatPhoneNumber(data.prospectOriginalJid);
-                // Open WhatsApp chat
                 window.open(`https://wa.me/${data.prospectOriginalJid.split('@')[0]}?text=${encodeURIComponent(`Hola ${data.prospectName}, te contacto desde ${currentUser?.business_name || 'Dominion Network'} porque mostraste interés en ${data.intentDescription}.`)}`, '_blank');
                 showToast(`Contacto revelado: ${data.prospectName} (${formattedNumber})`, "success");
             } else {
@@ -140,7 +138,7 @@ const NetworkPanel: React.FC<NetworkPanelProps> = ({ token, backendUrl, currentU
         }
     };
 
-    if (loading) return (
+    if (isInitialLoading) return (
         <div className="flex-1 flex flex-col items-center justify-center bg-brand-black">
             <div className="w-16 h-16 border-4 border-brand-gold/10 border-t-brand-gold rounded-full animate-spin mb-6"></div>
             <p className="text-[10px] font-black text-brand-gold uppercase tracking-[0.4em] animate-pulse">Sincronizando Red Dominion...</p>
@@ -213,23 +211,6 @@ const NetworkPanel: React.FC<NetworkPanelProps> = ({ token, backendUrl, currentU
         );
     }
 
-    // --- MAIN DASHBOARD (ENABLED) ---
-
-    const renderSignalCard = (signal: IntentSignal) => (
-        <div key={signal.id} className="bg-black/40 border border-white/10 rounded-2xl p-5 flex flex-col space-y-3">
-            <div className="flex items-center gap-2">
-                <span className="text-[9px] font-black text-brand-gold bg-brand-gold/10 px-2 py-0.5 rounded border border-brand-gold/20">{signal.signalScore}% Intent</span>
-                <span className="text-[9px] text-gray-500 font-mono">{new Date(signal.contributedAt).toLocaleDateString()}</span>
-            </div>
-            <p className="text-xs font-bold text-white line-clamp-3">{signal.intentDescription}</p>
-            <div className="flex flex-wrap gap-1">
-                {signal.intentCategories.map(cat => (
-                    <span key={cat} className="px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 text-[8px] font-bold uppercase">{cat}</span>
-                ))}
-            </div>
-        </div>
-    );
-
     const renderOpportunityCard = (opportunity: ConnectionOpportunity) => (
         <div key={opportunity.id} className="bg-black/40 border border-white/10 rounded-2xl p-5 flex flex-col space-y-3 relative">
             <div className={`absolute top-4 right-4 px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
@@ -270,6 +251,21 @@ const NetworkPanel: React.FC<NetworkPanelProps> = ({ token, backendUrl, currentU
         </div>
     );
 
+    const renderSignalCard = (signal: IntentSignal) => (
+        <div key={signal.id} className="bg-black/40 border border-white/10 rounded-2xl p-5 flex flex-col space-y-3">
+            <div className="flex items-center gap-2">
+                <span className="text-[9px] font-black text-brand-gold bg-brand-gold/10 px-2 py-0.5 rounded border border-brand-gold/20">{signal.signalScore}% Intent</span>
+                <span className="text-[9px] text-gray-500 font-mono">{new Date(signal.contributedAt).toLocaleDateString()}</span>
+            </div>
+            <p className="text-xs font-bold text-white line-clamp-3">{signal.intentDescription}</p>
+            <div className="flex flex-wrap gap-1">
+                {signal.intentCategories.map(cat => (
+                    <span key={cat} className="px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 text-[8px] font-bold uppercase">{cat}</span>
+                ))}
+            </div>
+        </div>
+    );
+
     const renderSettings = () => (
         <div className="bg-brand-surface border border-white/5 rounded-3xl p-8 shadow-2xl animate-fade-in space-y-8">
             <div className="flex items-center justify-between">
@@ -284,7 +280,7 @@ const NetworkPanel: React.FC<NetworkPanelProps> = ({ token, backendUrl, currentU
             
             <p className="text-[10px] text-gray-400 uppercase font-bold mb-4 tracking-widest">
                 Activa tu participación para aportar y recibir oportunidades de la red Dominion.
-                <button onClick={() => showToast("Ver términos y condiciones de la red", "info")} className="text-brand-gold underline ml-1">Ver términos.</button> {/* Will open legal modal later */}
+                <button onClick={() => showToast("Ver términos y condiciones de la red", "info")} className="text-brand-gold underline ml-1">Ver términos.</button> 
             </p>
 
             {settings?.isNetworkEnabled && networkProfile && (
