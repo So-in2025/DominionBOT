@@ -38,14 +38,14 @@ const TEMPLATES: Record<string, { name: string, data?: Partial<WizardState & { p
     'AGENCIA': {
         name: 'Agencia de Marketing Digital',
         data: {
-            mission: `// [ROL PRINCIPAL]: Soy el asistente de IA de [TU AGENCIA]. Mi ÚNICO objetivo es filtrar y calificar leads...`,
-            idealCustomer: `// [PÚBLICO OBJETIVO]: Empresas y dueños de negocio que facturan más de 10k USD/mes...`,
-            detailedDescription: `// [TU OFERTA]: Ofrecemos un servicio de "Growth Partner"...`,
+            mission: `// [ROL PRINCIPAL]: Soy el asistente de IA de [TU AGENCIA]. Mi ÚNICO objetivo es filtrar y calificar leads. NO vendo, NO agendo, NO doy opiniones. Mi trabajo es entender el problema del cliente y, si califica, pasarlo a un especialista humano.`,
+            idealCustomer: `// [PÚBLICO OBJETIVO]: Empresas y dueños de negocio que ya están invirtiendo en marketing pero no ven un ROI claro. Generalmente facturan más de 10,000 USD/mes.`,
+            detailedDescription: `// [TU OFERTA]: Ofrecemos un servicio de "Growth Partner" donde nos integramos a tu equipo para gestionar la estrategia y ejecución de publicidad.`,
             objections: [
-                { id: 1, objection: '¿Cuánto cuesta?', response: 'La inversión depende del nivel de agresividad y escala...' },
-                { id: 2, objection: 'Ya tengo una agencia', response: 'Entendido. No buscamos reemplazar lo que funciona...' }
+                { id: 1, objection: '¿Cuánto cuesta?', response: 'La inversión depende del nivel de agresividad y escala que busquemos.' },
+                { id: 2, objection: 'Ya tengo una agencia', response: 'Entendido. No buscamos reemplazar lo que funciona. Muchos clientes vienen para una segunda opinión.' }
             ],
-            rules: `- Tono: Profesional, directo.\n- Prohibido: Usar emojis, tutear.`,
+            rules: `- Tono: Profesional, directo, como un consultor senior.\n- Prohibido: Usar emojis, tutear, garantizar resultados.`,
             priceText: "Servicios desde 950 USD/mes + inversión publicitaria.",
             ctaLink: "El siguiente paso es una llamada de diagnóstico. [TU ENLACE]"
         }
@@ -53,14 +53,14 @@ const TEMPLATES: Record<string, { name: string, data?: Partial<WizardState & { p
     'INMOBILIARIA': {
         name: 'Inmobiliaria / Real Estate',
         data: {
-            mission: `// [ROL PRINCIPAL]: Soy el asistente inmobiliario de [Nombre]. Filtro por zona y presupuesto...`,
-            idealCustomer: `// [PÚBLICO OBJETIVO]: Familias buscando comprar/alquilar en [Zona]...`,
-            detailedDescription: `// [TU OFERTA]: Venta y alquiler de propiedades exclusivas...`,
+            mission: `// [ROL PRINCIPAL]: Soy el asistente inmobiliario de [Nombre]. Mi objetivo es entender los requisitos básicos de la propiedad que buscas.`,
+            idealCustomer: `// [PÚBLICO OBJETIVO]: Familias buscando activamente comprar o alquilar en [Zona].`,
+            detailedDescription: `// [TU OFERTA]: Nos especializamos en la venta y alquiler de propiedades exclusivas.`,
             objections: [
-                { id: 1, objection: 'Solo estoy mirando', response: 'Perfecto. ¿Qué características tendría la casa de tus sueños?' }
+                { id: 1, objection: 'Solo estoy mirando', response: 'Perfecto. Para que tu búsqueda sea más efectiva, ¿cuáles son las 3 características que sí o sí tendría la propiedad de tus sueños?' }
             ],
             rules: `- Tono: Servicial, profesional.\n- Prohibido: Negociar precios.`,
-            priceText: "Precios variables según propiedad.",
+            priceText: "Precios variables según la propiedad.",
             ctaLink: "Coordinar visita con un agente."
         }
     }
@@ -100,13 +100,14 @@ const parseProductDescription = (description: string): WizardState => {
     }
     if (currentSection) sections[currentSection] = currentContent.join('\n').trim();
 
+    // Fallback logic
     if (Object.keys(sections).length === 0 && description.trim().length > 0) {
         return {
             mission: '',
             idealCustomer: '',
             detailedDescription: description,
             objections: [{ id: 1, objection: '', response: '' }],
-            rules: '- Tono: Profesional.\n- Prohibido: Emojis excesivos.'
+            rules: ''
         };
     }
 
@@ -132,7 +133,6 @@ const parseProductDescription = (description: string): WizardState => {
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUpdateSettings, onOpenLegal, showToast }) => {
   const [current, setCurrent] = useState<BotSettings | null>(null);
-  const [activeTab, setActiveTab] = useState<'GENERAL' | 'BRAIN' | 'NETWORK'>('GENERAL');
   const [isSaved, setIsSaved] = useState(false);
   const [isEnhancing, setIsEnhancing] = useState(false);
   const [isSavingApiKey, setIsSavingApiKey] = useState(false);
@@ -350,7 +350,6 @@ ${wizardState.rules}
       setIsEnhancing(true);
       try {
           const ai = new GoogleGenAI({ apiKey: current.geminiApiKey });
-          const prompt = `Actúa como experto en ventas y mejora este brief...`; // Simplified prompt for brevity here
           // Implementation identical to previous version, ensuring clean JSON response schema
           showToast('Funcionalidad de mejora IA simulada (implementación completa en backend).', 'info');
           // In real implementation, call AI here
@@ -371,188 +370,207 @@ ${wizardState.rules}
     );
   }
 
-  const tabClass = (tab: string) => `px-6 py-3 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === tab ? 'bg-brand-gold text-black shadow-lg shadow-brand-gold/20' : 'text-gray-500 hover:text-white hover:bg-white/5'}`;
-
   return (
     <div className="flex-1 bg-brand-black p-4 md:p-10 overflow-y-auto custom-scrollbar font-sans relative z-10 animate-fade-in">
-      <div className="max-w-6xl mx-auto space-y-8 pb-32">
+      <div className="max-w-6xl mx-auto space-y-10 pb-32">
         
-        <header className="flex flex-col md:flex-row justify-between items-end border-b border-white/5 pb-6 gap-6">
+        <header className="flex justify-between items-end border-b border-white/5 pb-8">
             <div>
                 <h2 className="text-3xl font-black text-white tracking-tighter uppercase">Panel de <span className="text-brand-gold">Control</span></h2>
                 <p className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.3em] mt-1">Configuración Central del Nodo</p>
             </div>
-            
-            <div className="flex bg-white/5 p-1 rounded-xl border border-white/10 overflow-x-auto w-full md:w-auto">
-                <button onClick={() => setActiveTab('GENERAL')} className={tabClass('GENERAL')}>General</button>
-                <button onClick={() => setActiveTab('BRAIN')} className={tabClass('BRAIN')}>Cerebro IA</button>
-                <button onClick={() => setActiveTab('NETWORK')} className={tabClass('NETWORK')}>Red Dominion</button>
-            </div>
-
-            <button onClick={handleSaveSettings} disabled={isSavingApiKey} className="hidden md:block px-6 py-3 bg-brand-gold text-black rounded-xl font-black text-[10px] uppercase tracking-widest hover:scale-105 transition-all shadow-lg shadow-brand-gold/20 disabled:opacity-50 disabled:cursor-not-allowed">
-                {isSavingApiKey ? 'Guardando...' : 'Guardar Todo'}
+            <button onClick={handleSaveSettings} disabled={isSavingApiKey} className="px-6 py-3 bg-brand-gold text-black rounded-xl font-black text-[10px] uppercase tracking-widest hover:scale-105 transition-all shadow-lg shadow-brand-gold/20 disabled:opacity-50 disabled:cursor-not-allowed">
+                {isSavingApiKey ? 'Verificando API...' : 'Guardar Todo'}
             </button>
         </header>
 
-        {activeTab === 'GENERAL' && (
-            <section className="bg-brand-surface border border-white/5 rounded-[32px] p-8 shadow-2xl space-y-8 relative overflow-hidden group animate-fade-in">
-                <div className="absolute top-0 right-0 w-32 h-32 bg-brand-gold/5 rounded-full blur-3xl pointer-events-none group-hover:bg-brand-gold/10 transition-colors duration-1000"></div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div>
-                        <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Nombre del Producto/Negocio</label>
-                        <input type="text" value={current.productName} onChange={e => handleUpdate('productName', e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm focus:border-brand-gold outline-none" />
-                    </div>
-                    <div>
-                        <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Link de Cierre (CTA)</label>
-                        <input type="url" value={current.ctaLink} onChange={e => handleUpdate('ctaLink', e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm focus:border-brand-gold outline-none" placeholder="https://tuweb.com/oferta" />
-                    </div>
-                    <div className="md:col-span-2">
-                        <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">API Key de Google Gemini</label>
-                        <div className="flex gap-4">
-                            <input type="password" value={current.geminiApiKey || ''} onChange={e => handleUpdate('geminiApiKey', e.target.value)} className="flex-1 bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm focus:border-brand-gold outline-none" placeholder="AIzaSy..." />
-                            <button onClick={() => onOpenLegal('privacy')} className="flex-shrink-0 px-4 py-2 bg-white/5 border border-white/10 text-gray-400 rounded-xl text-[9px] font-bold uppercase hover:bg-white/10">¿Qué es esto?</button>
-                        </div>
-                    </div>
-                    <div>
-                        <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Texto de Precios</label>
-                        <input type="text" value={current.priceText} onChange={e => handleUpdate('priceText', e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm focus:border-brand-gold outline-none" placeholder="Ej: Desde 97 USD / mes" />
-                    </div>
-                    <div className="md:col-span-2">
-                        <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Ignorar Números (Blacklist)</label>
-                        <textarea 
-                            value={current.ignoredJids.join('\n')} 
-                            onChange={e => handleUpdate('ignoredJids', e.target.value.split('\n').filter(Boolean).map(s => s.trim()))} 
-                            className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm h-24 focus:border-brand-gold outline-none resize-none font-mono" 
-                            placeholder="54911xxxxxxx (uno por línea)" 
-                        />
-                    </div>
-                </div>
-            </section>
+        {isSaved && (
+            <div className="bg-green-500/10 border border-green-500/20 text-green-400 p-4 rounded-xl text-xs font-bold text-center animate-fade-in">
+                Cambios guardados.
+            </div>
         )}
 
-        {activeTab === 'BRAIN' && (
-            <section className="bg-brand-surface border border-white/5 rounded-[32px] p-8 shadow-2xl space-y-8 relative overflow-hidden group animate-fade-in">
-                <div className="absolute top-0 left-0 w-32 h-32 bg-blue-500/5 rounded-full blur-3xl pointer-events-none group-hover:bg-blue-500/10 transition-colors duration-1000"></div>
-                <div className="flex items-center gap-3 mb-6">
-                    <h3 className="text-sm font-black text-white uppercase tracking-widest">Definición de Comportamiento</h3>
-                    <select onChange={e => applyTemplate(e.target.value)} className="bg-black/50 border border-white/10 text-white text-[9px] font-bold uppercase tracking-widest rounded-lg px-2 py-1 outline-none ml-auto">
-                        {Object.entries(TEMPLATES).map(([key, value]) => (
-                            <option key={key} value={key}>{value.name}</option>
+        <section className="bg-brand-surface border border-white/5 rounded-[32px] p-8 shadow-2xl space-y-8 relative overflow-hidden group">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-brand-gold/5 rounded-full blur-3xl pointer-events-none group-hover:bg-brand-gold/10 transition-colors duration-1000"></div>
+
+            <div className="flex items-center gap-3 mb-6">
+                <span className="w-2 h-2 rounded-full bg-brand-gold animate-pulse"></span>
+                <h3 className="text-sm font-black text-white uppercase tracking-widest">Ajustes Generales</h3>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div>
+                    <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Nombre del Producto/Negocio</label>
+                    <input type="text" value={current.productName} onChange={e => handleUpdate('productName', e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm focus:border-brand-gold outline-none" />
+                </div>
+                <div>
+                    <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Link de Cierre (CTA)</label>
+                    <input type="url" value={current.ctaLink} onChange={e => handleUpdate('ctaLink', e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm focus:border-brand-gold outline-none" placeholder="https://tuweb.com/oferta" />
+                </div>
+                 <div className="md:col-span-2">
+                    <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">API Key de Google Gemini</label>
+                    <div className="flex gap-4">
+                        <input type="password" value={current.geminiApiKey || ''} onChange={e => handleUpdate('geminiApiKey', e.target.value)} className="flex-1 bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm focus:border-brand-gold outline-none" placeholder="AIzaSy..." />
+                        <button onClick={() => onOpenLegal('privacy')} className="flex-shrink-0 px-4 py-2 bg-white/5 border border-white/10 text-gray-400 rounded-xl text-[9px] font-bold uppercase hover:bg-white/10">¿Qué es esto?</button>
+                    </div>
+                    <p className="text-[9px] text-gray-500 mt-2 italic">Necesitas tu propia API Key de Google AI Studio. Asegúrate de que tenga facturación habilitada.</p>
+                </div>
+            </div>
+        </section>
+
+        <section className="bg-brand-surface border border-white/5 rounded-[32px] p-8 shadow-2xl space-y-8 relative overflow-hidden group">
+            <div className="absolute top-0 left-0 w-32 h-32 bg-blue-500/5 rounded-full blur-3xl pointer-events-none group-hover:bg-blue-500/10 transition-colors duration-1000"></div>
+            
+            <div className="flex items-center gap-3 mb-6">
+                <h3 className="text-sm font-black text-white uppercase tracking-widest">Brief de Inferencia (AI)</h3>
+                <button onClick={enhanceWithAI} disabled={isEnhancing} className="px-3 py-1.5 bg-brand-gold/10 text-brand-gold border border-brand-gold/20 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-brand-gold hover:text-black transition-all flex items-center gap-2">
+                    {isEnhancing ? <span className="animate-pulse">Optimizando...</span> : <>✨ Mejorar con IA</>}
+                </button>
+                <select onChange={e => applyTemplate(e.target.value)} className="bg-black/50 border border-white/10 text-white text-[9px] font-bold uppercase tracking-widest rounded-lg px-2 py-1 outline-none">
+                    {Object.entries(TEMPLATES).map(([key, value]) => (
+                        <option key={key} value={key}>{value.name}</option>
+                    ))}
+                </select>
+            </div>
+            
+            <div className="space-y-6">
+                <div>
+                    <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Misión Principal del Bot</label>
+                    <textarea value={wizardState.mission} onChange={e => setWizardState(prev => ({ ...prev, mission: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm h-32 focus:border-brand-gold outline-none resize-none" placeholder="Cuál es su rol principal, qué debe lograr y qué NO debe hacer." />
+                </div>
+                <div>
+                    <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Cliente Ideal</label>
+                    <textarea value={wizardState.idealCustomer} onChange={e => setWizardState(prev => ({ ...prev, idealCustomer: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm h-32 focus:border-brand-gold outline-none resize-none" placeholder="Describe a tu cliente perfecto. ¿Qué problema tiene que tu negocio resuelve?" />
+                </div>
+                <div>
+                    <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Descripción Detallada del Servicio/Producto</label>
+                    <textarea value={wizardState.detailedDescription} onChange={e => setWizardState(prev => ({ ...prev, detailedDescription: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm h-40 focus:border-brand-gold outline-none resize-none" placeholder="Qué ofreces, sus beneficios únicos, y la transformación que logrará el cliente." />
+                </div>
+                
+                {/* OBJECTIONS */}
+                <div>
+                    <div className="flex justify-between items-center mb-4">
+                        <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest">Manejo de Objeciones Frecuentes</label>
+                        <button onClick={addObjection} className="px-3 py-1 bg-white/5 text-gray-400 rounded-lg text-[9px] font-bold uppercase hover:bg-white/10">+ Añadir Objeción</button>
+                    </div>
+                    <div className="space-y-4">
+                        {wizardState.objections.map(obj => (
+                            <div key={obj.id} className="bg-black/30 p-4 rounded-xl border border-white/5 space-y-3">
+                                <div className="flex justify-between items-center">
+                                    <label className="text-[9px] font-bold text-gray-400">Objeción</label>
+                                    <button onClick={() => removeObjection(obj.id)} className="text-gray-500 hover:text-red-400 text-xs">✕</button>
+                                </div>
+                                <input type="text" value={obj.objection} onChange={e => updateObjection(obj.id, 'objection', e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-lg p-2 text-white text-xs focus:border-brand-gold outline-none" placeholder="Ej: Es muy caro" />
+                                <label className="text-[9px] font-bold text-gray-400">Respuesta del Bot</label>
+                                <textarea value={obj.response} onChange={e => updateObjection(obj.id, 'response', e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-lg p-2 text-white text-xs h-20 focus:border-brand-gold outline-none resize-none" placeholder="Cómo debe responder la IA a esta objeción." />
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                <div>
+                    <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Reglas de Oro y Límites</label>
+                    <textarea value={wizardState.rules} onChange={e => setWizardState(prev => ({ ...prev, rules: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm h-32 focus:border-brand-gold outline-none resize-none" placeholder="Ej: NO usar emojis. SOLO vender. NUNCA mentir." />
+                </div>
+            </div>
+        </section>
+
+        <section className="bg-brand-surface border border-white/5 rounded-[32px] p-8 shadow-2xl space-y-8 relative overflow-hidden group">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/5 rounded-full blur-3xl pointer-events-none group-hover:bg-purple-500/10 transition-colors duration-1000"></div>
+            
+            <div className="flex items-center gap-3 mb-6">
+                <h3 className="text-sm font-black text-white uppercase tracking-widest">Ajustes Neurales (IA)</h3>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div>
+                    <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Arquetipo de Conversación</label>
+                    <select value={current.archetype} onChange={e => handleArchetypeChange(e.target.value as PromptArchetype)} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm focus:border-brand-gold outline-none">
+                        {Object.values(PromptArchetype).map(archetype => (
+                            <option key={archetype} value={archetype}>{ARCHETYPE_NAMES[archetype]}</option>
                         ))}
                     </select>
                 </div>
-                
-                <div className="grid grid-cols-1 gap-6">
+                <div>
+                    <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Texto de Precios</label>
+                    <input type="text" value={current.priceText} onChange={e => handleUpdate('priceText', e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm focus:border-brand-gold outline-none" placeholder="Ej: Desde 97 USD / mes" />
+                </div>
+                <div className="md:col-span-2">
+                    <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Ignorar Números (JID's) - Blacklist</label>
+                    <p className="text-[9px] text-gray-500 mb-2">
+                        Añade números de WhatsApp que la IA debe ignorar. (Ej: '5492611234567').
+                    </p>
+                    <textarea 
+                        value={current.ignoredJids.join('\n')} 
+                        onChange={e => handleUpdate('ignoredJids', e.target.value.split('\n').filter(Boolean).map(s => s.trim()))} 
+                        className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm h-32 focus:border-brand-gold outline-none resize-none font-mono" 
+                        placeholder="54911xxxxxxx (uno por línea)" 
+                    />
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 pt-8 border-t border-white/5 mt-8">
+                <div>
+                    <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Tono ({current.toneValue})</label>
+                    <input type="range" min="1" max="5" value={current.toneValue} onChange={e => handleUpdate('toneValue', parseInt(e.target.value))} className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-brand-gold" />
+                    <p className="text-[9px] text-gray-500 mt-2">1=Agresivo, 5=Amigable</p>
+                </div>
+                <div>
+                    <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Ritmo ({current.rhythmValue})</label>
+                    <input type="range" min="1" max="5" value={current.rhythmValue} onChange={e => handleUpdate('rhythmValue', parseInt(e.target.value))} className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-brand-gold" />
+                    <p className="text-[9px] text-gray-500 mt-2">1=Directo, 5=Detallado</p>
+                </div>
+                <div>
+                    <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Intensidad ({current.intensityValue})</label>
+                    <input type="range" min="1" max="5" value={current.intensityValue} onChange={e => handleUpdate('intensityValue', parseInt(e.target.value))} className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-brand-gold" />
+                    <p className="text-[9px] text-gray-500 mt-2">1=Pasivo, 5=Enérgico</p>
+                </div>
+            </div>
+        </section>
+
+        {/* Network Participation Section (Appended as a card) */}
+        <section className="bg-brand-surface border border-white/5 rounded-[32px] p-8 shadow-2xl space-y-8 relative overflow-hidden group">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full blur-3xl pointer-events-none group-hover:bg-blue-500/10 transition-colors duration-1000"></div>
+
+            <div className="flex items-center gap-3 mb-6">
+                <h3 className="text-sm font-black text-white uppercase tracking-widest">Red Dominion (Beta)</h3>
+            </div>
+            
+            <div className="flex items-center justify-between">
+                <div>
+                    <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Participar en la Red</label>
+                    <p className="text-[9px] text-gray-500">
+                        Activa para compartir y recibir leads cualificados con otros miembros de la red.
+                        <button onClick={() => onOpenLegal('network')} className="text-brand-gold underline ml-1">Ver términos.</button>
+                    </p>
+                </div>
+                <button onClick={handleToggleNetworkEnabled} className={`w-12 h-6 rounded-full relative transition-colors ${current.isNetworkEnabled ? 'bg-blue-500' : 'bg-gray-700'}`}>
+                    <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transform transition-transform ${current.isNetworkEnabled ? 'translate-x-6' : 'translate-x-0.5'}`}></div>
+                </button>
+            </div>
+
+            {isNetworkEnabled && currentNetworkProfile && (
+                <div className="animate-fade-in space-y-6 mt-4">
                     <div>
-                        <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Misión Principal</label>
-                        <textarea value={wizardState.mission} onChange={e => setWizardState(prev => ({ ...prev, mission: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm h-32 focus:border-brand-gold outline-none resize-none" />
-                    </div>
-                    <div>
-                        <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Descripción del Servicio</label>
-                        <textarea value={wizardState.detailedDescription} onChange={e => setWizardState(prev => ({ ...prev, detailedDescription: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm h-40 focus:border-brand-gold outline-none resize-none" />
-                    </div>
-                    
-                    <div>
-                        <div className="flex justify-between items-center mb-4">
-                            <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest">Manejo de Objeciones</label>
-                            <button onClick={addObjection} className="px-3 py-1 bg-white/5 text-gray-400 rounded-lg text-[9px] font-bold uppercase hover:bg-white/10">+ Añadir</button>
-                        </div>
-                        <div className="space-y-4">
-                            {wizardState.objections.map(obj => (
-                                <div key={obj.id} className="bg-black/30 p-4 rounded-xl border border-white/5 space-y-3">
-                                    <div className="flex justify-between items-center">
-                                        <input type="text" value={obj.objection} onChange={e => updateObjection(obj.id, 'objection', e.target.value)} className="w-full bg-transparent border-b border-white/10 p-2 text-white text-xs focus:border-brand-gold outline-none" placeholder="Objeción del cliente..." />
-                                        <button onClick={() => removeObjection(obj.id)} className="text-gray-500 hover:text-red-400 text-xs ml-2">✕</button>
-                                    </div>
-                                    <textarea value={obj.response} onChange={e => updateObjection(obj.id, 'response', e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-lg p-2 text-white text-xs h-20 focus:border-brand-gold outline-none resize-none" placeholder="Respuesta inteligente..." />
-                                </div>
+                        <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Categorías de Interés</label>
+                        <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto custom-scrollbar p-2 bg-black/50 border border-white/10 rounded-xl">
+                            {['Marketing Digital', 'Desarrollo Web', 'Diseño Gráfico', 'Consultoría de Negocios', 'Real Estate', 'Software SaaS', 'Eventos', 'Logística'].map(category => (
+                                <button 
+                                    key={category}
+                                    type="button"
+                                    onClick={() => handleToggleCategory(category)}
+                                    className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${categoriesOfInterest.includes(category) ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'bg-black/40 text-gray-500 border border-white/10 hover:text-white'}`}
+                                >
+                                    {category}
+                                </button>
                             ))}
                         </div>
+                        <p className="text-[9px] text-gray-500 mt-2 italic">Selecciona las categorías de leads que te gustaría recibir.</p>
                     </div>
-
-                    <div>
-                        <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Reglas de Oro</label>
-                        <textarea value={wizardState.rules} onChange={e => setWizardState(prev => ({ ...prev, rules: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm h-24 focus:border-brand-gold outline-none resize-none" placeholder="Ej: Nunca ofrecer descuentos." />
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-6 border-t border-white/5">
-                        <div>
-                            <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Personalidad (Arquetipo)</label>
-                            <select value={current.archetype} onChange={e => handleArchetypeChange(e.target.value as PromptArchetype)} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm focus:border-brand-gold outline-none">
-                                {Object.values(PromptArchetype).map(archetype => (
-                                    <option key={archetype} value={archetype}>{ARCHETYPE_NAMES[archetype]}</option>
-                                ))}
-                            </select>
-                        </div>
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-1">Tono ({current.toneValue})</label>
-                                <input type="range" min="1" max="5" value={current.toneValue} onChange={e => handleUpdate('toneValue', parseInt(e.target.value))} className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-brand-gold" />
-                            </div>
-                            <div>
-                                <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-1">Ritmo ({current.rhythmValue})</label>
-                                <input type="range" min="1" max="5" value={current.rhythmValue} onChange={e => handleUpdate('rhythmValue', parseInt(e.target.value))} className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-brand-gold" />
-                            </div>
-                        </div>
-                    </div>
+                    <button onClick={() => saveNetworkProfile()} className="w-full py-4 bg-brand-gold text-black rounded-xl font-black text-xs uppercase tracking-[0.2em] hover:scale-[1.02] transition-all">Guardar Perfil de Red</button>
                 </div>
-            </section>
-        )}
-
-        {activeTab === 'NETWORK' && (
-            <section className="bg-brand-surface border border-white/5 rounded-[32px] p-8 shadow-2xl space-y-8 relative overflow-hidden group animate-fade-in">
-                <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full blur-3xl pointer-events-none group-hover:bg-blue-500/10 transition-colors duration-1000"></div>
-                
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h3 className="text-xl font-black text-white uppercase tracking-widest flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
-                            Participación en Red
-                        </h3>
-                        <p className="text-[10px] text-gray-500 mt-1">Intercambio de oportunidades comerciales.</p>
-                    </div>
-                    <button onClick={handleToggleNetworkEnabled} className={`w-12 h-6 rounded-full relative transition-colors ${current.isNetworkEnabled ? 'bg-blue-500' : 'bg-gray-700'}`}>
-                        <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transform transition-transform ${current.isNetworkEnabled ? 'translate-x-6' : 'translate-x-0.5'}`}></div>
-                    </button>
-                </div>
-
-                {isNetworkEnabled && currentNetworkProfile && (
-                    <div className="animate-fade-in space-y-6">
-                        <div>
-                            <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-4">Intereses Comerciales (Para recibir Leads)</label>
-                            <div className="flex flex-wrap gap-2 p-4 bg-black/50 border border-white/10 rounded-xl">
-                                {['Marketing Digital', 'Desarrollo Web', 'Diseño Gráfico', 'Consultoría de Negocios', 'Real Estate', 'Software SaaS', 'Eventos', 'Logística'].map(category => (
-                                    <button 
-                                        key={category}
-                                        type="button"
-                                        onClick={() => handleToggleCategory(category)}
-                                        className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${categoriesOfInterest.includes(category) ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'bg-black/40 text-gray-500 border border-white/10 hover:text-white'}`}
-                                    >
-                                        {category}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="bg-black/40 border border-white/10 rounded-xl p-4 text-center">
-                                <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest mb-1">Aportes</p>
-                                <p className="text-2xl font-black text-brand-gold">{currentNetworkProfile.contributionScore}</p>
-                            </div>
-                            <div className="bg-black/40 border border-white/10 rounded-xl p-4 text-center">
-                                <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest mb-1">Conexiones</p>
-                                <p className="text-2xl font-black text-blue-400">{currentNetworkProfile.receptionScore}</p>
-                            </div>
-                        </div>
-                    </div>
-                )}
-            </section>
-        )}
-
-        <div className="fixed bottom-6 right-6 md:hidden">
-            <button onClick={handleSaveSettings} disabled={isSavingApiKey} className="w-14 h-14 bg-brand-gold text-black rounded-full flex items-center justify-center shadow-2xl shadow-brand-gold/30 hover:scale-110 transition-transform">
-                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-            </button>
-        </div>
+            )}
+        </section>
 
       </div>
     </div>
