@@ -51,13 +51,19 @@ class RadarService {
 
         // 6. AI Analysis (Predictive Engine)
         try {
-            const analysisResult = await this.analyzeMessageWithAI(messageContent, groupName, contextHistory, memoryContext, user!, capabilities);
+            const analysisResult = await this.analyzeMessageWithAI(messageContent, groupName, contextHistory, memoryContext, user!, capabilities, settings);
             
-            // 7. Strategic Qualification using CAPABILITIES
-            // Use dynamic confidence threshold instead of hardcoded 40
-            const threshold = Math.max(40, capabilities.confidenceThreshold); // Minimum 40, scales up with depth
+            // 7. Strategic Qualification using CAPABILITIES & CALIBRATION SENSITIVITY
+            // Use dynamic confidence threshold. If calibration exists, adjust threshold based on sensitivity (1-10)
+            let baseThreshold = capabilities.confidenceThreshold; // Default from Depth Engine
+            
+            if (settings.calibration && settings.calibration.sensitivity) {
+                // Sensitivity 1 = Lower threshold (-20), Sensitivity 10 = Higher threshold (+10)
+                const sensitivityMod = (settings.calibration.sensitivity - 5) * 3;
+                baseThreshold = Math.max(20, Math.min(95, baseThreshold + sensitivityMod));
+            }
 
-            if (analysisResult && analysisResult.analysis.score >= threshold) {
+            if (analysisResult && analysisResult.analysis.score >= baseThreshold) {
                 
                 // Calculate Strategic Score (Composite)
                 let strategicScore = analysisResult.analysis.score;
@@ -106,7 +112,7 @@ class RadarService {
         }
     }
 
-    private async analyzeMessageWithAI(message: string, groupName: string, contextHistory: string, memoryContext: string, user: User, capabilities: any) {
+    private async analyzeMessageWithAI(message: string, groupName: string, contextHistory: string, memoryContext: string, user: User, capabilities: any, settings: any) {
         if (!user.settings.geminiApiKey) return null;
 
         // Inject Capabilities into Prompt
@@ -117,9 +123,25 @@ Nivel de Profundidad Cognitiva: ${capabilities.depthLevel} / 10.
 - Señales Ocultas: ${capabilities.canAnalyzeHiddenSignals ? 'ACTIVO' : 'INACTIVO'}
 `;
 
+        // INJECT CALIBRATION DATA (PRECISION PROTOCOL)
+        let calibrationInstructions = "";
+        if (settings.calibration && settings.calibration.opportunityDefinition) {
+            calibrationInstructions = `
+*** PROTOCOLO DE PRECISIÓN ACTIVADO ***
+TU OBJETIVO PRINCIPAL ES DETECTAR: "${settings.calibration.opportunityDefinition}"
+DEBES IGNORAR ESTRICTAMENTE: "${settings.calibration.noiseDefinition}"
+Si el mensaje coincide con lo que se debe ignorar, asigna un score de 0.
+Si el mensaje coincide con el objetivo principal, asigna un score > 80.
+            `;
+        } else {
+            calibrationInstructions = "Detecta oportunidades comerciales genéricas relevantes para el negocio del usuario.";
+        }
+
         const prompt = `
 Contexto: Eres "Radar 4.0", un Motor de Ventaja Predictiva para el negocio: "${user.settings.productName}".
 ${depthInstructions}
+
+${calibrationInstructions}
 
 Negocio del Usuario:
 ${user.settings.productDescription}

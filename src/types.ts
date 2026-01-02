@@ -147,11 +147,18 @@ export interface RadarSignal {
     status: 'NEW' | 'ACTED' | 'DISMISSED';
 }
 
+export interface RadarCalibration {
+    opportunityDefinition: string; // What exactly are we looking for?
+    noiseDefinition: string; // What should be ignored?
+    sensitivity: number; // 1-10. 1=Broad, 10=Laser Focused
+}
+
 export interface RadarSettings {
     isEnabled: boolean;
     monitoredGroups: string[];
     keywordsInclude: string[];
     keywordsExclude: string[];
+    calibration?: RadarCalibration; // NEW
 }
 
 export interface GroupMarketMemory {

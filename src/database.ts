@@ -167,7 +167,13 @@ const UserSchema = new Schema({
         isEnabled: { type: Boolean, default: false },
         monitoredGroups: { type: [String], default: [] },
         keywordsInclude: { type: [String], default: [] },
-        keywordsExclude: { type: [String], default: [] }
+        keywordsExclude: { type: [String], default: [] },
+        // NEW CALIBRATION DATA
+        calibration: {
+            opportunityDefinition: { type: String, default: '' },
+            noiseDefinition: { type: String, default: '' },
+            sensitivity: { type: Number, default: 5 }
+        }
     },
     conversations: { type: Schema.Types.Mixed, default: {} },
     governance: {

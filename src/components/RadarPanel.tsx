@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { RadarSignal, RadarSettings, WhatsAppGroup } from '../types';
+import { RadarSignal, RadarSettings, WhatsAppGroup, BotSettings } from '../types';
 import { getAuthHeaders } from '../config';
 import { audioService } from '../services/audioService';
+import { GoogleGenAI } from '@google/genai';
 
 interface RadarPanelProps {
     token: string;
@@ -11,18 +12,27 @@ interface RadarPanelProps {
 }
 
 const RadarPanel: React.FC<RadarPanelProps> = ({ token, backendUrl, showToast }) => {
-    const [view, setView] = useState<'LIVE' | 'HISTORY' | 'CONFIG'>('LIVE');
+    const [view, setView] = useState<'LIVE' | 'HISTORY' | 'CONFIG' | 'WIZARD'>('LIVE');
     const [signals, setSignals] = useState<RadarSignal[]>([]);
     const [settings, setSettings] = useState<RadarSettings | null>(null);
     const [groups, setGroups] = useState<WhatsAppGroup[]>([]);
     const [loading, setLoading] = useState(false);
+    
+    // WIZARD STATE
+    const [wizardStep, setWizardStep] = useState(0);
+    const [calibration, setCalibration] = useState({
+        opportunityDefinition: '',
+        noiseDefinition: '',
+        sensitivity: 5
+    });
+    const [isEnhancing, setIsEnhancing] = useState(false);
     
     const prevSignalsLength = useRef(0);
 
     useEffect(() => {
         if (view === 'LIVE') fetchSignals(false);
         if (view === 'HISTORY') fetchSignals(true);
-        if (view === 'CONFIG') fetchConfigData();
+        if (view === 'CONFIG' || view === 'WIZARD') fetchConfigData();
     }, [view]);
 
     useEffect(() => {
@@ -59,7 +69,11 @@ const RadarPanel: React.FC<RadarPanelProps> = ({ token, backendUrl, showToast })
                 fetch(`${backendUrl}/api/radar/settings`, { headers: getAuthHeaders(token) }),
                 fetch(`${backendUrl}/api/whatsapp/groups`, { headers: getAuthHeaders(token) })
             ]);
-            if (settingsRes.ok) setSettings(await settingsRes.json());
+            if (settingsRes.ok) {
+                const data = await settingsRes.json();
+                setSettings(data);
+                if (data.calibration) setCalibration(data.calibration);
+            }
             if (groupsRes.ok) setGroups(await groupsRes.json());
         } catch (e) {
             showToast('Error cargando configuración.', 'error');
@@ -68,13 +82,14 @@ const RadarPanel: React.FC<RadarPanelProps> = ({ token, backendUrl, showToast })
         }
     };
 
-    const saveSettings = async () => {
-        if (!settings) return;
+    const saveSettings = async (overrideSettings?: RadarSettings) => {
+        const payload = overrideSettings || settings;
+        if (!payload) return;
         try {
             const res = await fetch(`${backendUrl}/api/radar/settings`, {
                 method: 'POST',
                 headers: getAuthHeaders(token),
-                body: JSON.stringify(settings)
+                body: JSON.stringify(payload)
             });
             if (res.ok) showToast('Configuración de Radar actualizada.', 'success');
         } catch (e) {
@@ -114,6 +129,62 @@ const RadarPanel: React.FC<RadarPanelProps> = ({ token, backendUrl, showToast })
         }
     };
 
+    // --- WIZARD LOGIC ---
+    const handleWizardSave = () => {
+        if (!settings) return;
+        const newSettings = { ...settings, calibration: calibration };
+        setSettings(newSettings);
+        saveSettings(newSettings);
+        setView('CONFIG');
+        setWizardStep(0);
+    };
+
+    const autoCalibrateWithAI = async () => {
+        setIsEnhancing(true);
+        try {
+            // Fetch user bot settings to get business description
+            const settingsRes = await fetch(`${backendUrl}/api/settings`, { headers: getAuthHeaders(token) });
+            const botSettings: BotSettings = await settingsRes.json();
+            
+            if (!botSettings.geminiApiKey) {
+                showToast('Se requiere API Key de Gemini en Configuración.', 'error');
+                setIsEnhancing(false);
+                return;
+            }
+
+            const ai = new GoogleGenAI({ apiKey: botSettings.geminiApiKey });
+            const prompt = `
+            Actúa como un experto en Inteligencia de Negocios.
+            Basado en la siguiente descripción del negocio: "${botSettings.productDescription}",
+            genera dos definiciones breves y precisas para un sistema de Radar de Oportunidades:
+            1. "Opportunity Definition": Qué buscar exactamente en grupos de WhatsApp (intención de compra, preguntas específicas).
+            2. "Noise Definition": Qué ignorar (spam, competencia, irrelevante).
+            
+            Formato JSON: { "opportunity": "...", "noise": "..." }
+            `;
+
+            const response = await ai.models.generateContent({
+                model: 'gemini-3-flash-preview',
+                contents: [{ parts: [{ text: prompt }] }],
+                config: { responseMimeType: "application/json" }
+            });
+
+            const result = JSON.parse(response.text || '{}');
+            if (result.opportunity && result.noise) {
+                setCalibration({
+                    ...calibration,
+                    opportunityDefinition: result.opportunity,
+                    noiseDefinition: result.noise
+                });
+                showToast('Calibración generada por IA.', 'success');
+            }
+        } catch (e) {
+            showToast('Error en autocalibración.', 'error');
+        } finally {
+            setIsEnhancing(false);
+        }
+    };
+
     const getUrgencyColor = (level?: string) => {
         if (level === 'CRITICAL') return 'bg-red-500 text-white animate-pulse';
         if (level === 'HIGH') return 'bg-orange-500 text-white';
@@ -138,11 +209,13 @@ const RadarPanel: React.FC<RadarPanelProps> = ({ token, backendUrl, showToast })
                         </h2>
                         <p className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.3em] mt-1">Predictive Advantage Engine</p>
                     </div>
-                    <div className="flex bg-white/5 p-1 rounded-xl border border-white/10 w-full md:w-auto">
-                        <button onClick={() => setView('LIVE')} className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${view === 'LIVE' ? 'bg-brand-gold text-black' : 'text-gray-400 hover:text-white'}`}>Live Feed</button>
-                        <button onClick={() => setView('HISTORY')} className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${view === 'HISTORY' ? 'bg-brand-gold text-black' : 'text-gray-400 hover:text-white'}`}>Historial</button>
-                        <button onClick={() => setView('CONFIG')} className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${view === 'CONFIG' ? 'bg-brand-gold text-black' : 'text-gray-400 hover:text-white'}`}>Configuración</button>
-                    </div>
+                    {view !== 'WIZARD' && (
+                        <div className="flex bg-white/5 p-1 rounded-xl border border-white/10 w-full md:w-auto">
+                            <button onClick={() => setView('LIVE')} className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${view === 'LIVE' ? 'bg-brand-gold text-black' : 'text-gray-400 hover:text-white'}`}>Live Feed</button>
+                            <button onClick={() => setView('HISTORY')} className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${view === 'HISTORY' ? 'bg-brand-gold text-black' : 'text-gray-400 hover:text-white'}`}>Historial</button>
+                            <button onClick={() => setView('CONFIG')} className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${view === 'CONFIG' ? 'bg-brand-gold text-black' : 'text-gray-400 hover:text-white'}`}>Configuración</button>
+                        </div>
+                    )}
                 </header>
 
                 {(view === 'LIVE' || view === 'HISTORY') ? (
@@ -236,6 +309,129 @@ const RadarPanel: React.FC<RadarPanelProps> = ({ token, backendUrl, showToast })
                             </div>
                         ))}
                     </div>
+                ) : view === 'WIZARD' ? (
+                    // --- PRECISION PROTOCOL WIZARD ---
+                    <div className="bg-brand-surface border border-white/5 rounded-3xl p-8 shadow-2xl animate-fade-in max-w-4xl mx-auto min-h-[500px] flex flex-col relative">
+                        <div className="absolute top-0 right-0 p-6 opacity-50 pointer-events-none">
+                            <div className="w-64 h-64 bg-brand-gold/5 rounded-full blur-3xl"></div>
+                        </div>
+
+                        <div className="flex justify-between items-center mb-8 border-b border-white/5 pb-6">
+                            <div>
+                                <h3 className="text-xl font-black text-white uppercase tracking-widest">Protocolo de Precisión</h3>
+                                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.3em] mt-2">Calibración de Sensores V4</p>
+                            </div>
+                            <div className="flex gap-2">
+                                <button 
+                                    onClick={autoCalibrateWithAI}
+                                    disabled={isEnhancing}
+                                    className="px-4 py-2 bg-brand-gold/10 text-brand-gold border border-brand-gold/30 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-brand-gold hover:text-black transition-all flex items-center gap-2"
+                                >
+                                    {isEnhancing ? (
+                                        <span className="animate-pulse">Calibrando...</span>
+                                    ) : (
+                                        <><span>✨</span> Autocompletar con IA</>
+                                    )}
+                                </button>
+                                <button onClick={() => setView('CONFIG')} className="text-gray-500 hover:text-white px-4 py-2 text-[10px] font-bold uppercase">Cancelar</button>
+                            </div>
+                        </div>
+
+                        <div className="flex-1 flex flex-col justify-center space-y-10">
+                            {wizardStep === 0 && (
+                                <div className="space-y-6 animate-slide-in-right">
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-10 h-10 rounded-full bg-brand-gold text-black flex items-center justify-center font-black text-lg">1</div>
+                                        <div>
+                                            <h4 className="text-lg font-black text-white uppercase tracking-tight">Definición de Oportunidad</h4>
+                                            <p className="text-xs text-gray-400">Describe EXÁCTAMENTE qué estás buscando. Sé específico.</p>
+                                        </div>
+                                    </div>
+                                    <textarea 
+                                        value={calibration.opportunityDefinition}
+                                        onChange={(e) => setCalibration({...calibration, opportunityDefinition: e.target.value})}
+                                        className="w-full bg-black/60 border border-white/10 rounded-xl p-4 text-white text-sm h-32 focus:border-brand-gold outline-none resize-none"
+                                        placeholder="Ej: Busco personas preguntando por alquileres en zona centro, dueños de negocios buscando agencias de marketing, o gente vendiendo autos usados."
+                                    />
+                                    <div className="flex justify-end">
+                                        <button 
+                                            disabled={!calibration.opportunityDefinition}
+                                            onClick={() => setWizardStep(1)} 
+                                            className="px-8 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl font-black text-xs uppercase tracking-widest disabled:opacity-50"
+                                        >
+                                            Siguiente &rarr;
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {wizardStep === 1 && (
+                                <div className="space-y-6 animate-slide-in-right">
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-10 h-10 rounded-full bg-white/10 text-white flex items-center justify-center font-black text-lg">2</div>
+                                        <div>
+                                            <h4 className="text-lg font-black text-white uppercase tracking-tight">Filtro de Ruido (Negativos)</h4>
+                                            <p className="text-xs text-gray-400">¿Qué debemos ignorar absolutamente? (Competencia, Spam, etc.)</p>
+                                        </div>
+                                    </div>
+                                    <textarea 
+                                        value={calibration.noiseDefinition}
+                                        onChange={(e) => setCalibration({...calibration, noiseDefinition: e.target.value})}
+                                        className="w-full bg-black/60 border border-white/10 rounded-xl p-4 text-white text-sm h-32 focus:border-red-500/50 outline-none resize-none"
+                                        placeholder="Ej: Ignorar ofertas de otros agentes inmobiliarios, spam de criptomonedas, gente buscando trabajo, mensajes de 'buenos días'."
+                                    />
+                                    <div className="flex justify-between">
+                                        <button onClick={() => setWizardStep(0)} className="text-gray-500 font-bold text-xs uppercase">Atrás</button>
+                                        <button 
+                                            onClick={() => setWizardStep(2)} 
+                                            className="px-8 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl font-black text-xs uppercase tracking-widest"
+                                        >
+                                            Siguiente &rarr;
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {wizardStep === 2 && (
+                                <div className="space-y-8 animate-slide-in-right">
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-10 h-10 rounded-full bg-white/10 text-white flex items-center justify-center font-black text-lg">3</div>
+                                        <div>
+                                            <h4 className="text-lg font-black text-white uppercase tracking-tight">Sensibilidad del Sensor</h4>
+                                            <p className="text-xs text-gray-400">¿Qué tan estricto debe ser el Radar?</p>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="bg-black/40 p-6 rounded-2xl border border-white/5">
+                                        <input 
+                                            type="range" min="1" max="10" 
+                                            value={calibration.sensitivity}
+                                            onChange={(e) => setCalibration({...calibration, sensitivity: parseInt(e.target.value)})}
+                                            className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-brand-gold mb-6"
+                                        />
+                                        <div className="flex justify-between text-xs font-bold uppercase tracking-widest">
+                                            <span className={calibration.sensitivity < 4 ? 'text-brand-gold' : 'text-gray-600'}>Amplio (Más Ruido)</span>
+                                            <span className={calibration.sensitivity > 7 ? 'text-brand-gold' : 'text-gray-600'}>Quirúrgico (Menos Leads)</span>
+                                        </div>
+                                        <div className="mt-4 text-center">
+                                            <span className="text-4xl font-black text-white">{calibration.sensitivity}</span>
+                                            <p className="text-[10px] text-gray-500 mt-1">Nivel de Precisión</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex justify-between pt-4">
+                                        <button onClick={() => setWizardStep(1)} className="text-gray-500 font-bold text-xs uppercase">Atrás</button>
+                                        <button 
+                                            onClick={handleWizardSave} 
+                                            className="px-10 py-4 bg-brand-gold text-black rounded-xl font-black text-xs uppercase tracking-[0.2em] hover:scale-105 transition-all shadow-[0_0_30px_rgba(212,175,55,0.3)]"
+                                        >
+                                            Activar Protocolo
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
                 ) : (
                     // CONFIG VIEW
                     <div className="bg-brand-surface border border-white/5 rounded-3xl p-8 shadow-2xl animate-fade-in space-y-8">
@@ -250,6 +446,39 @@ const RadarPanel: React.FC<RadarPanelProps> = ({ token, backendUrl, showToast })
                                     {settings?.isEnabled ? 'ACTIVO' : 'INACTIVO'}
                                 </button>
                             </div>
+                        </div>
+
+                        {/* CALIBRATION SUMMARY CARD */}
+                        <div className="bg-black/30 border border-brand-gold/20 rounded-2xl p-6 relative overflow-hidden group">
+                            <div className="absolute top-0 right-0 w-20 h-20 bg-brand-gold/10 rounded-full blur-2xl group-hover:bg-brand-gold/20 transition-all"></div>
+                            <div className="flex justify-between items-start mb-4">
+                                <div>
+                                    <h4 className="text-[10px] font-black text-brand-gold uppercase tracking-widest mb-1">Calibración Actual</h4>
+                                    <p className="text-xs text-gray-300 font-medium">
+                                        {settings?.calibration?.opportunityDefinition 
+                                            ? "Protocolo de Precisión Activado" 
+                                            : "Configuración Básica (Genérica)"}
+                                    </p>
+                                </div>
+                                <button 
+                                    onClick={() => setView('WIZARD')}
+                                    className="px-4 py-2 bg-white/5 border border-white/10 hover:border-brand-gold/50 text-white rounded-lg text-[9px] font-black uppercase tracking-widest transition-all"
+                                >
+                                    {settings?.calibration?.opportunityDefinition ? 'Recalibrar' : 'Iniciar Wizard'}
+                                </button>
+                            </div>
+                            {settings?.calibration?.opportunityDefinition && (
+                                <div className="grid grid-cols-2 gap-4 text-[10px] text-gray-500">
+                                    <div className="bg-black/40 p-3 rounded-lg border border-white/5">
+                                        <span className="block font-bold text-gray-400 mb-1">Objetivo</span>
+                                        <p className="line-clamp-2">{settings.calibration.opportunityDefinition}</p>
+                                    </div>
+                                    <div className="bg-black/40 p-3 rounded-lg border border-white/5">
+                                        <span className="block font-bold text-gray-400 mb-1">Sensibilidad</span>
+                                        <p className="text-brand-gold font-bold text-lg">{settings.calibration.sensitivity}/10</p>
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         {loading ? (
@@ -289,7 +518,7 @@ const RadarPanel: React.FC<RadarPanelProps> = ({ token, backendUrl, showToast })
                                             placeholder="ej: busco, necesito, agencia, precio" 
                                         />
                                     </div>
-                                    <button onClick={saveSettings} className="w-full py-4 bg-brand-gold text-black rounded-xl font-black text-xs uppercase tracking-[0.2em] hover:scale-[1.02] transition-all shadow-lg">
+                                    <button onClick={() => saveSettings()} className="w-full py-4 bg-brand-gold text-black rounded-xl font-black text-xs uppercase tracking-[0.2em] hover:scale-[1.02] transition-all shadow-lg">
                                         Guardar Configuración
                                     </button>
                                 </div>
