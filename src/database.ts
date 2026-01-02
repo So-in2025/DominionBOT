@@ -103,12 +103,12 @@ const GroupMarketMemorySchema = new Schema({
 
 const CampaignSchema = new Schema({
     id: { type: String, required: true, unique: true, index: true },
-    userId: { type: String, required: true, index: true },
+    userId: { type: String, required: true, index: true }, // Index for fast retrieval by user
     name: { type: String, required: true },
     message: { type: String, required: true },
     imageUrl: { type: String }, // NEW: Image Support
     groups: { type: [String], default: [] },
-    status: { type: String, enum: ['DRAFT', 'ACTIVE', 'PAUSED', 'COMPLETED'], default: 'DRAFT' },
+    status: { type: String, enum: ['DRAFT', 'ACTIVE', 'PAUSED', 'COMPLETED'], default: 'DRAFT', index: true }, // Index for scheduler
     schedule: {
         type: { type: String, enum: ['ONCE', 'DAILY', 'WEEKLY'], default: 'ONCE' },
         startDate: { type: String },
@@ -123,9 +123,12 @@ const CampaignSchema = new Schema({
         totalSent: { type: Number, default: 0 },
         totalFailed: { type: Number, default: 0 },
         lastRunAt: { type: String },
-        nextRunAt: { type: String }
+        nextRunAt: { type: String, index: true } // Index for scheduler
     }
 }, { timestamps: true });
+
+// Create Compound Index for Scheduler Efficiency
+CampaignSchema.index({ status: 1, 'stats.nextRunAt': 1 });
 
 const UserSchema = new Schema({
     id: { type: String, required: true, unique: true, index: true },
@@ -137,7 +140,7 @@ const UserSchema = new Schema({
     role: { type: String, enum: ['super_admin', 'admin', 'client'], default: 'client' },
     
     plan_type: { type: String, enum: ['starter', 'pro'], default: 'starter' },
-    plan_status: { type: String, enum: ['active', 'expired', 'suspended', 'trial'], default: 'active' },
+    plan_status: { type: String, enum: ['active', 'expired', 'suspended', 'trial'], default: 'active', index: true },
     billing_start_date: { type: String, default: () => new Date().toISOString() },
     billing_end_date: { type: String, default: () => new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() },
     trial_qualified_leads_count: { type: Number, default: 0 },
@@ -503,6 +506,7 @@ class Database {
 
   async getPendingCampaigns(): Promise<Campaign[]> {
       const now = new Date().toISOString();
+      // Use .lean() for faster reads and use the compound index
       return await CampaignModel.find({
           status: 'ACTIVE',
           'stats.nextRunAt': { $lte: now }

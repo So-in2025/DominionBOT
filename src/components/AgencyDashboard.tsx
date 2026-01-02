@@ -15,35 +15,57 @@ interface AgencyDashboardProps {
   showToast: (message: string, type: 'success' | 'error' | 'info') => void;
 }
 
+// MAPPING FOR COMMERCIAL SIMPLIFICATION
+const DEPTH_MODES: Record<number, string> = {
+    1: "⚡ Modo Rápido (Flash)",
+    2: "⚡ Modo Rápido (Flash)",
+    3: "⚡ Modo Rápido (Flash)",
+    4: "🧠 Modo Estratégico",
+    5: "🧠 Modo Estratégico",
+    6: "🧠 Modo Estratégico",
+    7: "🎯 Modo Sniper",
+    8: "🎯 Modo Sniper",
+    9: "🧬 Modo Dominion",
+    10: "🧬 Modo Dominion (God Mode)"
+};
+
 const KpiCard: React.FC<{ 
     label: string; 
     value: string | number; 
     trend?: string; 
     icon: React.ReactNode;
     isGold?: boolean;
-}> = ({ label, value, trend, icon, isGold }) => (
+    isRisk?: boolean; // NEW: Alert color
+}> = ({ label, value, trend, icon, isGold, isRisk }) => (
     <div className={`relative overflow-hidden rounded-[24px] border p-6 transition-all duration-500 hover:translate-y-[-4px] group ${
-        isGold 
-        ? 'bg-gradient-to-br from-brand-gold/15 to-brand-black border-brand-gold/20 shadow-[0_20px_50px_rgba(212,175,55,0.05)]' 
-        : 'bg-brand-surface border-white/5'
+        isRisk 
+        ? 'bg-red-900/10 border-red-500/30'
+        : isGold 
+            ? 'bg-gradient-to-br from-brand-gold/15 to-brand-black border-brand-gold/20 shadow-[0_20px_50px_rgba(212,175,55,0.05)]' 
+            : 'bg-brand-surface border-white/5'
     }`}>
         <div className="flex justify-between items-start mb-6">
-            <div className={`p-3 rounded-xl transition-colors ${isGold ? 'bg-brand-gold/20 text-brand-gold' : 'bg-white/5 text-gray-500'}`}>
+            <div className={`p-3 rounded-xl transition-colors ${isRisk ? 'bg-red-500/20 text-red-500' : (isGold ? 'bg-brand-gold/20 text-brand-gold' : 'bg-white/5 text-gray-500')}`}>
                 {icon}
             </div>
-            {trend && (
+            {trend && !isRisk && (
                 <span className="text-[9px] font-black text-green-400 bg-green-400/10 px-2.5 py-1 rounded-full uppercase tracking-widest border border-green-400/20">
                     {trend}
                 </span>
             )}
+            {isRisk && (
+                <span className="text-[9px] font-black text-red-400 bg-red-400/10 px-2.5 py-1 rounded-full uppercase tracking-widest border border-red-400/20 animate-pulse">
+                    Acción Requerida
+                </span>
+            )}
         </div>
         <div>
-            <p className="text-[10px] uppercase tracking-[0.25em] text-gray-500 font-black mb-1.5">{label}</p>
-            <h3 className={`text-5xl font-black tracking-tighter ${isGold ? 'text-brand-gold' : 'text-white'}`}>
+            <p className={`text-[10px] uppercase tracking-[0.25em] font-black mb-1.5 ${isRisk ? 'text-red-400' : 'text-gray-500'}`}>{label}</p>
+            <h3 className={`text-5xl font-black tracking-tighter ${isRisk ? 'text-red-500' : (isGold ? 'text-brand-gold' : 'text-white')}`}>
                 {value}
             </h3>
         </div>
-        <div className="absolute -right-8 -bottom-8 w-32 h-32 bg-brand-gold opacity-[0.03] rounded-full blur-3xl group-hover:opacity-[0.08] transition-opacity"></div>
+        <div className={`absolute -right-8 -bottom-8 w-32 h-32 rounded-full blur-3xl transition-opacity group-hover:opacity-[0.08] opacity-[0.03] ${isRisk ? 'bg-red-500' : 'bg-brand-gold'}`}></div>
     </div>
 );
 
@@ -68,45 +90,37 @@ const FunnelStep: React.FC<{ label: string; value: number; total: number; color:
 };
 
 const NeuralEngineStatus: React.FC<{ depthLevel: number; userId: string; username: string }> = ({ depthLevel, userId, username }) => {
-    let mode = 'STANDARD';
+    // Map internal number to commercial name
+    const commercialName = DEPTH_MODES[depthLevel] || `Nivel ${depthLevel}`;
+    
     let color = 'text-gray-400';
     let borderColor = 'border-white/10';
     let bg = 'bg-white/5';
-    let label = 'Nivel 3';
 
-    if (depthLevel >= 10) {
-        mode = 'NEURO-BOOST';
+    if (depthLevel >= 9) {
         color = 'text-purple-400';
         borderColor = 'border-purple-500/30';
         bg = 'bg-purple-900/10';
-        label = 'Nivel 10 (MAX)';
     } else if (depthLevel >= 7) {
-        mode = 'SNIPER';
         color = 'text-brand-gold';
         borderColor = 'border-brand-gold/30';
         bg = 'bg-brand-gold/10';
-        label = 'Nivel 7';
-    } else {
-        label = `Nivel ${depthLevel}`;
     }
 
     const handleUpgradeRequest = () => {
-        const message = `Hola, soy ${username} (ID: ${userId}).\n\nActualmente estoy en *Nivel ${depthLevel}*. Quisiera solicitar un *Aumento de Potencia* para mi Motor Neural.`;
+        const message = `Hola, soy ${username} (ID: ${userId}).\n\nEstoy en *${commercialName}*. Quiero activar un *Boost de Potencia* para un lanzamiento.`;
         openSupportWhatsApp(message);
     };
 
     return (
         <div className={`p-4 rounded-xl border ${borderColor} ${bg} flex items-center justify-between`}>
             <div>
-                <p className="text-[9px] font-black uppercase tracking-widest text-gray-500 mb-1">Motor Cognitivo</p>
-                <h4 className={`text-lg font-black tracking-tight ${color}`}>{mode}</h4>
+                <p className="text-[9px] font-black uppercase tracking-widest text-gray-500 mb-1">Capacidad Cognitiva</p>
+                <h4 className={`text-lg font-black tracking-tight ${color}`}>{commercialName}</h4>
             </div>
             <div className="text-right">
-                <span className={`text-[10px] font-black uppercase px-2 py-1 rounded border ${borderColor} ${color} mb-1 block`}>
-                    {label}
-                </span>
-                <button onClick={handleUpgradeRequest} className="text-[9px] font-bold text-gray-400 hover:text-white underline">
-                    Solicitar Upgrade
+                <button onClick={handleUpgradeRequest} className="px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded text-[9px] font-bold text-white uppercase tracking-wider transition-all">
+                    Activar Boost ⚡
                 </button>
             </div>
         </div>
@@ -120,37 +134,24 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
   const [apiKeyStatus, setApiKeyStatus] = useState<'UNKNOWN' | 'VALID' | 'INVALID' | 'VERIFYING'>('UNKNOWN');
   
   const verifyApiKey = async () => {
-    // 1. Clean the key (Trim spaces)
     const cleanKey = settings?.geminiApiKey?.trim();
-    
     if (!cleanKey) {
         alert('API Key de Gemini no configurada o vacía.');
         setApiKeyStatus('INVALID');
         return;
     }
-
     setApiKeyStatus('VERIFYING');
     try {
         const ai = new GoogleGenAI({ apiKey: cleanKey });
-        // Use gemini-2.0-flash-exp for verification as it's more widely available than 3-preview
-        // This ensures we test the KEY, not the Model availability.
         await ai.models.generateContent({ 
             model: 'gemini-2.5-flash', 
             contents: [{ parts: [{text: 'ping'}] }] 
         }); 
-        
         setApiKeyStatus('VALID');
         alert('✅ Conexión Exitosa: API Key verificada y operativa.');
     } catch (error: any) {
         setApiKeyStatus('INVALID');
-        console.error("API Key verification failed:", error);
-        
-        let msg = 'Error desconocido.';
-        if (error.message?.includes('403')) msg = 'Permisos insuficientes o Key inválida (403).';
-        if (error.message?.includes('404')) msg = 'Modelo no encontrado (404). Tu Key funciona, pero el modelo no está disponible en tu región.';
-        if (error.message?.includes('400')) msg = 'Petición inválida (400). Verifica el formato de la Key.';
-        
-        alert(`❌ Error de Verificación: ${msg}\n\nDetalle técnico: ${error.message}`);
+        alert(`❌ Error de Verificación: ${error.message}`);
     }
   };
 
@@ -196,6 +197,9 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
     'VERIFYING': { color: 'text-yellow-500', text: 'Verificando...' }
   };
 
+  // RISK LOGIC
+  const isRisk = currentUser?.plan_status === 'expired' || (currentUser?.plan_status === 'trial' && (currentUser.trial_qualified_leads_count || 0) >= 10);
+
   return (
     <div className="flex-1 bg-brand-black p-6 md:p-10 overflow-y-auto custom-scrollbar font-sans relative">
       <div className="max-w-7xl mx-auto space-y-10 relative z-10 animate-fade-in">
@@ -203,7 +207,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
         <header className="flex flex-col md:flex-row justify-between items-end gap-6 border-b border-white/5 pb-10">
             <div>
                 <h1 className="text-5xl font-black text-white tracking-tighter leading-none uppercase">
-                    Telemetría <span className="text-brand-gold">Pro</span>
+                    Resultados <span className="text-brand-gold">Pro</span>
                 </h1>
                 <p className="text-gray-500 mt-3 text-[10px] uppercase font-black tracking-[0.3em] flex items-center gap-2">
                     <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-[0_0_10px_rgba(34,197,94,0.8)]"></span>
@@ -215,11 +219,17 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
 
         {/* METRICS GRID - Now inclusive of Campaigns */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
-            <KpiCard label="Retorno Estimado" value={`$${metrics.revenueEstimated.toLocaleString()}`} isGold icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>} trend="+14% Sem" />
+            <KpiCard 
+                label={isRisk ? "Ingresos en Riesgo" : "Retorno Estimado"} 
+                value={`$${metrics.revenueEstimated.toLocaleString()}`} 
+                isGold={!isRisk}
+                isRisk={isRisk}
+                icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>} 
+                trend={!isRisk ? "+14% Sem" : undefined} 
+            />
             <KpiCard label="Tasa Conversión" value={`${metrics.conversionRate}%`} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>} />
             <KpiCard label="Leads Captados" value={metrics.totalLeads} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857" /></svg>} />
             <KpiCard label="Peticiones IA" value={metrics.totalMessages} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01" /></svg>} />
-            {/* NEW CAMPAIGN KPI CARD */}
             <KpiCard label="Difusión (Msgs)" value={metrics.campaignMessagesSent || 0} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" /></svg>} trend={metrics.campaignsActive > 0 ? `${metrics.campaignsActive} Activas` : 'Inactivo'} />
         </div>
 
@@ -257,7 +267,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
                     
                     <div className="flex-1 flex flex-col justify-center py-6 gap-6">
                         
-                        {/* NEW: NEURAL ENGINE STATUS */}
+                        {/* NEW: NEURAL ENGINE STATUS (MAPPED) */}
                         {currentUser && <NeuralEngineStatus depthLevel={currentUser.depthLevel || 1} userId={currentUser.id} username={currentUser.business_name || currentUser.username} />}
 
                         <div className="flex items-center justify-between p-4 bg-black/40 rounded-2xl border border-white/5">

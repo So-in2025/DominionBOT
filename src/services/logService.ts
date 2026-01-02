@@ -39,6 +39,11 @@ class LogService {
         const colorMap = { INFO: '\x1b[34m', WARN: '\x1b[33m', ERROR: '\x1b[31m', AUDIT: '\x1b[35m' };
         console.log(`${colorMap[level]}[${level}]\x1b[0m ${message} ${username ? `(${username})` : ''}`);
 
+        // Noise filter: Do not persist noisy info logs to DB
+        if (level === 'INFO' && /polling|check|ping|heartbeat/i.test(message)) {
+            return;
+        }
+
         // Persist to database
         db.createLog(logEntry).catch(e => console.error("Failed to persist log:", e));
     }

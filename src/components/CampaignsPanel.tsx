@@ -266,9 +266,14 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
                         <p className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.3em] mt-1">Broadcast Táctico Autónomo</p>
                     </div>
                     {view === 'LIST' && (
-                        <button onClick={handleCreateClick} className="px-6 py-3 bg-brand-gold text-black rounded-xl font-black text-[10px] uppercase tracking-widest hover:scale-105 transition-all shadow-lg shadow-brand-gold/20">
-                            + Nueva Campaña
-                        </button>
+                        <div className="flex gap-2">
+                            <button onClick={fetchCampaigns} className="w-10 h-10 flex items-center justify-center bg-white/5 text-gray-400 rounded-xl hover:text-white hover:bg-white/10 transition-all border border-white/5">
+                                ↻
+                            </button>
+                            <button onClick={handleCreateClick} className="px-6 py-3 bg-brand-gold text-black rounded-xl font-black text-[10px] uppercase tracking-widest hover:scale-105 transition-all shadow-lg shadow-brand-gold/20">
+                                + Nueva Campaña
+                            </button>
+                        </div>
                     )}
                 </header>
 

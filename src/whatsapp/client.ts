@@ -5,7 +5,8 @@ import makeWASocket, {
   WASocket,
   fetchLatestBaileysVersion,
   Browsers,
-  proto
+  proto,
+  GroupMetadata
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import pino from 'pino';
@@ -23,14 +24,28 @@ import { Buffer } from 'buffer'; // Needed for media sending
 const sessions = new Map<string, WASocket>();
 const qrCache = new Map<string, string>(); 
 const codeCache = new Map<string, string>(); 
-const messageDebounceMap = new Map<string, ReturnType<typeof setTimeout>>();
 const connectionLocks = new Map<string, boolean>(); 
-const DEBOUNCE_TIME_MS = 6000; 
 
-const BOOT_TIMESTAMP = Date.now() / 1000;
 const logger = pino({ level: 'silent' }); 
-
 const ELITE_BOT_JID = '5491112345678@s.whatsapp.net';
+
+// AI Decoupling (Virtual Queue)
+const aiProcessingQueue = new Set<string>();
+setInterval(async () => {
+    if (aiProcessingQueue.size > 0) {
+        const [item] = aiProcessingQueue; // Get the first item from the Set
+        aiProcessingQueue.delete(item);   // Remove it
+        
+        const [userId, jid] = item.split('::');
+        if (userId && jid) {
+            try {
+                await processAiResponseForJid(userId, jid);
+            } catch (err) {
+                logService.error(`[AI-QUEUE] Error processing ${item}`, err, userId);
+            }
+        }
+    }
+}, 2000); // Process one item every 2 seconds
 
 function extractMessageContent(msg: proto.IWebMessageInfo): string | null {
     const message = msg.message;
@@ -200,6 +215,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                 const messagesByJid: Record<string, typeof messages> = {};
                 
                 for (const msg of messages) {
+                    // Early Exit Filter (Broadcast)
                     const jid = msg.key.remoteJid;
                     if (!jid || jid === 'status@broadcast' || jid.endsWith('@lid')) continue; 
                     
@@ -210,57 +226,45 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                 const chatProcessPromises = Object.keys(messagesByJid).map(async (jid) => {
                     const chatMessages = messagesByJid[jid];
                     
-                    // --- RADAR 3.0 HOOK ---
-                    // If message is from a group, route to RadarService
+                    // Radar Hook
                     if (jid.endsWith('@g.us')) {
                         for (const msg of chatMessages) {
                             if (msg.key.fromMe) continue;
                             const text = extractMessageContent(msg);
                             if (!text) continue;
                             
-                            // Extract sender info
                             const sender = msg.key.participant || msg.participant || jid; 
                             const senderName = msg.pushName || 'Unknown';
                             
-                            // We need group metadata for name, but fetching it every time is slow.
-                            // Ideally cached. For now we use JID or try minimal fetch if critical.
-                            // Passing JID as name fallback.
-                            
-                            // Async call to not block
                             radarService.processGroupMessage(userId, jid, jid, sender, senderName, text).catch(e => console.error(e));
                         }
-                        return; // Stop processing group messages for standard bot logic
+                        return;
                     }
-                    // ----------------------
 
+                    // Standard Chat Processing
                     for (const msg of chatMessages) {
                         try {
-                            const isFromMe = msg.key.fromMe;
                             const messageText = extractMessageContent(msg);
                             if (!messageText) continue;
 
+                            // Early Exit Filter (Time)
                             const msgTimestamp = typeof msg.messageTimestamp === 'number' ? msg.messageTimestamp : (msg.messageTimestamp as any)?.low || Date.now() / 1000;
-                            const isHistory = msgTimestamp < (BOOT_TIMESTAMP - 30); 
+                            const isOldForAI = msgTimestamp < (Date.now() / 1000 - 10);
 
                             const userMessage: Message = {
                                 id: msg.key.id || Date.now().toString(),
                                 text: messageText,
-                                sender: isFromMe ? 'owner' : 'user', 
+                                sender: msg.key.fromMe ? 'owner' : 'user', 
                                 timestamp: new Date(msgTimestamp * 1000)
                             };
 
                             const senderName = msg.pushName || (msg as any).verifiedBizName || undefined;
 
-                            await conversationService.addMessage(userId, jid, userMessage, senderName, isHistory);
+                            await conversationService.addMessage(userId, jid, userMessage, senderName, isOldForAI);
 
-                            if (!isFromMe && !isHistory && type === 'notify') {
-                                if (messageDebounceMap.has(jid)) {
-                                    clearTimeout(messageDebounceMap.get(jid)!);
-                                }
-                                messageDebounceMap.set(jid, setTimeout(() => {
-                                    processAiResponseForJid(userId, jid).catch(err => console.error(`AI Error:`, err));
-                                    messageDebounceMap.delete(jid);
-                                }, DEBOUNCE_TIME_MS));
+                            // AI Trigger (Decoupled)
+                            if (!msg.key.fromMe && !isOldForAI && type === 'notify') {
+                                aiProcessingQueue.add(`${userId}::${jid}`);
                             }
                         } catch (innerError) {
                             console.error(`Error procesando mensaje individual:`, innerError);
@@ -294,14 +298,12 @@ export async function disconnectWhatsApp(userId: string) {
     await db.updateUserSettings(userId, { isActive: false });
 }
 
-// Updated sendMessage to accept optional imageUrl
 export async function sendMessage(userId: string, jid: string, text: string, imageUrl?: string) {
     const sock = sessions.get(userId);
     if (!sock) throw new Error(`WhatsApp no conectado.`);
     
     if (imageUrl) {
         try {
-            // Strip data:image/png;base64, prefix if present
             const base64Data = imageUrl.split(',')[1] || imageUrl;
             const buffer = Buffer.from(base64Data, 'base64');
             await sock.sendMessage(jid, { image: buffer, caption: text });
@@ -314,7 +316,6 @@ export async function sendMessage(userId: string, jid: string, text: string, ima
     }
 }
 
-// --- NEW FUNCTIONALITY: Fetch Groups ---
 export async function fetchUserGroups(userId: string): Promise<WhatsAppGroup[]> {
     const sock = sessions.get(userId);
     if (!sock) {
@@ -323,12 +324,12 @@ export async function fetchUserGroups(userId: string): Promise<WhatsAppGroup[]> 
     
     try {
         const groups = await sock.groupFetchAllParticipating();
-        return Object.values(groups).map(g => ({
+        return Object.values(groups).map((g: GroupMetadata) => ({
             id: g.id,
             subject: g.subject,
             size: g.participants.length
         }));
-    } catch (e) {
+    } catch (e: any) {
         logService.error(`[WA-CLIENT] Error fetching groups for ${userId}`, e);
         throw new Error("Error obteniendo grupos de WhatsApp.");
     }
@@ -351,7 +352,7 @@ async function _commonAiProcessingLogic(userId: string, jid: string, user: User,
         await sock.sendPresenceUpdate('composing', jid);
     }
 
-    const aiResult = await generateBotResponse(latestConversation.messages, user, isTestBot);
+    const aiResult = await generateBotResponse(latestConversation, user, isTestBot);
 
     if (aiResult?.responseText) {
         if (isTestBot) {

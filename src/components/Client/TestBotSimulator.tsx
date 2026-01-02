@@ -75,7 +75,7 @@ const TestBotSimulator: React.FC<TestBotSimulatorProps> = ({ token, backendUrl, 
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 3000); 
+    const interval = setInterval(fetchData, 8000); // UPDATED: 8s interval
     return () => clearInterval(interval);
   }, [fetchData]);
 

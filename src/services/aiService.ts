@@ -1,15 +1,19 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { Message, LeadStatus, User, PromptArchetype } from '../types.js';
+import { Message, LeadStatus, User, PromptArchetype, Conversation } from '../types.js';
 import { planService } from './planService.js';
 import { logService } from './logService.js';
-import { capabilityResolver } from './capabilityResolver.js'; // NEW IMPORT
+import { capabilityResolver } from './capabilityResolver.js';
+import { depthEngine } from './depthEngine.js';
+
+const aiResponseCache = new Map<string, { timestamp: number; data: any }>();
+const CACHE_DURATION_MS = 5 * 60 * 1000; // 5 minutes
 
 // Updated Priority List: Try new preview, then stable flash exp, then lite.
 const MODEL_PRIORITY = ["gemini-3-flash-preview", "gemini-2.0-flash-exp", "gemini-flash-lite-latest"];
 
 export const generateBotResponse = async (
-  conversationHistory: Message[],
+  conversation: Conversation,
   user: User,
   isSimulation: boolean = false
 ): Promise<{ responseText?: string, suggestedReplies?: string[], newStatus: LeadStatus, tags: string[], recommendedAction?: string } | null> => {
@@ -23,7 +27,20 @@ export const generateBotResponse = async (
       }
   }
 
-  // Trim key here as well for safety
+  // --- START: AI Caching ---
+  const lastMessage = conversation.messages[conversation.messages.length - 1];
+  if (lastMessage && (lastMessage.sender === 'user' || lastMessage.sender === 'elite_bot')) {
+      const cacheKey = `${user.id}::${lastMessage.text.trim()}`;
+      if (aiResponseCache.has(cacheKey)) {
+          const cached = aiResponseCache.get(cacheKey)!;
+          if (Date.now() - cached.timestamp < CACHE_DURATION_MS) {
+              logService.info(`[AI-CACHE] HIT for user ${user.username}`, user.id);
+              return cached.data;
+          }
+      }
+  }
+  // --- END: AI Caching ---
+
   const cleanKey = user.settings.geminiApiKey?.trim();
 
   if (!cleanKey) {
@@ -34,15 +51,19 @@ export const generateBotResponse = async (
       return null; 
   }
   
-  // 1. RESOLVE CAPABILITIES
-  const capabilities = await capabilityResolver.resolve(user.id);
+  // 1. RESOLVE CAPABILITIES (WITH DEPTH BRAKE)
+  let capabilities = await capabilityResolver.resolve(user.id);
+  if (capabilities.depthLevel >= 10 && conversation.status === LeadStatus.COLD) {
+      logService.warn(`[AI-DEPTH-BRAKE] Applied: Lvl ${capabilities.depthLevel} -> Lvl 3 for COLD lead.`, user.id);
+      capabilities = depthEngine.resolve(3);
+  }
 
   const features = planService.getClientFeatures(user);
   const settings = user.settings;
 
   // 2. Adjust History Depth based on Capabilities
   const memoryLimit = capabilities.memoryDepth || 15;
-  const historyText = conversationHistory.slice(-memoryLimit).map(m => {
+  const historyText = conversation.messages.slice(-memoryLimit).map(m => {
       let role = 'Dominion_Bot';
       if (m.sender === 'user' || m.sender === 'elite_bot') {
           role = 'Cliente';
@@ -129,6 +150,14 @@ ${JSON.stringify(Object.keys(responseSchema.properties))}
       const result = JSON.parse(jsonText.trim());
       if (!features.lead_scoring) result.newStatus = LeadStatus.WARM;
       if (!features.close_assist) result.suggestedReplies = undefined;
+      
+      // --- START: Set Cache on Success ---
+      if (lastMessage && (lastMessage.sender === 'user' || lastMessage.sender === 'elite_bot')) {
+          const cacheKey = `${user.id}::${lastMessage.text.trim()}`;
+          aiResponseCache.set(cacheKey, { timestamp: Date.now(), data: result });
+          logService.info(`[AI-CACHE] SET for user ${user.username}`, user.id);
+      }
+      // --- END: Set Cache ---
 
       return result;
     } catch (err: any) { 

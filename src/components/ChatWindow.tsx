@@ -17,8 +17,8 @@ interface ChatWindowProps {
   onBack: () => void;
   onUpdateConversation?: (id: string, updates: Partial<Conversation>) => void;
   isPlanExpired?: boolean;
-  settings?: BotSettings | null; // Added settings
-  onUpdateSettings?: (newSettings: BotSettings) => void; // Added updater
+  settings?: BotSettings | null; 
+  onUpdateSettings?: (newSettings: BotSettings) => void;
 }
 
 const statusBadgeClass = {
@@ -118,22 +118,15 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   
   const currentBadge = statusBadgeClass[conversation.status];
   
-  // LOGIC TO PREVENT DOUBLE NUMBER DISPLAY
-  // Check if leadName is essentially just a number
   const cleanLeadName = conversation.leadName.replace(/[^0-9]/g, '');
   const isLeadNameNumber = cleanLeadName.length > 6 && !isNaN(Number(cleanLeadName));
-
-  // If leadName is a number, display formatted number as Title. If not, display Name.
-  const displayTitle = isLeadNameNumber 
-      ? formatPhoneNumber(conversation.leadIdentifier) 
-      : conversation.leadName;
-
-  // Only show the subtitle (phone number) if the Title is NOT already the number
+  const displayTitle = isLeadNameNumber ? formatPhoneNumber(conversation.leadIdentifier) : conversation.leadName;
   const showSubtitle = !isLeadNameNumber;
-
-  // Check blacklist status
   const currentNumber = conversation.id.split('@')[0];
   const isBlacklisted = settings?.ignoredJids?.includes(currentNumber);
+
+  // FOMO LOGIC: Blur if expired and Hot
+  const showFomoOverlay = isPlanExpired && conversation.status === LeadStatus.HOT;
 
   return (
     <div className="flex-1 flex flex-row h-full overflow-hidden">
@@ -151,7 +144,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
               
               <div className="relative">
                   <div className="w-10 h-10 md:w-11 md:h-11 rounded-full bg-gradient-to-br from-gray-700 to-black border border-white/10 flex items-center justify-center font-bold text-white shadow-inner overflow-hidden">
-                      {/* Show initials or icon */}
                       {displayTitle.charAt(0).toUpperCase()}
                   </div>
                   <div className={`absolute bottom-0 right-0 w-3 h-3 border-2 border-brand-surface rounded-full ${isBlacklisted ? 'bg-red-500' : 'bg-green-500'}`}></div>
@@ -180,7 +172,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 </div>
             ) : (
                 <div className="flex items-center gap-2">
-                    {/* BLACKLIST TOGGLE BUTTON */}
                     {settings && (
                         <button 
                             onClick={toggleBlacklist}
@@ -191,19 +182,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                         </button>
                     )}
 
-                    {/* NEW: FORCE AI BUTTON */}
                     {conversation.isBotActive && !conversation.isMuted && isBotGloballyActive && !isBlacklisted && (
                         <button 
                             onClick={handleForceAiRun}
                             disabled={isForcingAi}
                             className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-gold/10 hover:bg-brand-gold/20 text-brand-gold border border-brand-gold/30 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all disabled:opacity-50"
-                            title="Forzar análisis de historial"
                         >
-                            {isForcingAi ? (
-                                <div className="w-3 h-3 border-2 border-brand-gold border-t-transparent rounded-full animate-spin"></div>
-                            ) : (
-                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                            )}
+                            {isForcingAi ? <div className="w-3 h-3 border-2 border-brand-gold border-t-transparent rounded-full animate-spin"></div> : <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>}
                             <span className="hidden md:inline">Ejecutar IA</span>
                         </button>
                     )}
@@ -213,30 +198,16 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                     disabled={!isBotGloballyActive || conversation.isMuted || isTogglingBot || isBlacklisted}
                     className={`
                         flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all min-w-[100px] justify-center
-                        ${conversation.isBotActive 
-                            ? 'bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500 hover:text-white' 
-                            : 'bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-green-500 hover:text-white'}
+                        ${conversation.isBotActive ? 'bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500 hover:text-white' : 'bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-green-500 hover:text-white'}
                         ${(!isBotGloballyActive || conversation.isMuted || isBlacklisted) ? 'opacity-50 cursor-not-allowed grayscale' : ''}
                     `}
                     >
-                    {isTogglingBot ? (
-                        <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
-                    ) : (
-                        conversation.isMuted ? (
-                            <><svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"/></svg> Copiloto</>
-                        ) : (
-                            conversation.isBotActive ? "PAUSAR IA" : "ACTIVAR IA"
-                        )
-                    )}
+                    {isTogglingBot ? <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></div> : (conversation.isMuted ? (<><svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"/></svg> Copiloto</>) : (conversation.isBotActive ? "PAUSAR IA" : "ACTIVAR IA"))}
                     </button>
                 </div>
             )}
 
-            <button 
-              onClick={() => setShowSidebar(!showSidebar)}
-              className={`hidden lg:flex items-center justify-center w-9 h-9 rounded-lg border transition-all ${showSidebar ? 'bg-brand-gold text-black border-brand-gold' : 'bg-white/5 text-gray-400 border-white/10 hover:text-white'}`}
-              title="Contexto de Venta"
-            >
+            <button onClick={() => setShowSidebar(!showSidebar)} className={`hidden lg:flex items-center justify-center w-9 h-9 rounded-lg border transition-all ${showSidebar ? 'bg-brand-gold text-black border-brand-gold' : 'bg-white/5 text-gray-400 border-white/10 hover:text-white'}`}>
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
             </button>
           </div>
@@ -245,6 +216,23 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
         {/* MESSAGES AREA */}
         <div className="flex-1 overflow-y-auto px-4 py-6 md:px-8 space-y-4 md:space-y-6 custom-scrollbar relative z-0 pb-32">
           
+          {showFomoOverlay && (
+              <div className="absolute inset-0 z-50 backdrop-blur-md bg-black/60 flex flex-col items-center justify-center text-center p-8">
+                  <div className="w-20 h-20 bg-red-600 rounded-full flex items-center justify-center animate-pulse mb-6 shadow-[0_0_50px_rgba(220,38,38,0.5)]">
+                      <svg className="w-10 h-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                  </div>
+                  <h3 className="text-2xl font-black text-white uppercase tracking-tighter mb-2">Lead Caliente Detectado 🔥</h3>
+                  <p className="text-gray-300 max-w-md mb-8 font-medium">
+                      Este cliente tiene una <strong>alta intención de compra</strong>. Has perdido el acceso al chat porque tu plan expiró.
+                      <br/><br/>
+                      <span className="text-brand-gold">No dejes dinero sobre la mesa.</span>
+                  </p>
+                  <button className="px-8 py-4 bg-brand-gold text-black rounded-xl font-black uppercase tracking-widest hover:scale-105 transition-transform shadow-lg shadow-brand-gold/20">
+                      Reactivar Acceso Ahora
+                  </button>
+              </div>
+          )}
+
           {isBlacklisted && (
               <div className="bg-red-500/20 border border-red-500/40 p-4 rounded-xl mb-6 flex items-start gap-4 animate-fade-in shadow-lg">
                   <div className="p-2 bg-red-500 text-white rounded-lg">
@@ -283,7 +271,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
         </div>
 
         {/* COPILOT SUGGESTIONS PANEL */}
-        {conversation.suggestedReplies && conversation.suggestedReplies.length > 0 && !isBlacklisted && (
+        {conversation.suggestedReplies && conversation.suggestedReplies.length > 0 && !isBlacklisted && !showFomoOverlay && (
             <div className="absolute bottom-[88px] left-0 right-0 p-4 bg-gradient-to-t from-brand-black via-brand-black/95 to-transparent z-20">
                 <div className="flex items-center gap-2 mb-2 px-2">
                     <span className="w-2 h-2 bg-brand-gold rounded-full animate-pulse"></span>
@@ -311,7 +299,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
         />
       </div>
 
-      {/* SALES CONTEXT SIDEBAR */}
       {showSidebar && !isMobile && (
         <SalesContextSidebar 
           conversation={conversation}

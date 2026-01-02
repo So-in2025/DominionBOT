@@ -467,4 +467,10 @@ Se ha eliminado cualquier dependencia de `localStorage` para simular datos en la
 ### 6. Motor de Campañas (Broadcast Táctico)
 Implementado en `campaignService.ts`, permite la programación y envío de mensajes a grupos.
 - **Anti-Ban Jitter:** Retrasos aleatorios entre mensajes (configurables) para imitar comportamiento humano.
+- **Memory Lock (Semáforo):** [NUEVO] Sistema de bloqueo en memoria RAM que impide condiciones de carrera (Race Conditions), asegurando que una campaña nunca se ejecute por duplicado, incluso si el scheduler se solapa por latencia de red.
 - **Scheduler:** Ejecución basada en cron (Diario, Semanal) o envío único.
+
+### 7. Ejecución Forzada de Campañas (Override)
+Se ha implementado un control manual ("Rayo" ⚡) en el panel de campañas.
+- **Función:** Permite disparar una campaña inmediatamente, ignorando la hora programada y la ventana operativa de seguridad.
+- **Uso:** Ideal para pruebas rápidas o comunicaciones de emergencia que no pueden esperar al ciclo del scheduler.

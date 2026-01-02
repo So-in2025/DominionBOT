@@ -37,7 +37,7 @@ export const getInitials = (name: string): string => {
 };
 
 export const openSupportWhatsApp = async (message: string) => {
-    let supportNumber = '5492615920000'; // Default fallback number
+    let supportNumber = '5492617145654'; // Default fallback number
     
     try {
         // Use fetch only if available (mostly for client-side)

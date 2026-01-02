@@ -81,7 +81,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
 
     useEffect(() => {
         fetchData();
-        const interval = setInterval(fetchData, 20000); 
+        const interval = setInterval(fetchData, 30000); 
         return () => clearInterval(interval);
     }, [token, backendUrl]);
 
