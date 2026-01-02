@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { User, LogEntry, GlobalDashboardMetrics, SystemSettings, LogLevel } from '../../types';
 import { getAuthHeaders } from '../../config';
@@ -10,7 +11,7 @@ interface AdminDashboardProps {
     onLogout: () => void;
 }
 
-type AdminView = 'dashboard' | 'clients' | 'logs' | 'test_bot' | 'depth_control';
+type AdminView = 'dashboard' | 'clients' | 'logs' | 'test_bot' | 'depth_control' | 'network';
 
 const KpiCard: React.FC<{ label: string; value: string | number; icon: React.ReactNode; isCurrency?: boolean; }> = ({ label, value, icon, isCurrency }) => (
     <div className="bg-brand-surface border border-white/5 rounded-2xl p-6 flex items-center gap-6 group hover:bg-white/5 transition-all">
@@ -27,11 +28,180 @@ const KpiCard: React.FC<{ label: string; value: string | number; icon: React.Rea
     </div>
 );
 
+// --- Placeholder Components for AdminDashboard View Sections ---
+const DashboardView: React.FC<{ metrics: GlobalDashboardMetrics | null; onAudit: (user: User) => void; }> = ({ metrics, onAudit }) => {
+    if (!metrics) return null;
+    return (
+        <div className="space-y-8">
+            <h3 className="text-xl font-black text-white uppercase tracking-widest">Métricas Globales</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <KpiCard label="Clientes Activos" value={metrics.totalClients} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857" /></svg>} />
+                <KpiCard label="MRR Estimado" value={metrics.mrr} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>} isCurrency={true} />
+                <KpiCard label="Nodos Online" value={metrics.onlineNodes} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>} />
+                <KpiCard label="Leads Calientes" value={metrics.hotLeads} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.25-5.5S14 4 14 4V3c-1-.5-3-2-3-2V2s-1-.5-3-2c0 0 0 0 0 0L4 12v3l2.657 2.657z" /></svg>} />
+            </div>
+            {/* You can add more detailed metrics or charts here */}
+        </div>
+    );
+};
+
+const ClientTable: React.FC<{ clients: User[]; getPlanPill: (status: string, type: string) => React.ReactNode; onAudit: (user: User) => void; }> = ({ clients, getPlanPill, onAudit }) => {
+    return (
+        <div className="bg-brand-surface border border-white/5 rounded-2xl overflow-hidden shadow-xl">
+            <h3 className="text-xl font-black text-white uppercase tracking-widest p-6 border-b border-white/5">Gestión de Clientes</h3>
+            <div className="overflow-x-auto custom-scrollbar">
+                <table className="w-full text-left table-auto">
+                    <thead>
+                        <tr className="bg-black/20 text-[9px] uppercase font-black text-gray-400 tracking-widest border-b border-white/5">
+                            <th className="p-4">ID</th>
+                            <th className="p-4">Nombre Comercial</th>
+                            <th className="p-4">WhatsApp</th>
+                            <th className="p-4">Plan</th>
+                            <th className="p-4">Vencimiento</th>
+                            <th className="p-4">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5 text-xs">
+                        {clients.map(client => (
+                            <tr key={client.id} className="hover:bg-white/5 transition-colors">
+                                <td className="p-4 font-mono text-gray-400">{client.id.substring(0, 8)}...</td>
+                                <td className="p-4 font-bold text-white">{client.business_name || 'N/A'}</td>
+                                <td className="p-4 text-gray-300">{client.username}</td>
+                                <td className="p-4">{getPlanPill(client.plan_status, client.plan_type)}</td>
+                                <td className="p-4 text-gray-400">{new Date(client.billing_end_date).toLocaleDateString()}</td>
+                                <td className="p-4">
+                                    <button onClick={() => onAudit(client)} className="px-3 py-1 bg-blue-600/20 text-blue-400 rounded-lg text-[10px] font-bold uppercase hover:bg-blue-600 hover:text-white transition-all">Auditar</button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+};
+
+const LogTable: React.FC<{ logs: LogEntry[]; getLogLevelPill: (level: string) => React.ReactNode; }> = ({ logs, getLogLevelPill }) => {
+    return (
+        <div className="bg-brand-surface border border-white/5 rounded-2xl overflow-hidden shadow-xl">
+            <h3 className="text-xl font-black text-white uppercase tracking-widest p-6 border-b border-white/5">Logs del Sistema</h3>
+            <div className="overflow-x-auto custom-scrollbar">
+                <table className="w-full text-left table-auto">
+                    <thead>
+                        <tr className="bg-black/20 text-[9px] uppercase font-black text-gray-400 tracking-widest border-b border-white/5">
+                            <th className="p-4">Tiempo</th>
+                            <th className="p-4">Nivel</th>
+                            <th className="p-4">Mensaje</th>
+                            <th className="p-4">Usuario</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5 text-xs font-mono">
+                        {logs.map((log) => (
+                            <tr key={log._id} className="hover:bg-white/5 transition-colors">
+                                <td className="p-4 text-gray-500">{new Date(log.timestamp).toLocaleTimeString()}</td>
+                                <td className="p-4">{getLogLevelPill(log.level)}</td>
+                                <td className="p-4 text-white">{log.message}</td>
+                                <td className="p-4 text-gray-400">{log.username || (log.userId ? log.userId.substring(0, 8) + '...' : 'N/A')}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+};
+
+const NetworkMonitor: React.FC<{ backendUrl: string, token: string, showToast: any }> = ({ backendUrl, token, showToast }) => {
+    const [stats, setStats] = useState<any>(null);
+    const [activity, setActivity] = useState<any>(null);
+
+    useEffect(() => {
+        const fetchNetworkStats = async () => {
+            try {
+                const res = await fetch(`${backendUrl}/api/admin/network/overview`, { headers: getAuthHeaders(token) });
+                if (res.ok) {
+                    const data = await res.json();
+                    setStats(data.stats);
+                    setActivity(data.activity);
+                }
+            } catch (e) {
+                console.error("Error fetching network stats", e);
+            }
+        };
+        fetchNetworkStats();
+        const interval = setInterval(fetchNetworkStats, 5000);
+        return () => clearInterval(interval);
+    }, [backendUrl, token]);
+
+    if (!stats) return <div className="text-center py-20 text-gray-500 animate-pulse font-mono text-xs uppercase">Cargando datos de red...</div>;
+
+    return (
+        <div className="space-y-8">
+            <h3 className="text-xl font-black text-white uppercase tracking-widest">Monitor de Red Comercial</h3>
+            
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <KpiCard label="Nodos Participantes" value={stats.activeNodes} icon={<span className="text-2xl">🌐</span>} />
+                <KpiCard label="Señales Aportadas" value={stats.totalSignals} icon={<span className="text-2xl">📡</span>} />
+                <KpiCard label="Oportunidades Generadas" value={stats.totalOpportunities} icon={<span className="text-2xl">🎯</span>} />
+                <KpiCard label="Conexiones Exitosas" value={stats.successfulConnections} icon={<span className="text-2xl">🤝</span>} />
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className="bg-brand-surface border border-white/5 rounded-2xl overflow-hidden shadow-xl">
+                    <h4 className="text-sm font-black text-gray-400 uppercase tracking-widest p-6 border-b border-white/5">Últimas Señales (Aportes)</h4>
+                    <div className="overflow-auto max-h-96 custom-scrollbar p-4 space-y-2">
+                        {activity?.signals?.map((s: any) => (
+                            <div key={s.id} className="p-3 bg-white/5 rounded-lg border border-white/5 text-xs">
+                                <div className="flex justify-between mb-1">
+                                    <span className="text-brand-gold font-bold">{s.signalScore}% Intent</span>
+                                    <span className="text-gray-500">{new Date(s.contributedAt).toLocaleTimeString()}</span>
+                                </div>
+                                <p className="text-gray-300">{s.intentDescription}</p>
+                                <div className="mt-2 flex flex-wrap gap-1">
+                                    {s.intentCategories.map((c: string) => <span key={c} className="px-1.5 py-0.5 bg-black rounded text-[8px] text-gray-400 uppercase">{c}</span>)}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="bg-brand-surface border border-white/5 rounded-2xl overflow-hidden shadow-xl">
+                    <h4 className="text-sm font-black text-gray-400 uppercase tracking-widest p-6 border-b border-white/5">Últimos Matches (Conexiones)</h4>
+                    <div className="overflow-auto max-h-96 custom-scrollbar p-4 space-y-2">
+                        {activity?.opportunities?.map((o: any) => (
+                            <div key={o.id} className="p-3 bg-white/5 rounded-lg border border-white/5 text-xs flex justify-between items-center">
+                                <div>
+                                    <div className="flex gap-2 mb-1">
+                                        <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase ${
+                                            o.permissionStatus === 'GRANTED' ? 'bg-green-500/20 text-green-400' :
+                                            o.permissionStatus === 'PENDING' ? 'bg-yellow-500/20 text-yellow-400' :
+                                            'bg-gray-500/20 text-gray-400'
+                                        }`}>{o.permissionStatus}</span>
+                                        <span className="text-gray-500">{new Date(o.createdAt).toLocaleTimeString()}</span>
+                                    </div>
+                                    <p className="text-gray-300 truncate max-w-[200px]">{o.intentDescription}</p>
+                                </div>
+                                <div className="text-right">
+                                    <span className="block text-brand-gold font-bold">{o.opportunityScore}%</span>
+                                    <span className="text-[9px] text-gray-500 uppercase tracking-wider">Match</span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+// --- End Placeholder Components ---
+
+
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAudit, showToast, onLogout }) => {
     const [clients, setClients] = useState<User[]>([]);
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const [metrics, setMetrics] = useState<GlobalDashboardMetrics | null>(null);
-    const [systemSettings, setSystemSettings] = useState<SystemSettings>({ supportWhatsappNumber: '', logLevel: 'INFO' });
+    // FIX: Initialize SystemSettings with dominionNetworkJid
+    const [systemSettings, setSystemSettings] = useState<SystemSettings>({ supportWhatsappNumber: '', logLevel: 'INFO', dominionNetworkJid: '5491110000000@s.whatsapp.net' });
     const [view, setView] = useState<AdminView>('dashboard');
     const [loading, setLoading] = useState(true);
     const [isResetArmed, setIsResetArmed] = useState(false);
@@ -348,200 +518,106 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
                         <div className="flex justify-between items-end border-b border-white/5 pb-6 mb-8">
                             <div>
                                 <h3 className="text-xl font-black text-white uppercase tracking-widest flex items-center gap-3">
-                                    <span className="w-3 h-3 bg-blue-500 rounded-full animate-pulse shadow-[0_0_15px_rgba(59,130,246,0.8)]"></span>
-                                    Control de Profundidad Cognitiva
+                                    <span className="w-3 h-3 bg-purple-500 rounded-full animate-pulse shadow-[0_0_15px_rgba(168,85,247,0.8)]"></span>
+                                    Control de <span className="text-purple-400">Profundidad</span>
                                 </h3>
-                                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.3em] mt-2">
-                                    Administración del Depth Engine v1.0
-                                </p>
+                                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.3em] mt-2">Ajuste Neural Fino</p>
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-                            {/* LEFT: Client Selection & Current State */}
-                            <div className="space-y-6">
-                                <div>
-                                    <label className="block text-xs font-bold text-brand-gold uppercase tracking-widest mb-3">Cliente Objetivo</label>
-                                    <select 
-                                        className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-sm text-white outline-none focus:border-brand-gold transition-all"
-                                        value={selectedDepthClient || ''}
-                                        onChange={(e) => {
-                                            setSelectedDepthClient(e.target.value);
-                                            const client = clients.find(c => c.id === e.target.value);
-                                            if (client) setNewDepthLevel(client.depthLevel || 1);
-                                        }}
-                                    >
-                                        <option value="">-- Seleccionar Cliente --</option>
-                                        {clients.map(c => <option key={c.id} value={c.id}>{c.business_name} (Nivel Actual: {c.depthLevel || 1})</option>)}
-                                    </select>
-                                </div>
-
-                                {selectedDepthClient && (
-                                    <div className="p-6 bg-white/5 rounded-2xl border border-white/5 space-y-4">
-                                        <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Nivel Base</h4>
-                                        <div className="flex items-center gap-4">
-                                            <input 
-                                                type="range" min="1" max="10" 
-                                                value={newDepthLevel} 
-                                                onChange={(e) => setNewDepthLevel(parseInt(e.target.value))}
-                                                className="w-full h-2 bg-black rounded-lg appearance-none cursor-pointer accent-brand-gold"
-                                            />
-                                            <span className="text-2xl font-black text-white w-12 text-center">{newDepthLevel}</span>
-                                        </div>
-                                        <p className="text-[10px] text-gray-500 italic">
-                                            Nivel 1: Básico (Rápido) &rarr; Nivel 10: Profundo (Lento, Costoso)
-                                        </p>
-                                        <button onClick={handleUpdateDepth} className="w-full py-3 bg-blue-600/20 text-blue-400 border border-blue-600/50 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-600 hover:text-white transition-all">
-                                            Establecer Nivel Base
-                                        </button>
-                                    </div>
-                                )}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            <div className="space-y-4">
+                                <label className="block text-xs font-bold text-brand-gold uppercase tracking-widest">Cliente Objetivo</label>
+                                <select 
+                                    className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-sm text-white outline-none focus:border-brand-gold"
+                                    value={selectedDepthClient || ''}
+                                    onChange={(e) => setSelectedDepthClient(e.target.value)}
+                                >
+                                    <option value="">-- Seleccionar --</option>
+                                    {clients.map(c => <option key={c.id} value={c.id}>{c.business_name} ({c.username}) (Nivel: {c.depthLevel || 1})</option>)}
+                                </select>
                             </div>
 
-                            {/* RIGHT: Boosts */}
-                            <div className="space-y-6 opacity-90">
-                                <div className="p-6 bg-brand-gold/5 rounded-2xl border border-brand-gold/10 space-y-6 relative overflow-hidden">
-                                    <div className="absolute top-0 right-0 w-32 h-32 bg-brand-gold/10 rounded-full blur-3xl"></div>
-                                    
-                                    <div>
-                                        <h4 className="text-[10px] font-black text-brand-gold uppercase tracking-widest mb-4">Aplicar Depth Boost Temporarl</h4>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div>
-                                                <label className="text-[9px] text-gray-500 font-bold block mb-2">Potencia (+Niveles)</label>
-                                                <input type="number" value={boostDelta} onChange={e => setBoostDelta(parseInt(e.target.value))} className="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-white text-center font-black" min="1" max="5" />
-                                            </div>
-                                            <div>
-                                                <label className="text-[9px] text-gray-500 font-bold block mb-2">Duración (Horas)</label>
-                                                <input type="number" value={boostHours} onChange={e => setBoostHours(parseInt(e.target.value))} className="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-white text-center font-black" min="1" max="72" />
-                                            </div>
-                                        </div>
-                                    </div>
+                            <div className="space-y-4">
+                                <label className="block text-xs font-bold text-brand-gold uppercase tracking-widest">Nivel Base de Profundidad</label>
+                                <input 
+                                    type="number" min="1" max="10" 
+                                    value={newDepthLevel} 
+                                    onChange={(e) => setNewDepthLevel(parseInt(e.target.value))} 
+                                    className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-sm text-white outline-none focus:border-brand-gold"
+                                />
+                                <button 
+                                    onClick={handleUpdateDepth} 
+                                    disabled={!selectedDepthClient} 
+                                    className="w-full py-3 bg-purple-600/20 text-purple-400 border border-purple-600/50 rounded-xl font-black text-xs uppercase hover:bg-purple-600 hover:text-white transition-all disabled:opacity-50"
+                                >
+                                    Actualizar Nivel Base
+                                </button>
+                            </div>
 
-                                    <button 
-                                        onClick={handleApplyBoost} 
-                                        disabled={!selectedDepthClient}
-                                        className="w-full py-4 bg-brand-gold text-black rounded-xl font-black text-xs uppercase tracking-[0.2em] hover:scale-[1.02] shadow-lg shadow-brand-gold/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
-                                        Inyectar Boost
-                                    </button>
+                            <div className="md:col-span-2 space-y-4 pt-6 border-t border-white/5">
+                                <h4 className="text-sm font-black text-white uppercase tracking-widest">Aplicar Boost Temporal</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest">Delta de Profundidad (+)</label>
+                                        <input 
+                                            type="number" min="1" max="5" 
+                                            value={boostDelta} 
+                                            onChange={(e) => setBoostDelta(parseInt(e.target.value))} 
+                                            className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-sm text-white outline-none focus:border-brand-gold"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest">Duración (Horas)</label>
+                                        <input 
+                                            type="number" min="1" max="168" 
+                                            value={boostHours} 
+                                            onChange={(e) => setBoostHours(parseInt(e.target.value))} 
+                                            className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-sm text-white outline-none focus:border-brand-gold"
+                                        />
+                                    </div>
                                 </div>
+                                <button 
+                                    onClick={handleApplyBoost} 
+                                    disabled={!selectedDepthClient} 
+                                    className="w-full py-3 bg-brand-gold text-black rounded-xl font-black text-xs uppercase hover:scale-[1.02] transition-all disabled:opacity-50"
+                                >
+                                    Aplicar Boost Ahora
+                                </button>
+                                <p className="text-[9px] text-gray-600 italic mt-2">Un Boost temporal aumenta el nivel de profundidad sobre el base por un período limitado.</p>
                             </div>
                         </div>
                     </section>
                 );
-            default: return null;
+            case 'network':
+                return <NetworkMonitor backendUrl={backendUrl} token={token} showToast={showToast} />;
         }
     };
 
     return (
-        <div className="flex-1 bg-brand-black p-4 md:p-8 overflow-y-auto custom-scrollbar font-sans">
-            <div className="max-w-7xl mx-auto space-y-8 animate-fade-in">
-                <header className="border-b border-white/10 pb-6">
-                    <h2 className="text-xl md:text-2xl font-black text-white uppercase tracking-tighter">Nodo de Control Global</h2>
-                    <p className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.2em] mt-1">SaaS Governance v3.0.0 Elite</p>
+        <div className="flex-1 bg-brand-black p-6 md:p-10 overflow-y-auto custom-scrollbar font-sans relative">
+            <div className="max-w-7xl mx-auto space-y-8 relative z-10 pb-32">
+                <header className="flex justify-between items-end border-b border-white/5 pb-6">
+                    <div>
+                        <h1 className="text-3xl font-black text-white tracking-tighter uppercase">
+                            Panel <span className="text-brand-gold">Global</span>
+                        </h1>
+                        <p className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.3em] mt-1">NODO ADMINISTRATIVO SUPREMO</p>
+                    </div>
+                    <div className="flex bg-white/5 p-1 rounded-xl border border-white/10">
+                        <button onClick={() => setView('dashboard')} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${view === 'dashboard' ? 'bg-brand-gold text-black' : 'text-gray-400 hover:text-white'}`}>Dashboard</button>
+                        <button onClick={() => setView('clients')} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${view === 'clients' ? 'bg-brand-gold text-black' : 'text-gray-400 hover:text-white'}`}>Clientes</button>
+                        <button onClick={() => setView('logs')} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${view === 'logs' ? 'bg-brand-gold text-black' : 'text-gray-400 hover:text-white'}`}>Logs</button>
+                        <button onClick={() => setView('test_bot')} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${view === 'test_bot' ? 'bg-brand-gold text-black' : 'text-gray-400 hover:text-white'}`}>Simulador</button>
+                        <button onClick={() => setView('depth_control')} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${view === 'depth_control' ? 'bg-brand-gold text-black' : 'text-gray-400 hover:text-white'}`}>Profundidad</button>
+                        <button onClick={() => setView('network')} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${view === 'network' ? 'bg-brand-gold text-black' : 'text-gray-400 hover:text-white'}`}>Red</button>
+                    </div>
                 </header>
-
-                <div className="flex gap-2 p-1 bg-brand-surface border border-white/5 rounded-xl overflow-x-auto">
-                    <button onClick={() => setView('dashboard')} className={`flex-1 min-w-[100px] py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${view === 'dashboard' ? 'bg-brand-gold text-black' : 'text-gray-500 hover:bg-white/5'}`}>Visión</button>
-                    <button onClick={() => setView('clients')} className={`flex-1 min-w-[100px] py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${view === 'clients' ? 'bg-brand-gold text-black' : 'text-gray-500 hover:bg-white/5'}`}>Clientes</button>
-                    <button onClick={() => setView('logs')} className={`flex-1 min-w-[100px] py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${view === 'logs' ? 'bg-brand-gold text-black' : 'text-gray-500 hover:bg-white/5'}`}>Logs</button>
-                    <button onClick={() => setView('test_bot')} className={`flex-1 min-w-[100px] py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${view === 'test_bot' ? 'bg-brand-gold text-black' : 'text-gray-500 hover:bg-white/5'}`}>Test Bot</button>
-                    <button onClick={() => setView('depth_control')} className={`flex-1 min-w-[120px] py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${view === 'depth_control' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30' : 'text-gray-500 hover:bg-white/5'}`}>Depth Control</button>
-                </div>
 
                 {renderContent()}
             </div>
         </div>
     );
 };
-
-// --- Helper Components ---
-
-const DashboardView: React.FC<{metrics: GlobalDashboardMetrics | null, onAudit: (user: User) => void}> = ({ metrics, onAudit }) => {
-    if (!metrics) return null;
-    return (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-             <KpiCard label="Clientes Activos" value={metrics.totalClients} icon={<span className="text-xl">👥</span>} />
-             <KpiCard label="MRR" value={metrics.mrr.toLocaleString()} icon={<span className="text-xl">$</span>} isCurrency />
-             <KpiCard label="Leads Totales" value={metrics.globalLeads} icon={<span className="text-xl">🔥</span>} />
-             <KpiCard label="Nodos Online" value={metrics.onlineNodes} icon={<span className="text-xl text-green-500">●</span>} />
-             <KpiCard label="Cuentas Riesgo" value={metrics.atRiskAccounts} icon={<span className="text-xl text-red-500">⚠️</span>} />
-        </div>
-    );
-};
-
-const ClientTable: React.FC<{clients: User[], getPlanPill: Function, onAudit: Function}> = ({ clients, getPlanPill, onAudit }) => (
-    <div className="bg-brand-surface rounded-xl border border-white/5 overflow-hidden">
-        <div className="overflow-x-auto">
-            <table className="w-full text-left">
-                <thead className="bg-white/5 text-[9px] font-black uppercase text-gray-400 tracking-widest">
-                    <tr>
-                        <th className="p-4">Negocio / ID</th>
-                        <th className="p-4">Plan</th>
-                        <th className="p-4">Vencimiento</th>
-                        <th className="p-4">Profundidad</th>
-                        <th className="p-4">Estado</th>
-                        <th className="p-4">Acción</th>
-                    </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5 text-xs">
-                    {clients.map(client => (
-                        <tr key={client.id} className="hover:bg-white/5 transition-colors">
-                            <td className="p-4">
-                                <div className="font-bold text-white">{client.business_name}</div>
-                                <div className="text-gray-500 text-[10px] font-mono">{client.username}</div>
-                            </td>
-                            <td className="p-4">
-                                {getPlanPill(client.plan_status, client.plan_type)}
-                            </td>
-                            <td className="p-4 text-gray-400 font-mono">
-                                {new Date(client.billing_end_date).toLocaleDateString()}
-                            </td>
-                            <td className="p-4 font-black text-brand-gold">
-                                Lvl {client.depthLevel || 1}
-                            </td>
-                            <td className="p-4">
-                                <span className={`w-2 h-2 rounded-full inline-block mr-2 ${client.settings.isActive ? 'bg-green-500' : 'bg-red-500'}`}></span>
-                                {client.settings.isActive ? 'Bot ON' : 'Bot OFF'}
-                            </td>
-                            <td className="p-4">
-                                <button onClick={() => onAudit(client)} className="text-[9px] font-black bg-brand-gold text-black px-3 py-1.5 rounded uppercase hover:scale-105 transition-transform">
-                                    Gestionar
-                                </button>
-                            </td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
-        </div>
-    </div>
-);
-
-const LogTable: React.FC<{logs: LogEntry[], getLogLevelPill: Function}> = ({ logs, getLogLevelPill }) => (
-    <div className="bg-brand-surface rounded-xl border border-white/5 overflow-hidden">
-        <div className="overflow-x-auto">
-            <table className="w-full text-left">
-                <thead className="bg-white/5 text-[9px] font-black uppercase text-gray-400 tracking-widest">
-                    <tr>
-                        <th className="p-4">Tiempo</th>
-                        <th className="p-4">Nivel</th>
-                        <th className="p-4">Usuario</th>
-                        <th className="p-4">Mensaje</th>
-                    </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5 text-[10px] font-mono">
-                    {logs.map((log) => (
-                        <tr key={log._id} className="hover:bg-white/5">
-                            <td className="p-4 text-gray-500">{new Date(log.timestamp).toLocaleTimeString()}</td>
-                            <td className="p-4">{getLogLevelPill(log.level)}</td>
-                            <td className="p-4 text-gray-400">{log.username || 'System'}</td>
-                            <td className="p-4 text-gray-300 w-1/2">{log.message}</td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
-        </div>
-    </div>
-);
 
 export default AdminDashboard;

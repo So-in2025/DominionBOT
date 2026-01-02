@@ -46,7 +46,8 @@ export const openSupportWhatsApp = async (message: string = 'Hola, necesito ayud
         if (typeof fetch !== 'undefined') {
             const res = await fetch(`${BACKEND_URL}/api/system/settings`);
             if (res.ok) {
-                const data: SystemSettings = await res.json();
+                // FIX: Type assertion to handle partial updates or mismatch during development
+                const data = await res.json() as unknown as SystemSettings;
                 if (data && data.supportWhatsappNumber && data.supportWhatsappNumber.length > 8) {
                     supportNumber = data.supportWhatsappNumber;
                 }

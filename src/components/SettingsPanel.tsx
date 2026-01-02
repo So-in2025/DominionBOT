@@ -1,12 +1,20 @@
+
+
 import React, { useState, useEffect } from 'react';
-import { BotSettings, PromptArchetype } from '../types';
+import { BotSettings, PromptArchetype, User, NetworkProfile } from '../types';
 import { GoogleGenAI, Type } from '@google/genai';
+// FIX: Import BACKEND_URL and getAuthHeaders for API calls
+import { BACKEND_URL, getAuthHeaders } from '../config';
+import { audioService } from '../services/audioService';
+
 
 interface SettingsPanelProps {
   settings: BotSettings | null;
   isLoading: boolean;
   onUpdateSettings: (newSettings: BotSettings) => void;
-  onOpenLegal: (type: 'privacy' | 'terms' | 'manifesto') => void;
+  onOpenLegal: (type: 'privacy' | 'terms' | 'manifesto' | 'network') => void;
+  // NEW: Added showToast prop for consistency with other panels
+  showToast: (message: string, type: 'success' | 'error' | 'info') => void;
 }
 
 // --- START: New Mappings & Templates ---
@@ -217,8 +225,14 @@ const parseProductDescription = (description: string): WizardState => {
     };
 };
 
+const NETWORK_CATEGORIES = [
+    'Marketing Digital', 'Desarrollo Web', 'Diseño Gráfico', 'Consultoría de Negocios',
+    'Servicios Financieros', 'Real Estate', 'Coaching', 'E-commerce', 'Fitness y Salud',
+    'Software SaaS', 'Eventos', 'Logística', 'Educación Online', 'Recursos Humanos'
+];
 
-const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUpdateSettings, onOpenLegal }) => {
+
+const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUpdateSettings, onOpenLegal, showToast }) => {
   const [current, setCurrent] = useState<BotSettings | null>(null);
   const [isSaved, setIsSaved] = useState(false);
   const [wizardStep, setWizardStep] = useState(0); 
@@ -234,6 +248,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
       rules: '- Tono: Profesional, directo, experto.\n- Prohibido: Usar emojis, tutear, hacer chistes, ofrecer descuentos.\n- Finalidad: Mi trabajo termina cuando el lead está listo para hablar con un humano.'
   });
 
+  // Network State
+  const [isNetworkEnabled, setIsNetworkEnabled] = useState(false);
+  const [categoriesOfInterest, setCategoriesOfInterest] = useState<string[]>([]);
+  const [currentNetworkProfile, setCurrentNetworkProfile] = useState<NetworkProfile | null>(null);
+
   // Effect to initialize current settings and parse productDescription for wizardState
   useEffect(() => {
     if (settings) {
@@ -242,320 +261,518 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
         if (settings.productDescription) {
             setWizardState(parseProductDescription(settings.productDescription));
         }
+        setIsNetworkEnabled(settings.isNetworkEnabled || false);
+        // Call fetchNetworkProfile when settings are available, it will update categoriesOfInterest
+        // The token needs to be retrieved inside the effect or passed as a prop
     }
   }, [settings]);
 
-  // Combined productDescription generator
-  const getCombinedProductDescription = (state: WizardState, productName: string) => {
-    const objectionsText = state.objections
-        .filter(o => o.objection && o.response)
-        .map(o => `- Sobre "${o.objection}": Respondo: "${o.response}"`)
-        .join('\n');
-    
-    return `
-## MISIÓN PRINCIPAL
-${state.mission}
-## CLIENTE IDEAL
-${state.idealCustomer}
-## DESCRIPCIÓN DETALLADA DEL SERVICIO
-${state.detailedDescription}
-## MANEJO DE OBJECIONES FRECUENTES
-${objectionsText}
-## REGLAS DE ORO Y LÍMITES
-${state.rules}
-    `.trim();
-  };
-
-  const saveAllSettings = () => {
-    if (current) {
-        const combinedDescription = getCombinedProductDescription(wizardState, current.productName);
-        onUpdateSettings({ ...current, productDescription: combinedDescription });
-        setIsSaved(true);
-        setTimeout(() => setIsSaved(false), 2000);
-    }
-  };
-
-  const handleArchetypeChange = (arch: PromptArchetype) => {
-      if (!current) return;
-      const values = ARCHETYPE_MAPPING[arch];
-      setCurrent({ ...current, archetype: arch, ...values });
-  };
-
-  const loadTemplate = (templateKey: string) => {
-    if(templateKey === 'DEFAULT') return;
-    const template = TEMPLATES[templateKey];
-    if (!template || !template.data) return;
-    setWizardState(prev => ({ ...prev, ...template.data }));
-    if (current) {
-        setCurrent(prev => prev ? ({ ...prev, productName: template.name, priceText: template.data?.priceText || '', ctaLink: template.data?.ctaLink || '' }) : null);
-    }
-  };
-
-  const handleAutoCompleteWithAI = async () => {
-    if (!current?.geminiApiKey) {
-        alert("Por favor, ingresa tu API Key de Gemini en la sección correspondiente antes de usar esta función.");
-        return;
-    }
-    if (!current.productName.trim() || !wizardState.mission.trim() || !wizardState.idealCustomer.trim()) {
-        alert("Por favor, completa el nombre de tu negocio, la misión y el cliente ideal antes de usar la IA.");
-        return;
-    }
-    setIsEnhancing(true);
-    try {
-        const ai = new GoogleGenAI({ apiKey: current.geminiApiKey });
-        
-        const prompt = `Eres un experto en estrategia de ventas y prompt engineering. Basado en la siguiente información de un negocio, genera un "playbook de ventas" completo para una IA que opera en WhatsApp.
-
-**Información del Negocio:**
-- **Nombre del Negocio/Producto:** "${current.productName}"
-- **Misión de la IA:** "${wizardState.mission}"
-- **Cliente Ideal:** "${wizardState.idealCustomer}"
-
-**Tu Tarea:**
-Debes generar una respuesta en formato JSON que contenga los siguientes campos:
-1.  **detailedDescription**: Una descripción detallada y persuasiva del producto/servicio.
-2.  **objections**: Un array de 2 a 3 objeciones comunes que un cliente podría tener, cada una con una respuesta estratégica y efectiva.
-3.  **rules**: Un conjunto de reglas de oro y límites que la IA debe seguir (tono, prohibiciones, etc.).
-
-La respuesta DEBE ser un objeto JSON válido con la estructura exacta definida en el schema.`;
-        
-        const responseSchema = {
-            type: Type.OBJECT,
-            properties: {
-                detailedDescription: { type: Type.STRING },
-                objections: {
-                    type: Type.ARRAY,
-                    items: {
-                        type: Type.OBJECT,
-                        properties: {
-                            id: { type: Type.NUMBER },
-                            objection: { type: Type.STRING },
-                            response: { type: Type.STRING }
-                        },
-                        required: ["id", "objection", "response"]
-                    }
-                },
-                rules: { type: Type.STRING }
-            },
-            required: ["detailedDescription", "objections", "rules"]
+    // Effect to fetch NetworkProfile when component mounts or token changes
+    useEffect(() => {
+        const fetchNetworkProfile = async () => {
+            const storedToken = localStorage.getItem('saas_token');
+            if (!storedToken) return; // Ensure token exists before fetching
+            try {
+                const res = await fetch(`${BACKEND_URL}/api/network/profile`, { headers: getAuthHeaders(storedToken) });
+                if (res.ok) {
+                    const profileData = await res.json();
+                    setCurrentNetworkProfile(profileData);
+                    setCategoriesOfInterest(profileData.categoriesOfInterest || []);
+                } else {
+                    console.error("Failed to fetch network profile in settings panel.");
+                    // Initialize with default if not found
+                    setCurrentNetworkProfile({ networkEnabled: false, categoriesOfInterest: [], contributionScore: 0, receptionScore: 0 });
+                    setCategoriesOfInterest([]);
+                }
+            } catch (e) {
+                console.error("Error fetching network profile in settings panel:", e);
+                // Initialize with default on error
+                setCurrentNetworkProfile({ networkEnabled: false, categoriesOfInterest: [], contributionScore: 0, receptionScore: 0 });
+                setCategoriesOfInterest([]);
+            }
         };
+        fetchNetworkProfile();
+    }, []); // Empty dependency array means this runs once on mount. `settings` change is handled by the first effect.
 
-        const response = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
-            contents: [{ parts: [{ text: prompt }] }],
-            config: {
-                responseMimeType: "application/json",
-                responseSchema
-            },
-        });
-
-        const usage = (response as any).usageMetadata;
-        if (usage && typeof usage.totalTokenCount === 'number') {
-            setSessionTokenCount(prev => prev + usage.totalTokenCount);
+    // Function to persist network profile changes
+    const saveNetworkProfile = async (profileToSave?: NetworkProfile) => {
+        const payload = profileToSave || currentNetworkProfile;
+        const storedToken = localStorage.getItem('saas_token'); // Get token here
+        if (!payload || !storedToken) return;
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/network/profile`, {
+                method: 'POST',
+                headers: getAuthHeaders(storedToken),
+                body: JSON.stringify(payload)
+            });
+            if (res.ok) {
+                const updatedProfile = await res.json();
+                setCurrentNetworkProfile(updatedProfile);
+                showToast("Perfil de red guardado.", "success");
+            } else {
+                showToast("Error al guardar perfil de red.", "error");
+            }
+        } catch (error) {
+            showToast("Error de conexión al guardar perfil.", "error");
         }
+    };
 
-        const jsonText = response.text;
-        if (jsonText) {
-            const result = JSON.parse(jsonText);
-            
-            // Add unique IDs to objections if they don't have them
-            const objectionsWithIds = result.objections.map((o: any, i: number) => ({ ...o, id: Date.now() + i }));
+    const handleToggleNetworkEnabled = async () => {
+        if (!current || !currentNetworkProfile) return;
+        const newStatus = !current.isNetworkEnabled;
+        
+        // Update bot settings toggle
+        onUpdateSettings({ ...current, isNetworkEnabled: newStatus });
+        
+        // Update network profile's enabled status
+        const updatedNetworkProfile = { ...currentNetworkProfile, networkEnabled: newStatus };
+        await saveNetworkProfile(updatedNetworkProfile);
+        showToast(`Red Dominion ${newStatus ? 'Activada' : 'Desactivada'}`, 'info');
+    };
 
-            setWizardState(prev => ({
-                ...prev,
-                detailedDescription: result.detailedDescription,
-                objections: objectionsWithIds,
-                rules: result.rules
-            }));
-            setWizardStep(1); // Auto-advance to the next step
-        } else {
-            throw new Error("La IA no devolvió un playbook completo.");
-        }
-    } catch (error) {
-        console.error("Error auto-completing with AI:", error);
-        alert("Hubo un error al generar el playbook con la IA. Revisa tu API Key y la consola.");
-    } finally {
-        setIsEnhancing(false);
-    }
+    const handleToggleCategory = (category: string) => {
+        if (!currentNetworkProfile) return;
+        const newCategories = currentNetworkProfile.categoriesOfInterest.includes(category)
+            ? currentNetworkProfile.categoriesOfInterest.filter(c => c !== category)
+            : [...currentNetworkProfile.categoriesOfInterest, category];
+        
+        // Update local state immediately for responsiveness
+        setCategoriesOfInterest(newCategories);
+        setCurrentNetworkProfile(prev => prev ? { ...prev, categoriesOfInterest: newCategories } : null);
+        // Persist to backend
+        saveNetworkProfile({ ...currentNetworkProfile, categoriesOfInterest: newCategories });
+    };
+
+  const handleUpdate = (field: keyof BotSettings, value: any) => {
+    if (!current) return;
+    const newSettings = { ...current, [field]: value };
+    setCurrent(newSettings);
+    setIsSaved(false);
   };
-  
-  const handleWizardStateChange = (field: keyof WizardState, value: any) => setWizardState(prev => ({...prev, [field]: value}));
-  const handleObjectionChange = (id: number, field: 'objection' | 'response', value: string) => setWizardState(prev => ({ ...prev, objections: prev.objections.map(o => o.id === id ? { ...o, [field]: value } : o) }));
-  const addObjection = () => setWizardState(prev => ({ ...prev, objections: [...prev.objections, { id: Date.now(), objection: '', response: '' }] }));
-  const removeObjection = (id: number) => setWizardState(prev => ({ ...prev, objections: prev.objections.filter(o => o.id !== id) }));
 
-  const handleSaveApiKey = async () => {
-    if (!current?.geminiApiKey || !current.geminiApiKey.trim()) {
-        alert("La API Key no puede estar vacía.");
+  const handleSaveSettings = async () => {
+    if (!current) return;
+    
+    // Validate Gemini API Key before saving
+    const cleanKey = current.geminiApiKey?.trim();
+    if (!cleanKey) {
+        showToast('API Key de Gemini no puede estar vacía.', 'error');
         return;
     }
+    
     setIsSavingApiKey(true);
     try {
-        await onUpdateSettings({ ...current, geminiApiKey: current.geminiApiKey.trim() });
-        // No need for separate isSaved state, onUpdateSettings handles toast generally
-        // For specific feedback on API key, an alert can be used or a more specific toast
-        alert('API Key de Gemini guardada y lista para usar.');
-    } catch (error) {
-        console.error("Error saving API key:", error);
-        alert("Error al guardar la API Key.");
+        const ai = new GoogleGenAI({ apiKey: cleanKey });
+        // Use a lightweight model for ping, and specify response schema to avoid old API errors.
+        await ai.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: [{ parts: [{text: 'ping'}] }],
+            config: {
+                responseMimeType: 'application/json',
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        status: { type: Type.STRING }
+                    }
+                }
+            }
+        });
+        showToast('API Key verificada. Guardando configuración...', 'success');
+        audioService.play('action_success');
+    } catch (error: any) {
+        showToast(`Error de verificación de API Key: ${error.message}`, 'error');
+        audioService.play('alert_error_apikey');
+        setIsSavingApiKey(false);
+        return;
     } finally {
         setIsSavingApiKey(false);
     }
+
+    // Combine wizard state into productDescription
+    const updatedProductDescription = `
+## MISIÓN PRINCIPAL
+${wizardState.mission}
+
+## CLIENTE IDEAL
+${wizardState.idealCustomer}
+
+## DESCRIPCIÓN DETALLADA DEL SERVICIO
+${wizardState.detailedDescription}
+
+## MANEJO DE OBJECIONES FRECUENTES
+${wizardState.objections.map(obj => `- Sobre "${obj.objection}": Respondo: "${obj.response}"`).join('\n')}
+
+## REGLAS DE ORO Y LÍMITES
+${wizardState.rules}
+    `;
+
+    const settingsToSave = { 
+        ...current, 
+        productDescription: updatedProductDescription,
+        // Ensure network settings are also propagated from local state
+        isNetworkEnabled: isNetworkEnabled 
+    };
+
+    onUpdateSettings(settingsToSave);
+    setIsSaved(true);
+    showToast('Configuración guardada exitosamente.', 'success');
+    audioService.play('action_success');
   };
+
+  const handleArchetypeChange = (archetype: PromptArchetype) => {
+      if (!current) return;
+      const newSettings = { ...current, archetype };
+      if (archetype !== PromptArchetype.CUSTOM) {
+          const mapping = ARCHETYPE_MAPPING[archetype];
+          newSettings.toneValue = mapping.toneValue;
+          newSettings.rhythmValue = mapping.rhythmValue;
+          newSettings.intensityValue = mapping.intensityValue;
+      }
+      setCurrent(newSettings);
+      setIsSaved(false);
+  };
+
+  const addObjection = () => {
+    setWizardState(prev => ({
+        ...prev,
+        objections: [...prev.objections, { id: Date.now(), objection: '', response: '' }]
+    }));
+  };
+
+  const updateObjection = (id: number, field: 'objection' | 'response', value: string) => {
+    setWizardState(prev => ({
+        ...prev,
+        objections: prev.objections.map(obj => obj.id === id ? { ...obj, [field]: value } : obj)
+    }));
+  };
+
+  const removeObjection = (id: number) => {
+    setWizardState(prev => ({
+        ...prev,
+        objections: prev.objections.filter(obj => obj.id !== id)
+    }));
+  };
+
+  const applyTemplate = (templateKey: string) => {
+      const template = TEMPLATES[templateKey];
+      if (template && template.data) {
+          setWizardState({
+              mission: template.data.mission || '',
+              idealCustomer: template.data.idealCustomer || '',
+              detailedDescription: template.data.detailedDescription || '',
+              objections: template.data.objections || [{ id: Date.now(), objection: '', response: '' }],
+              rules: template.data.rules || ''
+          });
+          if (template.data.priceText && current) {
+            setCurrent(prev => prev ? { ...prev, priceText: template.data?.priceText || '', ctaLink: template.data?.ctaLink || '' } : null);
+          }
+          showToast('Plantilla cargada.', 'info');
+      }
+  };
+
+  const enhanceWithAI = async () => {
+      if (!current || !current.geminiApiKey) {
+          showToast('Por favor, configure su API Key de Gemini primero.', 'error');
+          return;
+      }
+      setIsEnhancing(true);
+      try {
+          const ai = new GoogleGenAI({ apiKey: current.geminiApiKey });
+          const prompt = `
+            Actúa como un experto en copywriting y estrategia de ventas para mejorar el siguiente brief de un bot de WhatsApp.
+            Tu objetivo es hacerlo más persuasivo, claro y efectivo para calificar leads, manteniendo el tono original pero mejorándolo.
+
+            Aquí está el brief actual:
+            ## MISIÓN PRINCIPAL
+            ${wizardState.mission}
+
+            ## CLIENTE IDEAL
+            ${wizardState.idealCustomer}
+
+            ## DESCRIPCIÓN DETALLADA DEL SERVICIO
+            ${wizardState.detailedDescription}
+
+            ## MANEJO DE OBJECIONES FRECUENTES
+            ${wizardState.objections.map(obj => `- Sobre "${obj.objection}": Respondo: "${obj.response}"`).join('\n')}
+
+            ## REGLAS DE ORO Y LÍMITES
+            ${wizardState.rules}
+
+            Genera una versión mejorada de este brief. Mantén las secciones y el formato JSON con las siguientes propiedades:
+            - "mission": string (Mejorar la misión)
+            - "idealCustomer": string (Mejorar la descripción del cliente ideal)
+            - "detailedDescription": string (Hacer la oferta más irresistible)
+            - "objections": array de { "id": number, "objection": string, "response": string } (Mejorar las respuestas a objeciones. Puedes añadir o modificar hasta 2 objeciones más si lo consideras útil, pero prioriza la calidad.)
+            - "rules": string (Optimizar las reglas y límites)
+            
+            Asegúrate de que las IDs de las objeciones sean únicas.
+            `;
+
+          const response = await ai.models.generateContent({
+            model: 'gemini-3-pro-preview', // Use a more capable model for enhancement
+            contents: [{ parts: [{ text: prompt }] }],
+            config: { 
+                responseMimeType: "application/json", 
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        mission: { type: Type.STRING },
+                        idealCustomer: { type: Type.STRING },
+                        detailedDescription: { type: Type.STRING },
+                        objections: { 
+                            type: Type.ARRAY, 
+                            items: { 
+                                type: Type.OBJECT, 
+                                properties: { 
+                                    id: { type: Type.NUMBER }, 
+                                    objection: { type: Type.STRING }, 
+                                    response: { type: Type.STRING } 
+                                }, 
+                                required: ['id', 'objection', 'response'] 
+                            } 
+                        },
+                        rules: { type: Type.STRING }
+                    },
+                    required: ['mission', 'idealCustomer', 'detailedDescription', 'objections', 'rules']
+                }
+            }
+          });
+          
+          const result = JSON.parse(response.text.trim());
+          if (result) {
+              setWizardState({
+                  mission: result.mission || '',
+                  idealCustomer: result.idealCustomer || '',
+                  detailedDescription: result.detailedDescription || '',
+                  // Ensure IDs are unique for new/modified objections
+                  objections: result.objections.map((obj: any) => ({ ...obj, id: obj.id || Date.now() + Math.random() })),
+                  rules: result.rules || ''
+              });
+              showToast('Brief mejorado con IA.', 'success');
+          } else {
+              showToast('La IA no pudo mejorar el brief. Intenta nuevamente.', 'error');
+          }
+
+      } catch (error: any) {
+          console.error("AI Enhancement failed:", error);
+          showToast(`Error al mejorar con IA: ${error.message}`, 'error');
+      } finally {
+          setIsEnhancing(false);
+      }
+  };
+
 
   if (isLoading || !current) {
     return (
-        <div className="flex-1 flex flex-col items-center justify-center bg-brand-black p-10">
-            <div className="relative w-20 h-20 mb-6 border-4 border-brand-gold/10 rounded-full border-t-brand-gold animate-spin"></div>
-            <p className="text-[10px] font-black text-brand-gold uppercase tracking-[0.4em] animate-pulse">Inyectando Conciencia...</p>
-        </div>
+      <div className="flex-1 flex flex-col items-center justify-center bg-brand-black">
+        <div className="w-16 h-16 border-4 border-brand-gold/10 border-t-brand-gold rounded-full animate-spin mb-6"></div>
+        <p className="text-[10px] font-black text-brand-gold uppercase tracking-[0.4em] animate-pulse">Cargando Configuración...</p>
+      </div>
     );
   }
-  
-  const slider = (label: string, id: keyof BotSettings, desc: string) => (
-    <div className="group">
-        <div className="flex justify-between items-center mb-2">
-            <label className="text-xs font-black uppercase text-white tracking-widest">{label}</label>
-            <span className="text-brand-gold text-[11px] font-bold bg-brand-gold/10 px-3 py-1 rounded-lg border border-brand-gold/20 shadow-lg shadow-brand-gold/5">Nivel {current[id] as number}</span>
-        </div>
-        <p className="text-[10px] text-gray-400 uppercase font-bold mb-4 tracking-tighter leading-tight">{desc}</p>
-        <div className="relative flex items-center">
-             <input type="range" min="1" max="5" value={current[id] as number} onChange={(e) => setCurrent({...current, [id]: parseInt(e.target.value)})} className="w-full h-2 bg-white/5 rounded-lg appearance-none cursor-pointer accent-brand-gold border border-white/5 transition-all hover:bg-white/10" />
-        </div>
-    </div>
-  );
-
-  const handleCompleteWizard = () => {
-    const combinedDescription = getCombinedProductDescription(wizardState, current.productName);
-    onUpdateSettings({ ...current, productDescription: combinedDescription, isWizardCompleted: true });
-    setWizardStep(0); // Reset wizard to first step in case of re-edit
-    setIsSaved(true);
-    setTimeout(() => setIsSaved(false), 2000);
-  };
-
-  const handleEditWizard = () => {
-    onUpdateSettings({ ...current, isWizardCompleted: false });
-  };
 
   return (
-    <div className="flex-1 bg-brand-black p-4 md:p-10 overflow-y-auto h-full custom-scrollbar animate-fade-in font-sans">
+    <div className="flex-1 bg-brand-black p-4 md:p-10 overflow-y-auto custom-scrollbar font-sans relative z-10 animate-fade-in">
       <div className="max-w-6xl mx-auto space-y-10 pb-32">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-white/5 pb-8">
+        
+        <header className="flex justify-between items-end border-b border-white/5 pb-8">
             <div>
-                <h2 className="text-3xl font-black text-white tracking-tighter uppercase">Ajustes <span className="text-brand-gold">Neurales</span></h2>
-                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.3em]">Configuración de Red Inferencia v3.2</p>
+                <h2 className="text-3xl font-black text-white tracking-tighter uppercase">Panel de <span className="text-brand-gold">Control</span></h2>
+                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.3em] mt-1">Configuración Central del Nodo</p>
             </div>
-            <button onClick={saveAllSettings} className={`px-12 py-5 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all duration-500 shadow-2xl ${isSaved ? 'bg-green-600 text-white scale-95' : 'bg-brand-gold text-black hover:scale-105 active:opacity-80'}`}>{isSaved ? "SINCRONIZACIÓN EXITOSA ✓" : "Sincronizar IA"}</button>
-        </div>
+            <button onClick={handleSaveSettings} disabled={isSavingApiKey} className="px-6 py-3 bg-brand-gold text-black rounded-xl font-black text-[10px] uppercase tracking-widest hover:scale-105 transition-all shadow-lg shadow-brand-gold/20 disabled:opacity-50 disabled:cursor-not-allowed">
+                {isSavingApiKey ? 'Verificando API...' : 'Guardar Configuración'}
+            </button>
+        </header>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-            <div className="space-y-8">
-                <section className="bg-brand-surface border border-white/5 rounded-[40px] p-0 shadow-2xl overflow-hidden min-h-[650px] flex flex-col relative">
-                    <div className="p-8 border-b border-white/5 bg-black/40 flex justify-between items-center backdrop-blur-md">
-                        <h3 className="text-sm font-black text-white uppercase tracking-widest flex items-center gap-3"><span className="w-8 h-8 rounded-lg bg-brand-gold/20 border border-brand-gold/40 flex items-center justify-center text-brand-gold text-[11px]">IA</span>Protocolo de Calibración</h3>
-                        {current.isWizardCompleted && (
-                             <button onClick={handleEditWizard} className="px-4 py-2 bg-brand-gold/10 text-brand-gold border border-brand-gold/20 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-brand-gold hover:text-black transition-all">Editar Cerebro</button>
-                        )}
-                        {!current.isWizardCompleted && (
-                            <div className="flex gap-1.5">{[0, 1, 2].map(s => (<div key={s} className={`w-10 h-1.5 rounded-full transition-all duration-500 ${wizardStep === s ? 'bg-brand-gold shadow-[0_0_10px_rgba(212,175,55,0.5)]' : (wizardStep > s ? 'bg-brand-gold/40' : 'bg-white/5')}`}></div>))}</div>
-                        )}
+        {isSaved && (
+            <div className="bg-green-500/10 border border-green-500/20 text-green-400 p-4 rounded-xl text-xs font-bold text-center animate-fade-in">
+                Cambios guardados.
+            </div>
+        )}
+
+        <section className="bg-brand-surface border border-white/5 rounded-[32px] p-8 shadow-2xl space-y-8 relative overflow-hidden group">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-brand-gold/5 rounded-full blur-3xl pointer-events-none group-hover:bg-brand-gold/10 transition-colors duration-1000"></div>
+
+            <div className="flex items-center gap-3 mb-6">
+                <span className="w-2 h-2 rounded-full bg-brand-gold animate-pulse"></span>
+                <h3 className="text-sm font-black text-white uppercase tracking-widest">Ajustes Principales</h3>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div>
+                    <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Nombre del Producto/Negocio</label>
+                    <input type="text" value={current.productName} onChange={e => handleUpdate('productName', e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm focus:border-brand-gold outline-none" />
+                </div>
+                <div>
+                    <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Link de Cierre (CTA)</label>
+                    <input type="url" value={current.ctaLink} onChange={e => handleUpdate('ctaLink', e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm focus:border-brand-gold outline-none" placeholder="https://tuweb.com/oferta" />
+                </div>
+                 <div className="md:col-span-2">
+                    <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">API Key de Google Gemini</label>
+                    <div className="flex gap-4">
+                        <input type="password" value={current.geminiApiKey || ''} onChange={e => handleUpdate('geminiApiKey', e.target.value)} className="flex-1 bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm focus:border-brand-gold outline-none" placeholder="AIzaSy..." />
+                        <button onClick={() => onOpenLegal('privacy')} className="flex-shrink-0 px-4 py-2 bg-white/5 border border-white/10 text-gray-400 rounded-xl text-[9px] font-bold uppercase hover:bg-white/10">¿Qué es esto?</button>
                     </div>
+                    <p className="text-[9px] text-gray-500 mt-2 italic">Necesitas tu propia API Key de Google AI Studio. Asegúrate de que tenga facturación habilitada.</p>
+                </div>
+            </div>
+        </section>
 
-                    {current.isWizardCompleted ? (
-                        <div className="flex-1 flex flex-col items-center justify-center p-10 text-center space-y-8 animate-fade-in">
-                            <div className="w-24 h-24 bg-green-500/10 text-green-500 rounded-full flex items-center justify-center mx-auto border-4 border-green-500/20 mb-6 shadow-[0_0_40px_rgba(34,197,94,0.3)]">
-                                <svg className="w-12 h-12" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                            </div>
-                            <h3 className="text-2xl font-black text-white uppercase tracking-widest">Cerebro Desplegado</h3>
-                            <p className="text-sm text-gray-400 max-w-sm">
-                                Tu inteligencia artificial está activa y operando con la configuración más reciente. Puedes ajustar la personalidad o editar el cerebro cuando quieras.
-                            </p>
-                        </div>
-                    ) : (
-                        <div className="flex-1 p-10 flex flex-col justify-center">
-                            <div className="text-center text-xs text-gray-400 bg-black/20 p-4 rounded-xl border border-white/10 mb-8 animate-fade-in">
-                                Dominion se configura en minutos. El sistema complejo lo manejamos nosotros.
-                            </div>
-                            {wizardStep === 0 && (
-                                <div className="space-y-6 animate-fade-in">
-                                    <div className="space-y-3 mb-8"><label className="text-[12px] font-black text-brand-gold uppercase tracking-[0.3em]">FASE 1: LA MISIÓN</label><h4 className="text-2xl font-black text-white tracking-tighter">Define tu Identidad y Cliente Ideal</h4><p className="text-sm text-gray-400 leading-relaxed font-medium">La IA necesita saber quién es y para quién trabaja. Esto define el 80% de su éxito.</p></div>
-                                    <div className="space-y-4">
-                                        <input value={current.productName} onChange={e => setCurrent({...current, productName: e.target.value})} className="w-full bg-black/60 border border-white/10 rounded-xl p-4 text-sm font-bold text-white focus:border-brand-gold outline-none" placeholder="Nombre de tu Negocio/Producto" />
-                                        <textarea value={wizardState.mission} onChange={e => handleWizardStateChange('mission', e.target.value)} className="w-full bg-black/60 border border-white/10 rounded-xl p-4 text-sm text-gray-300 h-24 resize-none focus:border-brand-gold outline-none" placeholder="Ej: 'Soy el asistente de [Mi Agencia] y mi objetivo es calificar leads para pasarlos a un vendedor...'"/>
-                                        <textarea value={wizardState.idealCustomer} onChange={e => handleWizardStateChange('idealCustomer', e.target.value)} className="w-full bg-black/60 border border-white/10 rounded-xl p-4 text-sm text-gray-300 h-24 resize-none focus:border-brand-gold outline-none" placeholder="Ej: 'Empresas que facturan más de 10k/mes y quieren escalar con publicidad...'"/>
-                                    </div>
-                                    <div className="pt-4 space-y-4">
-                                        <button onClick={handleAutoCompleteWithAI} disabled={isEnhancing || !current.productName.trim() || !wizardState.mission.trim() || !wizardState.idealCustomer.trim()} className="w-full py-5 bg-brand-gold/10 text-brand-gold border border-brand-gold/20 rounded-2xl font-black text-[11px] uppercase tracking-widest disabled:opacity-20 transition-all flex items-center justify-center gap-2">
-                                            {isEnhancing ? <><div className="w-4 h-4 border-2 border-brand-gold/30 border-t-brand-gold rounded-full animate-spin"></div> Generando Playbook...</> : '✨ Auto-Completar con IA (Opcional)'}
-                                        </button>
-                                        <button onClick={() => setWizardStep(1)} className="w-full text-center text-gray-500 font-bold text-xs uppercase hover:text-white transition-colors">Omitir y Llenar Manualmente &rarr;</button>
-                                    </div>
-                                </div>
-                            )}
-                            {wizardStep === 1 && (
-                                <div className="space-y-6 animate-fade-in">
-                                    <div className="space-y-3 mb-8"><label className="text-[12px] font-black text-brand-gold uppercase tracking-[0.3em]">FASE 2: EL ARSENAL</label><h4 className="text-2xl font-black text-white tracking-tighter">Detalla tu Oferta y Cierre</h4><p className="text-sm text-gray-400 leading-relaxed font-medium">Qué vendes, cuánto cuesta y cuál es el siguiente paso para el cliente.</p></div>
-                                    <div className="space-y-4">
-                                        <textarea value={wizardState.detailedDescription} onChange={e => handleWizardStateChange('detailedDescription', e.target.value)} className="w-full bg-black/60 border border-white/10 rounded-xl p-4 text-sm text-gray-300 h-32 resize-none focus:border-brand-gold outline-none" placeholder="Descripción detallada del producto/servicio..."/>
-                                        <input value={current.priceText} onChange={e => setCurrent({...current, priceText: e.target.value})} className="w-full bg-black/60 border border-white/10 rounded-xl p-4 text-sm text-white focus:border-brand-gold outline-none" placeholder="Inversión / Precio. Ej: $1.000 USD" />
-                                        <textarea value={current.ctaLink} onChange={e => setCurrent({...current, ctaLink: e.target.value})} className="w-full bg-black/60 border border-white/10 rounded-xl p-4 text-sm text-gray-300 h-24 resize-none focus:border-brand-gold outline-none" placeholder="Llamada a la acción. Ej: 'Excelente, agenda una llamada aquí: [link]'"/>
-                                    </div>
-                                    <div className="flex gap-4 pt-4"><button onClick={() => setWizardStep(0)} className="flex-1 py-5 text-gray-500 font-black text-[11px] uppercase tracking-widest hover:text-white transition-colors">Atrás</button><button onClick={() => setWizardStep(2)} disabled={!wizardState.detailedDescription || !current.priceText || !current.ctaLink} className="flex-[2] py-5 bg-white/5 hover:bg-white/10 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest disabled:opacity-20 transition-all border border-white/10">Siguiente: Playbook &rarr;</button></div>
-                                </div>
-                            )}
-                            {wizardStep === 2 && (
-                                <div className="space-y-6 animate-fade-in">
-                                    <div className="space-y-3"><label className="text-[12px] font-black text-brand-gold uppercase tracking-[0.3em]">FASE 3: EL PLAYBOOK</label><h4 className="text-2xl font-black text-white tracking-tighter">Manejo de Objeciones y Reglas</h4><p className="text-sm text-gray-400 leading-relaxed font-medium">Enséñale a la IA cómo pensar como tú. Define cómo manejar las dudas y qué tiene prohibido hacer.</p></div>
-                                    <div className="space-y-4 max-h-56 overflow-y-auto custom-scrollbar pr-2">
-                                        {wizardState.objections.map(o => (<div key={o.id} className="p-4 bg-black/60 border border-white/10 rounded-xl space-y-2 relative"><button onClick={() => removeObjection(o.id)} className="absolute top-2 right-2 text-red-500 text-xs">✕</button><input value={o.objection} onChange={e => handleObjectionChange(o.id, 'objection', e.target.value)} className="w-full bg-transparent text-white text-xs font-bold" placeholder="Objeción del cliente..."/><textarea value={o.response} onChange={e => handleObjectionChange(o.id, 'response', e.target.value)} className="w-full bg-transparent text-gray-400 text-xs h-12 resize-none" placeholder="Respuesta de la IA..."/></div>))}
-                                        <button onClick={addObjection} className="w-full text-center text-xs text-brand-gold font-bold py-2">+ Añadir Objeción</button>
-                                    </div>
-                                    <textarea value={wizardState.rules} onChange={e => handleWizardStateChange('rules', e.target.value)} className="w-full bg-black/60 border border-white/10 rounded-xl p-4 text-sm text-gray-300 h-24 resize-none focus:border-brand-gold outline-none" placeholder="Reglas de Oro y Límites..."/>
-                                    <div className="flex gap-4 pt-4"><button onClick={() => setWizardStep(1)} className="flex-1 py-5 text-gray-500 font-black text-[11px] uppercase tracking-widest hover:text-white">Atrás</button><button onClick={handleCompleteWizard} className="flex-[2] py-5 bg-brand-gold text-black rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-[0_15px_40px_rgba(212,175,55,0.3)] hover:scale-[1.02] transition-all">Desplegar Cerebro</button></div>
-                                </div>
-                            )}
-                        </div>
-                    )}
-                    <div className="p-4 text-center border-t border-white/5"><select onChange={(e) => loadTemplate(e.target.value)} className="w-full bg-transparent text-center text-[10px] font-bold text-brand-gold uppercase tracking-widest hover:underline cursor-pointer outline-none"><option value="DEFAULT">Cargar Plantilla Táctica...</option>{Object.entries(TEMPLATES).filter(([key]) => key !== 'DEFAULT').map(([key, { name }]) => (<option key={key} value={key}>{name}</option>))}</select></div>
-                </section>
+        <section className="bg-brand-surface border border-white/5 rounded-[32px] p-8 shadow-2xl space-y-8 relative overflow-hidden group">
+            <div className="absolute top-0 left-0 w-32 h-32 bg-blue-500/5 rounded-full blur-3xl pointer-events-none group-hover:bg-blue-500/10 transition-colors duration-1000"></div>
+            
+            <div className="flex items-center gap-3 mb-6">
+                <h3 className="text-sm font-black text-white uppercase tracking-widest">Brief de Inferencia (AI)</h3>
+                <button onClick={enhanceWithAI} disabled={isEnhancing} className="px-3 py-1.5 bg-brand-gold/10 text-brand-gold border border-brand-gold/20 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-brand-gold hover:text-black transition-all flex items-center gap-2">
+                    {isEnhancing ? <span className="animate-pulse">Optimizando...</span> : <>✨ Mejorar con IA</>}
+                </button>
+                <select onChange={e => applyTemplate(e.target.value)} className="bg-black/50 border border-white/10 text-white text-[9px] font-bold uppercase tracking-widest rounded-lg px-2 py-1 outline-none">
+                    {Object.entries(TEMPLATES).map(([key, value]) => (
+                        <option key={key} value={key}>{value.name}</option>
+                    ))}
+                </select>
             </div>
             
-            <div className="space-y-8">
-                <section className="bg-brand-surface border border-white/5 rounded-3xl p-8 shadow-2xl">
-                    <h3 className="text-sm font-black text-white uppercase tracking-widest mb-6">Ajustes de Personalidad</h3>
-                    <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 mb-8">
-                        {Object.values(PromptArchetype).map(arch => (<button key={arch} type="button" onClick={() => handleArchetypeChange(arch)} className={`p-3 rounded-lg border text-center group text-[9px] font-black uppercase tracking-widest ${current.archetype === arch ? 'bg-brand-gold/10 border-brand-gold text-brand-gold' : 'bg-black/40 border-white/5 text-gray-600 hover:text-gray-300'}`}>{ARCHETYPE_NAMES[arch]}</button>))}
-                    </div>
-                    <div className="bg-black/40 p-6 rounded-2xl border border-white/5 space-y-6">
-                        {slider("Tono de Voz", "toneValue", "Nivel de respeto, formalidad y cercanía en el trato.")}
-                        {slider("Ritmo de Chat", "rhythmValue", "Determina la longitud de párrafos y tiempo de respuesta.")}
-                        {slider("Intensidad de Venta", "intensityValue", "Determina el nivel de empuje hacia el enlace de pago.")}
-                    </div>
-                </section>
+            <div className="space-y-6">
+                <div>
+                    <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Misión Principal del Bot</label>
+                    <textarea value={wizardState.mission} onChange={e => setWizardState(prev => ({ ...prev, mission: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm h-32 focus:border-brand-gold outline-none resize-none" placeholder="Cuál es su rol principal, qué debe lograr y qué NO debe hacer." />
+                </div>
+                <div>
+                    <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Cliente Ideal</label>
+                    <textarea value={wizardState.idealCustomer} onChange={e => setWizardState(prev => ({ ...prev, idealCustomer: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm h-32 focus:border-brand-gold outline-none resize-none" placeholder="Describe a tu cliente perfecto. ¿Qué problema tiene que tu negocio resuelve?" />
+                </div>
+                <div>
+                    <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Descripción Detallada del Servicio/Producto</label>
+                    <textarea value={wizardState.detailedDescription} onChange={e => setWizardState(prev => ({ ...prev, detailedDescription: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm h-40 focus:border-brand-gold outline-none resize-none" placeholder="Qué ofreces, sus beneficios únicos, y la transformación que logrará el cliente." />
+                </div>
                 
-                <section className="bg-brand-surface border border-white/5 rounded-3xl p-8 shadow-2xl">
-                    <h3 className="text-sm font-black text-white uppercase tracking-widest mb-2">Panel de Control de Gemini</h3>
-                     <p className="text-[10px] text-gray-400 uppercase font-bold mb-4 tracking-widest">El motor neural de la IA. <a href="https://aistudio.google.com/app/apikey" target="_blank"  rel="noopener noreferrer" className="text-brand-gold underline">Obtener API Key aquí</a>.</p>
-                     
-                     <div className="flex gap-2">
-                        <input type="password" value={current.geminiApiKey || ''} onChange={e => {setCurrent({...current, geminiApiKey: e.target.value});}} className="flex-1 bg-black/60 border border-white/10 rounded-xl p-4 text-sm text-brand-gold font-mono focus:border-brand-gold outline-none" placeholder="AIzaSy..." />
-                        <button 
-                            onClick={handleSaveApiKey} 
-                            disabled={isSavingApiKey || !current.geminiApiKey?.trim()}
-                            className="px-6 py-4 bg-brand-gold text-black rounded-xl font-black text-[10px] uppercase tracking-widest hover:scale-[1.02] active:scale-95 transition-all shadow-lg shadow-brand-gold/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                            {isSavingApiKey ? 'Guardando...' : 'Guardar Key'}
-                        </button>
-                     </div>
-
-                    <div className="bg-black/40 border border-white/5 rounded-2xl p-4 text-center mt-6">
-                        <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest mb-2">Asistente de Calibración</p>
-                        <p className="text-2xl font-black text-brand-gold">{sessionTokenCount.toLocaleString()}</p>
-                        <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">Tokens Usados (Sesión)</p>
+                {/* OBJECTIONS */}
+                <div>
+                    <div className="flex justify-between items-center mb-4">
+                        <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest">Manejo de Objeciones Frecuentes</label>
+                        <button onClick={addObjection} className="px-3 py-1 bg-white/5 text-gray-400 rounded-lg text-[9px] font-bold uppercase hover:bg-white/10">+ Añadir Objeción</button>
                     </div>
-                </section>
+                    <div className="space-y-4">
+                        {wizardState.objections.map(obj => (
+                            <div key={obj.id} className="bg-black/30 p-4 rounded-xl border border-white/5 space-y-3">
+                                <div className="flex justify-between items-center">
+                                    <label className="text-[9px] font-bold text-gray-400">Objeción</label>
+                                    <button onClick={() => removeObjection(obj.id)} className="text-gray-500 hover:text-red-400 text-xs">✕</button>
+                                </div>
+                                <input type="text" value={obj.objection} onChange={e => updateObjection(obj.id, 'objection', e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-lg p-2 text-white text-xs focus:border-brand-gold outline-none" placeholder="Ej: Es muy caro" />
+                                <label className="text-[9px] font-bold text-gray-400">Respuesta del Bot</label>
+                                <textarea value={obj.response} onChange={e => updateObjection(obj.id, 'response', e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-lg p-2 text-white text-xs h-20 focus:border-brand-gold outline-none resize-none" placeholder="Cómo debe responder la IA a esta objeción." />
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                <div>
+                    <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Reglas de Oro y Límites</label>
+                    <textarea value={wizardState.rules} onChange={e => setWizardState(prev => ({ ...prev, rules: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm h-32 focus:border-brand-gold outline-none resize-none" placeholder="Ej: NO usar emojis. SOLO vender. NUNCA mentir." />
+                </div>
             </div>
-        </div>
+        </section>
+
+        <section className="bg-brand-surface border border-white/5 rounded-[32px] p-8 shadow-2xl space-y-8 relative overflow-hidden group">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/5 rounded-full blur-3xl pointer-events-none group-hover:bg-purple-500/10 transition-colors duration-1000"></div>
+            
+            <div className="flex items-center gap-3 mb-6">
+                <h3 className="text-sm font-black text-white uppercase tracking-widest">Ajustes Neurales (IA)</h3>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div>
+                    <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Arquetipo de Conversación</label>
+                    <select value={current.archetype} onChange={e => handleArchetypeChange(e.target.value as PromptArchetype)} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm focus:border-brand-gold outline-none">
+                        {Object.values(PromptArchetype).map(archetype => (
+                            <option key={archetype} value={archetype}>{ARCHETYPE_NAMES[archetype]}</option>
+                        ))}
+                    </select>
+                </div>
+                <div>
+                    <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Texto de Precios</label>
+                    <input type="text" value={current.priceText} onChange={e => handleUpdate('priceText', e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm focus:border-brand-gold outline-none" placeholder="Ej: Desde 97 USD / mes" />
+                </div>
+                <div className="md:col-span-2">
+                    <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Ignorar Números (JID's) - Blacklist</label>
+                    <p className="text-[9px] text-gray-500 mb-2">
+                        Añade números de WhatsApp que la IA debe ignorar. (Ej: '5492611234567').
+                    </p>
+                    <textarea 
+                        value={current.ignoredJids.join('\n')} 
+                        onChange={e => handleUpdate('ignoredJids', e.target.value.split('\n').filter(Boolean).map(s => s.trim()))} 
+                        className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm h-32 focus:border-brand-gold outline-none resize-none font-mono" 
+                        placeholder="54911xxxxxxx (uno por línea)" 
+                    />
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 pt-8 border-t border-white/5 mt-8">
+                <div>
+                    <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Tono ({current.toneValue})</label>
+                    <input type="range" min="1" max="5" value={current.toneValue} onChange={e => handleUpdate('toneValue', parseInt(e.target.value))} className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-brand-gold" />
+                    <p className="text-[9px] text-gray-500 mt-2">1=Agresivo, 5=Amigable</p>
+                </div>
+                <div>
+                    <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Ritmo ({current.rhythmValue})</label>
+                    <input type="range" min="1" max="5" value={current.rhythmValue} onChange={e => handleUpdate('rhythmValue', parseInt(e.target.value))} className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-brand-gold" />
+                    <p className="text-[9px] text-gray-500 mt-2">1=Directo, 5=Detallado</p>
+                </div>
+                <div>
+                    <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Intensidad ({current.intensityValue})</label>
+                    <input type="range" min="1" max="5" value={current.intensityValue} onChange={e => handleUpdate('intensityValue', parseInt(e.target.value))} className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-brand-gold" />
+                    <p className="text-[9px] text-gray-500 mt-2">1=Pasivo, 5=Enérgico</p>
+                </div>
+            </div>
+        </section>
+
+        {/* Network Participation Section */}
+        <section className="bg-brand-surface border border-white/5 rounded-[32px] p-8 shadow-2xl space-y-8 relative overflow-hidden group">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full blur-3xl pointer-events-none group-hover:bg-blue-500/10 transition-colors duration-1000"></div>
+
+            <div className="flex items-center gap-3 mb-6">
+                <h3 className="text-sm font-black text-white uppercase tracking-widest">Red Dominion (Beta)</h3>
+            </div>
+            
+            <div className="flex items-center justify-between">
+                <div>
+                    <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Participar en la Red</label>
+                    <p className="text-[9px] text-gray-500">
+                        Activa para compartir y recibir leads cualificados con otros miembros de la red.
+                        <button onClick={() => onOpenLegal('network')} className="text-brand-gold underline ml-1">Ver términos.</button>
+                    </p>
+                </div>
+                <button onClick={handleToggleNetworkEnabled} className={`w-12 h-6 rounded-full relative transition-colors ${current.isNetworkEnabled ? 'bg-blue-500' : 'bg-gray-700'}`}>
+                    <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transform transition-transform ${current.isNetworkEnabled ? 'translate-x-6' : 'translate-x-0.5'}`}></div>
+                </button>
+            </div>
+
+            {isNetworkEnabled && currentNetworkProfile && (
+                <div className="animate-fade-in space-y-6 mt-4">
+                    <div>
+                        <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Categorías de Interés</label>
+                        <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto custom-scrollbar p-2 bg-black/50 border border-white/10 rounded-xl">
+                            {NETWORK_CATEGORIES.map(category => (
+                                <button 
+                                    key={category}
+                                    type="button"
+                                    onClick={() => handleToggleCategory(category)}
+                                    className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${categoriesOfInterest.includes(category) ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'bg-black/40 text-gray-500 border border-white/10 hover:text-white'}`}
+                                >
+                                    {category}
+                                </button>
+                            ))}
+                        </div>
+                        <p className="text-[9px] text-gray-500 mt-2 italic">Selecciona las categorías de leads que te gustaría recibir.</p>
+                    </div>
+                    <button onClick={() => saveNetworkProfile()} className="w-full py-4 bg-brand-gold text-black rounded-xl font-black text-xs uppercase tracking-[0.2em] hover:scale-[1.02] transition-all">Guardar Perfil de Red</button>
+                </div>
+            )}
+        </section>
+
       </div>
     </div>
   );

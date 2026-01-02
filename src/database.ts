@@ -2,7 +2,7 @@
 import bcrypt from 'bcrypt';
 import mongoose, { Schema, Model } from 'mongoose';
 // FIX: Import LogLevel to use in SystemSettings defaults
-import { User, BotSettings, PromptArchetype, GlobalMetrics, GlobalTelemetry, Conversation, IntendedUse, LogEntry, Testimonial, SystemSettings, Campaign, RadarSignal, RadarSettings, GroupMarketMemory, DepthBoost, DepthLog, LogLevel } from './types.js';
+import { User, BotSettings, PromptArchetype, GlobalMetrics, GlobalTelemetry, Conversation, IntendedUse, LogEntry, Testimonial, SystemSettings, Campaign, RadarSignal, RadarSettings, GroupMarketMemory, DepthBoost, DepthLog, LogLevel, IntentSignal, ConnectionOpportunity, NetworkProfile, PermissionStatus } from './types.js';
 import { v4 as uuidv4 } from 'uuid';
 import { MONGO_URI } from './env.js';
 import { clearBindedSession } from './whatsapp/mongoAuth.js'; 
@@ -36,8 +36,8 @@ const DepthLogSchema = new Schema({
 
 const TestimonialSchema = new Schema({
     userId: { type: String, required: true, index: true },
-    name: { type: String, required: true },
-    location: { type: String, required: true },
+    name: { type: String, required: false }, // Made optional
+    location: { type: String, required: false }, // Made optional
     text: { type: String, required: true },
 }, { timestamps: true });
 
@@ -45,7 +45,8 @@ const SystemSettingsSchema = new Schema({
     id: { type: String, default: 'global', unique: true },
     supportWhatsappNumber: { type: String, default: '' },
     // FIX: Add logLevel to schema to persist this setting
-    logLevel: { type: String, default: 'INFO' } 
+    logLevel: { type: String, default: 'INFO' },
+    dominionNetworkJid: { type: String, default: '5491110000000@s.whatsapp.net' } // NEW: Default Network JID
 });
 
 const RadarSignalSchema = new Schema({
@@ -62,7 +63,7 @@ const RadarSignalSchema = new Schema({
     analysis: {
         score: { type: Number },
         category: { type: String },
-        intentType: { type: String },
+        intentType: { type: String, enum: ['SEARCH', 'COMPARISON', 'QUESTION', 'URGENT'] },
         reasoning: { type: String },
         suggestedAction: { type: String }
     },
@@ -133,6 +134,44 @@ const CampaignSchema = new Schema({
 // Create Compound Index for Scheduler Efficiency
 CampaignSchema.index({ status: 1, 'stats.nextRunAt': 1 });
 
+// --- NEW NETWORK SCHEMAS ---
+const IntentSignalSchema = new Schema({
+    id: { type: String, required: true, unique: true, index: true },
+    userId: { type: String, required: true, index: true },
+    prospectJid: { type: String, required: true }, // Original JID
+    prospectName: { type: String, required: true },
+    prospectIdentifierHash: { type: String, required: true, index: true }, // For matching privacy
+    intentCategories: { type: [String], default: [], index: true },
+    intentDescription: { type: String, required: true },
+    signalScore: { type: Number, required: true },
+    contributedAt: { type: String, default: () => new Date().toISOString() },
+}, { timestamps: true });
+
+const ConnectionOpportunitySchema = new Schema({
+    id: { type: String, required: true, unique: true, index: true },
+    contributedByUserId: { type: String, required: true, index: true },
+    receivedByUserId: { type: String, required: true, index: true },
+    intentSignalId: { type: String, required: true, index: true },
+    prospectOriginalJid: { type: String }, // Only revealed after consent
+    prospectName: { type: String }, // Only revealed after consent
+    intentCategories: { type: [String], default: [] },
+    intentDescription: { type: String },
+    opportunityScore: { type: Number, default: 0 },
+    permissionStatus: { type: String, enum: ['PENDING', 'GRANTED', 'DENIED', 'NOT_REQUESTED'], default: 'NOT_REQUESTED' },
+    requestedAt: { type: String },
+    respondedAt: { type: String },
+    connectionMadeAt: { type: String },
+    createdAt: { type: String, default: () => new Date().toISOString() },
+}, { timestamps: true });
+
+const NetworkProfileSchema = new Schema({
+    networkEnabled: { type: Boolean, default: false },
+    categoriesOfInterest: { type: [String], default: [] },
+    contributionScore: { type: Number, default: 0 },
+    receptionScore: { type: Number, default: 0 },
+    lastActivity: { type: String, default: () => new Date().toISOString() },
+}, { _id: false }); // No separate _id, embedded in User
+
 const UserSchema = new Schema({
     id: { type: String, required: true, unique: true, index: true },
     username: { type: String, required: true, unique: true, index: true },
@@ -169,7 +208,8 @@ const UserSchema = new Schema({
         rhythmValue: { type: Number, default: 3 },
         intensityValue: { type: Number, default: 3 },
         isWizardCompleted: { type: Boolean, default: false }, 
-        ignoredJids: { type: Array, default: [] }
+        ignoredJids: { type: Array, default: [] },
+        isNetworkEnabled: { type: Boolean, default: false }, // NEW: Default to false
     },
     radar: {
         isEnabled: { type: Boolean, default: false },
@@ -196,7 +236,8 @@ const UserSchema = new Schema({
         experiments: { type: Array, default: [] },
         aggregatedScore: { type: Number, default: 0 },
         topFailurePatterns: { type: Object, default: {} }
-    }
+    },
+    networkProfile: { type: NetworkProfileSchema, default: {} }, // NEW: Embedded Network Profile
 }, { minimize: false, timestamps: true });
 
 const UserModel = (mongoose.models.SaaSUser || mongoose.model('SaaSUser', UserSchema)) as Model<any>;
@@ -208,6 +249,9 @@ const RadarSignalModel = (mongoose.models.RadarSignal || mongoose.model('RadarSi
 const GroupMemoryModel = (mongoose.models.GroupMemory || mongoose.model('GroupMemory', GroupMarketMemorySchema)) as Model<GroupMarketMemory>;
 const DepthBoostModel = (mongoose.models.DepthBoost || mongoose.model('DepthBoost', DepthBoostSchema)) as Model<DepthBoost>;
 const DepthLogModel = (mongoose.models.DepthLog || mongoose.model('DepthLog', DepthLogSchema)) as Model<DepthLog>;
+const IntentSignalModel = (mongoose.models.IntentSignal || mongoose.model('IntentSignal', IntentSignalSchema)) as Model<IntentSignal>;
+const ConnectionOpportunityModel = (mongoose.models.ConnectionOpportunity || mongoose.model('ConnectionOpportunity', ConnectionOpportunitySchema)) as Model<ConnectionOpportunity>;
+
 
 export const sanitizeKey = (key: string) => key.replace(/\./g, '_');
 
@@ -300,7 +344,8 @@ class Database {
             rhythmValue: 3, 
             intensityValue: 3,
             isWizardCompleted: false, 
-            ignoredJids: []
+            ignoredJids: [],
+            isNetworkEnabled: false, // NEW: Default to false
         },
         radar: { isEnabled: false, monitoredGroups: [], keywordsInclude: [], keywordsExclude: [] },
         conversations: {},
@@ -311,7 +356,14 @@ class Database {
             auditLogs: [],
             accountFlags: [] 
         },
-        simulationLab: { experiments: [], aggregatedScore: 0, topFailurePatterns: {} }
+        simulationLab: { experiments: [], aggregatedScore: 0, topFailurePatterns: {} },
+        networkProfile: { // NEW: Default network profile
+            networkEnabled: false,
+            categoriesOfInterest: [],
+            contributionScore: 0,
+            receptionScore: 0,
+            lastActivity: new Date().toISOString(),
+        }
     };
     
     try {
@@ -432,14 +484,21 @@ class Database {
   }
 
   async getGlobalMetrics(): Promise<GlobalMetrics> {
-      if (!this.isReady()) return { activeVendors: 0, onlineNodes: 0, globalLeads: 0, hotLeadsTotal: 0, aiRequestsTotal: 0, riskAccountsCount: 0 };
+      if (!this.isReady()) return { activeVendors: 0, onlineNodes: 0, totalSignalsProcessed: 0, activeHotLeads: 0, aiRequestsTotal: 0, riskAccountsCount: 0 }; // FIX: Updated default values for new metrics
       const activeVendors = await UserModel.countDocuments({ role: 'client' });
+      // FIX: Add logic to calculate totalSignalsProcessed and activeHotLeads from the DB
+      const totalSignalsProcessed = await IntentSignalModel.countDocuments();
+      const activeHotLeads = await UserModel.aggregate([
+          { $match: { 'conversations.$*.status': 'Caliente' } },
+          { $count: 'hotLeads' }
+      ]).then(res => res[0]?.hotLeads || 0);
+
       return {
           activeVendors,
-          onlineNodes: 1,
-          globalLeads: 0,
-          hotLeadsTotal: 0,
-          aiRequestsTotal: 0,
+          onlineNodes: 1, // Placeholder for now
+          totalSignalsProcessed,
+          activeHotLeads,
+          aiRequestsTotal: 0, // Placeholder
           riskAccountsCount: await UserModel.countDocuments({ 'governance.riskScore': { $gt: 50 } })
       };
   }
@@ -474,15 +533,16 @@ class Database {
       await TestimonialModel.deleteMany({}); 
   }
 
-  async seedTestimonials(testimonials: any[]) {
+  async seedTestimonials(testimonials: Testimonial[]) {
       await TestimonialModel.insertMany(testimonials);
   }
 
   async getSystemSettings(): Promise<SystemSettings> {
       const doc = await SystemSettingsModel.findOne({ id: 'global' }).lean();
-      const defaults: SystemSettings = { supportWhatsappNumber: '', logLevel: 'INFO' };
+      // FIX: Added dominionNetworkJid to defaults
+      const defaults: SystemSettings = { supportWhatsappNumber: '', logLevel: 'INFO', dominionNetworkJid: '5491110000000@s.whatsapp.net' };
       if (!doc) {
-          const newSettings = await SystemSettingsModel.create({ id: 'global' });
+          const newSettings = await SystemSettingsModel.create({ id: 'global', dominionNetworkJid: defaults.dominionNetworkJid }); // Ensure default is set for new creation
           return { ...defaults, ...newSettings.toObject() };
       }
       return { ...defaults, ...doc };
@@ -526,7 +586,8 @@ class Database {
 
   async getRadarSettings(userId: string): Promise<RadarSettings> {
       const user = await this.getUser(userId);
-      return user?.radar || { isEnabled: false, monitoredGroups: [], keywordsInclude: [], keywordsExclude: [] };
+      // FIX: Initialize calibration property in default object
+      return user?.radar || { isEnabled: false, monitoredGroups: [], keywordsInclude: [], keywordsExclude: [], calibration: { opportunityDefinition: '', noiseDefinition: '', sensitivity: 5 } };
   }
 
   async updateRadarSettings(userId: string, settings: Partial<RadarSettings>): Promise<RadarSettings | undefined> {
@@ -603,6 +664,89 @@ class Database {
           eventType,
           details
       });
+  }
+
+  // --- NEW NETWORK METHODS ---
+  async createIntentSignal(signal: IntentSignal): Promise<IntentSignal> {
+      const newSignal = await IntentSignalModel.create(signal);
+      return newSignal.toObject();
+  }
+
+  async getUserIntentSignals(userId: string): Promise<IntentSignal[]> {
+      return await IntentSignalModel.find({ userId }).sort({ contributedAt: -1 }).lean();
+  }
+
+  async createConnectionOpportunity(opportunity: ConnectionOpportunity): Promise<ConnectionOpportunity> {
+      const newOpportunity = await ConnectionOpportunityModel.create(opportunity);
+      return newOpportunity.toObject();
+  }
+
+  // For a user, find potential opportunities from other users' signals
+  async findPotentialConnectionOpportunities(
+      receivedByUserId: string, 
+      categoriesOfInterest: string[], 
+      excludeJidHashes: string[] = [] // Ensure not to match with own contributed signals
+  ): Promise<IntentSignal[]> {
+      if (categoriesOfInterest.length === 0) return [];
+      
+      const now = new Date();
+      now.setDate(now.getDate() - 7); // Only consider signals from the last 7 days
+
+      // Find signals contributed by *other* users, that match categories of interest, 
+      // and haven't been acted upon by this user yet
+      return await IntentSignalModel.find({
+          userId: { $ne: receivedByUserId },
+          prospectIdentifierHash: { $nin: excludeJidHashes }, // Exclude signals already seen/acted upon by this user
+          intentCategories: { $in: categoriesOfInterest },
+          signalScore: { $gte: 70 }, // Only high-quality signals
+          contributedAt: { $gte: now.toISOString() }
+      }).sort({ signalScore: -1, contributedAt: -1 }).limit(20).lean(); // Limit to 20 potential matches
+  }
+
+  async getConnectionOpportunities(receivedByUserId: string): Promise<ConnectionOpportunity[]> {
+      return await ConnectionOpportunityModel.find({ receivedByUserId }).sort({ createdAt: -1 }).lean();
+  }
+
+  async getConnectionOpportunity(id: string): Promise<ConnectionOpportunity | null> {
+      return await ConnectionOpportunityModel.findOne({ id }).lean();
+  }
+
+  async updateConnectionOpportunity(id: string, updates: Partial<ConnectionOpportunity>): Promise<ConnectionOpportunity | null> {
+      return await ConnectionOpportunityModel.findOneAndUpdate({ id }, { $set: updates }, { new: true }).lean();
+  }
+
+  async getNetworkProfile(userId: string): Promise<NetworkProfile | null> {
+      const user = await UserModel.findOne({ id: userId }).select('networkProfile').lean();
+      return (user as any)?.networkProfile || null;
+  }
+
+  async updateNetworkProfile(userId: string, updates: Partial<NetworkProfile>): Promise<NetworkProfile | null> {
+      const result = await UserModel.findOneAndUpdate(
+          { id: userId },
+          { $set: { networkProfile: updates } },
+          { new: true, upsert: true }
+      ).select('networkProfile').lean();
+      return (result as any)?.networkProfile || null;
+  }
+
+  async getIntentSignal(id: string): Promise<IntentSignal | null> {
+      return await IntentSignalModel.findOne({ id }).lean();
+  }
+
+  // --- ADMIN NETWORK METHODS ---
+  async getNetworkStats() {
+      const activeNodes = await UserModel.countDocuments({ 'networkProfile.networkEnabled': true });
+      const totalSignals = await IntentSignalModel.countDocuments();
+      const totalOpportunities = await ConnectionOpportunityModel.countDocuments();
+      const successfulConnections = await ConnectionOpportunityModel.countDocuments({ permissionStatus: 'GRANTED' });
+      
+      return { activeNodes, totalSignals, totalOpportunities, successfulConnections };
+  }
+
+  async getRecentNetworkActivity(limit = 20) {
+      const signals = await IntentSignalModel.find().sort({ contributedAt: -1 }).limit(limit).lean();
+      const opportunities = await ConnectionOpportunityModel.find().sort({ createdAt: -1 }).limit(limit).lean();
+      return { signals, opportunities };
   }
 }
 

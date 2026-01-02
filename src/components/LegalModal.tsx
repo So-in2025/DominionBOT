@@ -31,7 +31,7 @@ const SimpleRenderer: React.FC<{ content: string }> = ({ content }) => {
 };
 
 interface LegalModalProps {
-    type: 'privacy' | 'terms' | 'manifesto' | null;
+    type: 'privacy' | 'terms' | 'manifesto' | 'network' | null;
     onClose: () => void;
 }
 

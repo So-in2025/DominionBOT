@@ -1,14 +1,22 @@
 
-import { Request as ExpressRequest, Response as ExpressResponse } from 'express';
+import { Request, Response } from 'express';
 import { db, sanitizeKey } from '../database.js'; // Import sanitizeKey
 import { logService } from '../services/logService.js';
 // FIX: Import ConnectionStatus enum for type-safe comparisons.
 import { ConnectionStatus, User, SystemSettings, Message, LeadStatus, Conversation } from '../types.js';
-import { getSessionStatus, processAiResponseForJid } from '../whatsapp/client.js'; // Import processAiResponseForJid
+import { getSessionStatus, processAiResponseForJid, ELITE_BOT_JID, ELITE_BOT_NAME } from '../whatsapp/client.js'; // IMPORTED CONSTANTS HERE
 import { conversationService } from '../services/conversationService.js'; // Import conversationService
 import { v4 as uuidv4 } from 'uuid'; // Need uuid for Boosts
+// FIX: Import express default to access Request and Response types.
+import express from 'express';
 
-const getAdminUser = (req: ExpressRequest) => ({ id: (req as any).user.id, username: (req as any).user.username });
+// Define a custom Request type to include the 'user' property added by authentication middleware
+// FIX: Changed interface to type using intersection for better type resolution
+type AuthenticatedRequest<P = any, ResBody = any, ReqBody = any, ReqQuery = any> = express.Request<P, ResBody, ReqBody, ReqQuery> & {
+    user: { id: string; username: string; role: string; };
+};
+
+const getAdminUser = (req: AuthenticatedRequest) => ({ id: req.user.id, username: req.user.username });
 
 const TEST_SCRIPT = [
     "Hola, estoy interesado en tus servicios. ¿Cómo funciona?",
@@ -18,7 +26,7 @@ const TEST_SCRIPT = [
     "Suena interesante. Creo que estoy listo para ver una demo o empezar. ¿Qué debo hacer ahora?",
 ];
 
-export const handleGetDashboardMetrics = async (req: ExpressRequest, res: ExpressResponse) => {
+export const handleGetDashboardMetrics = async (req: AuthenticatedRequest, res: express.Response) => {
     try {
         const clients = await db.getAllClients();
         
@@ -32,9 +40,9 @@ export const handleGetDashboardMetrics = async (req: ExpressRequest, res: Expres
             return acc;
         }, 0);
 
-        const planDistribution = clients.reduce((acc, client) => {
+        const planDistribution = clients.reduce((acc: { pro: number; starter: number; }, client) => {
             if (client.plan_status === 'active') {
-                (acc as any)[client.plan_type]++; // Explicit cast for acc
+                acc[client.plan_type]++; 
             }
             return acc;
         }, { pro: 0, starter: 0 });
@@ -66,7 +74,7 @@ export const handleGetDashboardMetrics = async (req: ExpressRequest, res: Expres
     }
 };
 
-export const handleGetAllClients = async (req: ExpressRequest, res: ExpressResponse) => {
+export const handleGetAllClients = async (req: AuthenticatedRequest, res: express.Response) => {
     try {
         const clients = await db.getAllClients();
         res.json(clients);
@@ -76,7 +84,7 @@ export const handleGetAllClients = async (req: ExpressRequest, res: ExpressRespo
     }
 };
 
-export const handleUpdateClient = async (req: ExpressRequest<any, any, Partial<User>>, res: ExpressResponse) => {
+export const handleUpdateClient = async (req: AuthenticatedRequest<{ id: string }, any, Partial<User>>, res: express.Response) => {
     const { id } = req.params;
     const updates: Partial<User> = req.body;
     const admin = getAdminUser(req);
@@ -94,7 +102,7 @@ export const handleUpdateClient = async (req: ExpressRequest<any, any, Partial<U
     }
 };
 
-export const handleDeleteClient = async (req: ExpressRequest<{ id: string }>, res: ExpressResponse) => {
+export const handleDeleteClient = async (req: AuthenticatedRequest<{ id: string }>, res: express.Response) => {
     const { id } = req.params;
     const admin = getAdminUser(req);
 
@@ -115,7 +123,7 @@ export const handleDeleteClient = async (req: ExpressRequest<{ id: string }>, re
     }
 };
 
-export const handleActivateClient = async (req: ExpressRequest<{ id: string }>, res: ExpressResponse) => {
+export const handleActivateClient = async (req: AuthenticatedRequest<{ id: string }>, res: express.Response) => {
     const { id } = req.params;
     const admin = getAdminUser(req);
     try {
@@ -144,7 +152,7 @@ export const handleActivateClient = async (req: ExpressRequest<{ id: string }>, 
     }
 };
 
-export const handleRenewClient = async (req: ExpressRequest<{ id: string }>, res: ExpressResponse) => {
+export const handleRenewClient = async (req: AuthenticatedRequest<{ id: string }>, res: express.Response) => {
     const { id } = req.params;
     const admin = getAdminUser(req);
     try {
@@ -171,7 +179,7 @@ export const handleRenewClient = async (req: ExpressRequest<{ id: string }>, res
     }
 };
 
-export const handleGetLogs = async (req: ExpressRequest, res: ExpressResponse) => {
+export const handleGetLogs = async (req: AuthenticatedRequest, res: express.Response) => {
     try {
         const logs = await db.getLogs(200); // Get last 200 logs
         res.json(logs);
@@ -181,7 +189,7 @@ export const handleGetLogs = async (req: ExpressRequest, res: ExpressResponse) =
     }
 };
 
-export const handleGetSystemSettings = async (req: ExpressRequest, res: ExpressResponse) => {
+export const handleGetSystemSettings = async (req: express.Request, res: express.Response) => {
     try {
         const settings = await db.getSystemSettings();
         res.json(settings);
@@ -191,7 +199,7 @@ export const handleGetSystemSettings = async (req: ExpressRequest, res: ExpressR
     }
 };
 
-export const handleUpdateSystemSettings = async (req: ExpressRequest<any, any, Partial<SystemSettings>>, res: ExpressResponse) => {
+export const handleUpdateSystemSettings = async (req: AuthenticatedRequest<any, any, Partial<SystemSettings>>, res: express.Response) => {
     try {
         const admin = getAdminUser(req);
         const updates: Partial<SystemSettings> = req.body;
@@ -204,7 +212,7 @@ export const handleUpdateSystemSettings = async (req: ExpressRequest<any, any, P
     }
 };
 
-export const handleStartTestBot = async (req: ExpressRequest<any, any, { targetUserId: string }>, res: ExpressResponse) => {
+export const handleStartTestBot = async (req: AuthenticatedRequest<any, any, { targetUserId: string }>, res: express.Response) => {
     const { targetUserId } = req.body;
     const admin = getAdminUser(req);
 
@@ -266,34 +274,77 @@ export const handleStartTestBot = async (req: ExpressRequest<any, any, { targetU
 
     } catch (error: any) {
         logService.error(`Error al iniciar la prueba del bot élite para ${targetUserId}`, error, admin.id, admin.username);
-        if (!res.headersSent) { 
-            res.status(500).json({ message: 'Error interno del servidor al iniciar la prueba.' });
-        }
+        if (!res.headersSent) res.status(500).json({ message: 'Error al iniciar la prueba.' });
     }
 };
 
-export const handleClearTestBotConversation = async (req: ExpressRequest<any, any, { targetUserId: string }>, res: ExpressResponse) => {
+// DEPTH CONTROL HANDLERS (NEW)
+export const handleUpdateDepthLevel = async (req: AuthenticatedRequest<any, any, { userId: string, depthLevel: number }>, res: express.Response) => {
+    const { userId, depthLevel } = req.body;
+    const admin = getAdminUser(req);
+    try {
+        const user = await db.getUser(userId);
+        if(!user) return res.status(404).json({ message: 'Usuario no encontrado' });
+
+        await db.updateUser(userId, { depthLevel });
+        logService.audit(`Depth Level actualizado a ${depthLevel} para ${user.username}`, admin.id, admin.username, { userId });
+        res.json({ message: 'Nivel de profundidad actualizado.' });
+    } catch(e: any) {
+        logService.error('Error updating depth level', e, admin.id);
+        res.status(500).json({ message: 'Error interno' });
+    }
+};
+
+export const handleApplyDepthBoost = async (req: AuthenticatedRequest<any, any, { userId: string, depthDelta: number, durationHours: number }>, res: express.Response) => {
+    const { userId, depthDelta, durationHours } = req.body;
+    const admin = getAdminUser(req);
+    try {
+         const user = await db.getUser(userId);
+         if(!user) return res.status(404).json({ message: 'Usuario no encontrado' });
+
+         const now = new Date();
+         const endsAt = new Date(now.getTime() + durationHours * 60 * 60 * 1000);
+
+         const boost = {
+             id: uuidv4(),
+             userId,
+             depthDelta,
+             reason: 'Admin Boost',
+             startsAt: now.toISOString(),
+             endsAt: endsAt.toISOString(),
+             createdBy: admin.id
+         };
+
+         await db.createDepthBoost(boost);
+         logService.audit(`Boost de Profundidad aplicado (+${depthDelta}) para ${user.username}`, admin.id, admin.username, { boost });
+         res.json({ message: 'Boost aplicado correctamente.' });
+
+    } catch(e: any) {
+        logService.error('Error applying boost', e, admin.id);
+        res.status(500).json({ message: 'Error interno' });
+    }
+};
+
+export const handleClearTestBotConversation = async (req: AuthenticatedRequest<any, any, { targetUserId: string }>, res: express.Response) => {
     const { targetUserId } = req.body;
     const admin = getAdminUser(req);
-
-    if (!targetUserId) {
-        return res.status(400).json({ message: 'Se requiere un targetUserId para limpiar la conversación de prueba.' });
-    }
+    
+    if (!targetUserId) return res.status(400).json({ message: 'Se requiere targetUserId.' });
 
     try {
         const user = await db.getUser(targetUserId);
         if (!user) {
-            return res.status(404).json({ message: 'Cliente objetivo no encontrado.' });
+            return res.status(404).json({ message: 'Usuario no encontrado.' });
         }
 
         const safeJid = sanitizeKey(ELITE_BOT_JID);
-        if (user.conversations && user.conversations[safeJid]) {
-            delete user.conversations[safeJid];
-            await db.updateUser(targetUserId, { conversations: user.conversations });
+        // FIX: Access conversations using the safe key properly in the conditional
+        if (user.conversations && (user.conversations[safeJid] || user.conversations[ELITE_BOT_JID])) {
+            const conversations = { ...user.conversations };
+            delete conversations[safeJid];
+            delete conversations[ELITE_BOT_JID];
+            await db.updateUser(targetUserId, { conversations });
             logService.audit(`Conversación de bot élite eliminada para cliente: ${user.username}`, admin.id, admin.username, { targetUserId });
-        } else if (user.conversations && user.conversations[ELITE_BOT_JID]) {
-             delete user.conversations[ELITE_BOT_JID];
-             await db.updateUser(targetUserId, { conversations: user.conversations });
         } 
 
         res.status(200).json({ message: 'Conversación de prueba de bot élite eliminada.' });
@@ -304,45 +355,14 @@ export const handleClearTestBotConversation = async (req: ExpressRequest<any, an
     }
 };
 
-// --- NEW: DEPTH ENGINE CONTROLLERS ---
-
-export const handleUpdateDepthLevel = async (req: ExpressRequest<any, any, { userId: string, depthLevel: number }>, res: ExpressResponse) => {
-    const { userId, depthLevel } = req.body;
-    const admin = getAdminUser(req);
-
-    if (!userId || !depthLevel) return res.status(400).json({ message: 'Datos incompletos' });
-
+// --- ADMIN NETWORK ROUTES ---
+export const handleGetNetworkOverview = async (req: AuthenticatedRequest, res: express.Response) => {
     try {
-        await db.updateUser(userId, { depthLevel });
-        logService.audit(`Nivel Base de Profundidad actualizado a ${depthLevel} para ${userId}`, admin.id, admin.username, { targetUserId: userId });
-        res.json({ message: 'Profundidad actualizada.' });
-    } catch (e) {
-        res.status(500).json({ message: 'Error actualizando profundidad.' });
-    }
-};
-
-export const handleApplyDepthBoost = async (req: ExpressRequest<any, any, { userId: string, depthDelta: number, durationHours: number }>, res: ExpressResponse) => {
-    const { userId, depthDelta, durationHours } = req.body;
-    const admin = getAdminUser(req);
-
-    try {
-        const startsAt = new Date(Date.now());
-        const endsAt = new Date(startsAt.getTime() + durationHours * 60 * 60 * 1000);
-
-        const boost = {
-            id: uuidv4(),
-            userId,
-            depthDelta,
-            reason: 'Admin Boost',
-            startsAt: startsAt.toISOString(),
-            endsAt: endsAt.toISOString(),
-            createdBy: admin.id
-        };
-
-        await db.createDepthBoost(boost);
-        logService.audit(`Boost de Profundidad (+${depthDelta}, ${durationHours}h) aplicado a ${userId}`, admin.id, admin.username, { boost });
-        res.json({ message: 'Boost aplicado correctamente.' });
-    } catch (e) {
-        res.status(500).json({ message: 'Error aplicando boost.' });
+        const stats = await db.getNetworkStats();
+        const activity = await db.getRecentNetworkActivity();
+        res.json({ stats, activity });
+    } catch (error: any) {
+        logService.error('Error fetching network overview', error, getAdminUser(req).id, getAdminUser(req).username);
+        res.status(500).json({ message: 'Error interno' });
     }
 };

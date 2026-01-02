@@ -44,6 +44,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const [showSidebar, setShowSidebar] = useState(true);
   const [isTogglingBot, setIsTogglingBot] = useState(false);
   const [isForcingAi, setIsForcingAi] = useState(false);
+  const [isSharingSignal, setIsSharingSignal] = useState(false); // NEW
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -103,6 +104,34 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       }
   };
 
+  // NEW: Handle sharing signal to the Network
+  const handleShareSignal = async () => {
+      if (!conversation || !settings || !settings.isNetworkEnabled) return;
+
+      if (!confirm(`¿Deseas compartir este lead "CALIENTE" a la Red Dominion para que otros negocios puedan contactarlo si coincide con sus intereses? (Se enviará una solicitud de permiso al prospecto)`)) {
+          return;
+      }
+      setIsSharingSignal(true);
+      try {
+          const token = localStorage.getItem('saas_token');
+          const res = await fetch(`${BACKEND_URL}/api/network/signals`, {
+              method: 'POST',
+              headers: getAuthHeaders(token!),
+              body: JSON.stringify({ conversationId: conversation.id })
+          });
+          if (res.ok) {
+              alert("Señal de Lead compartida a la Red Dominion. Se le solicitará permiso al prospecto para ser contactado.");
+          } else {
+              alert("Error al compartir el lead. Intenta nuevamente.");
+          }
+      } catch (e) {
+          console.error("Error sharing signal:", e);
+          alert("Error de conexión al compartir el lead.");
+      } finally {
+          setIsSharingSignal(false);
+      }
+  };
+
   if (!conversation) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center bg-brand-black text-gray-600">
@@ -125,6 +154,15 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
 
   // FOMO LOGIC: Blur if expired and Hot
   const showFomoOverlay = isPlanExpired && conversation.status === LeadStatus.HOT;
+  // NEW: Condition for showing "Share to Network" button
+  const canShareToNetwork = 
+      settings?.isNetworkEnabled && 
+      conversation.status === LeadStatus.HOT && 
+      conversation.isMuted && 
+      !isBlacklisted && 
+      !isPlanExpired &&
+      !conversation.isTestBotConversation;
+
 
   return (
     <div className="flex-1 flex flex-row h-full overflow-hidden">
@@ -176,6 +214,18 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                             title={isBlacklisted ? "Desbloquear número" : "Bloquear número (Lista Negra)"}
                         >
                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                        </button>
+                    )}
+
+                    {canShareToNetwork && ( // NEW: Share to Network button
+                        <button
+                            onClick={handleShareSignal}
+                            disabled={isSharingSignal}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all disabled:opacity-50"
+                            title="Compartir a la Red Dominion"
+                        >
+                            {isSharingSignal ? <div className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div> : <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0" /></svg>}
+                            <span className="hidden md:inline">Red Dominion</span>
                         </button>
                     )}
 

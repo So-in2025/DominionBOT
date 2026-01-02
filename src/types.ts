@@ -16,6 +16,7 @@ export enum View {
   SANDBOX = 'SIMULADOR',
   CAMPAIGNS = 'CAMPAÑAS',
   RADAR = 'RADAR',
+  NETWORK = 'RED DOMINION', // NEW: Network View
   ADMIN_GLOBAL = 'DASHBOARD_GLOBAL', 
   AUDIT_MODE = 'AUDIT_MODE'
 }
@@ -133,10 +134,10 @@ export interface RadarSignal {
     
     analysis: {
         score: number;
-        category: string; 
+        category?: string; 
         intentType: 'SEARCH' | 'COMPARISON' | 'QUESTION' | 'URGENT';
         reasoning: string;
-        suggestedAction: string;
+        suggestedAction?: string;
     };
 
     marketContext?: MarketContextSnapshot;
@@ -168,6 +169,52 @@ export interface GroupMarketMemory {
     avgResponseTime: number;
     successfulWindows: number;
     sentimentHistory: string[];
+}
+// -----------------------
+
+// --- NETWORK 1.0 TYPES ---
+export type PermissionStatus = 'PENDING' | 'GRANTED' | 'DENIED' | 'NOT_REQUESTED';
+
+export interface IntentSignal {
+    id: string;
+    userId: string; // ID of the user who contributed this signal
+    prospectJid: string; // Original JID of the prospect (for sending permission message)
+    prospectName: string; // Name of the prospect
+    prospectIdentifierHash: string; // SHA256 of JID for privacy in network matching
+    intentCategories: string[]; // e.g., ['Marketing Digital', 'Inversiones']
+    intentDescription: string; // Summary of the prospect's intent
+    signalScore: number; // 0-100, strength of intent
+    contributedAt: string;
+}
+
+export interface ConnectionOpportunity {
+    id: string;
+    contributedByUserId: string; // User ID who contributed the signal
+    receivedByUserId: string;   // User ID who received this opportunity
+    intentSignalId: string;     // Reference to the original IntentSignal
+    
+    // Prospect details (only revealed after permission)
+    prospectOriginalJid: string; // Actual JID, revealed if permission GRANTED
+    prospectName: string;        // Actual name, revealed if permission GRANTED
+
+    intentCategories: string[];
+    intentDescription: string;
+    opportunityScore: number; // Calculated match score
+
+    permissionStatus: PermissionStatus;
+    requestedAt?: string;
+    respondedAt?: string;
+    connectionMadeAt?: string; // When the receiving business actually connected
+    
+    createdAt: string;
+}
+
+export interface NetworkProfile {
+    networkEnabled: boolean;
+    categoriesOfInterest: string[]; // Categories of signals this user wants to receive
+    contributionScore: number; // How many signals this user has contributed
+    receptionScore: number; // How many opportunities this user has successfully converted
+    lastActivity?: string;
 }
 // -----------------------
 
@@ -292,6 +339,7 @@ export interface BotSettings {
   audioEnabled: boolean;
   ttsEnabled: boolean;
   ignoredJids: string[];
+  isNetworkEnabled: boolean; // NEW: Network participation toggle
 }
 
 export interface User {
@@ -317,6 +365,7 @@ export interface User {
   conversations: Record<string, Conversation>;
   
   radar?: RadarSettings;
+  networkProfile?: NetworkProfile; // NEW: User's network participation profile
 
   governance: {
     systemState: SystemState;
@@ -377,8 +426,8 @@ export interface GlobalDashboardMetrics {
 export interface GlobalMetrics {
     activeVendors: number;
     onlineNodes: number;
-    globalLeads: number;
-    hotLeadsTotal: number;
+    totalSignalsProcessed: number; // NEW
+    activeHotLeads: number;
     aiRequestsTotal: number;
     riskAccountsCount: number;
 }
@@ -393,15 +442,17 @@ export interface GlobalTelemetry {
 }
 
 export interface Testimonial {
-  _id: string;
+  _id?: string; // Made optional
   userId: string;
-  name: string;
-  location: string;
+  name?: string; // Made optional
+  location?: string; // Made optional
   text: string;
   createdAt: string;
+  updatedAt?: string; // Add this, as it's used in server.ts seeding
 }
 
 export interface SystemSettings {
     supportWhatsappNumber: string;
     logLevel: LogLevel;
+    dominionNetworkJid?: string; // FIX: Made optional to handle potential missing data from API
 }

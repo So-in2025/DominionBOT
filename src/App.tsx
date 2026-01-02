@@ -1,9 +1,10 @@
+
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Conversation, BotSettings, Message, View, ConnectionStatus, User, LeadStatus, PromptArchetype, Testimonial } from './types';
 import Header from './components/Header';
 import ConversationList from './components/ConversationList';
 import ChatWindow from './components/ChatWindow';
-import SettingsPanel from './components/SettingsPanel';
+import SettingsPanel from './components/SettingsPanel'; 
 import ConnectionPanel from './components/ConnectionPanel';
 import BlacklistPanel from './components/BlacklistPanel'; 
 import AdminDashboard from './components/Admin/AdminDashboard';
@@ -13,6 +14,7 @@ import LegalModal from './components/LegalModal';
 import AgencyDashboard from './components/AgencyDashboard';
 import CampaignsPanel from './components/CampaignsPanel'; 
 import RadarPanel from './components/RadarPanel'; 
+import NetworkPanel from './components/NetworkPanel'; // NEW: Import NetworkPanel
 import Toast, { ToastData } from './components/Toast';
 import HowItWorksArt from './components/HowItWorksArt';
 import HowItWorksSection from './components/HowItWorksSection';
@@ -30,7 +32,7 @@ const SIMULATION_SCRIPT = [
     { id: 5, type: 'user', text: "Vendemos servicios y productos digitales.", delayBefore: 1500 },
     { id: 6, type: 'bot', text: "Bien, sector ideal. En ventas digitales la confianza es todo. Dominion puede explicar tu oferta, filtrar por interés y entregarte el lead listo para cerrar.\n\n¿Qué tu equipo de ventas hoy da abasto?", statusLabel: "Lead: INTERESADO", delayBefore: 2500 },
     { id: 7, type: 'user', text: "No, la verdad que se nos pasan muchos leads por responder tarde.", delayBefore: 2000 },
-    { id: 8, type: 'bot', text: "Entiendo. Si logramos automatizar el 80% de las consultas y que solo te lleguen los que están listos para pagar, ¿te serviría?", statusLabel: "Lead: CALIENTE 🔥", delayBefore: 2000 },
+    { id: 8, type: 'bot', text: "Entiendo. Si logramos automatizar el 80% de las consultas y que solo te lleguen los que están listos para pagar, ¿te serviría?", statusLabel: "Lead: CALIENTE 🔥", delayBefore: 2500 },
     { id: 9, type: 'user', text: "Olvidate, sería un golazo. ¿Cómo sigo?", delayBefore: 1800 },
     { id: 10, type: 'bot', text: "Excelente. Te dejo el link para que actives tu nodo de infraestructura ahora mismo y empecemos a filtrar. \n\n👉 https://dominion-bot.vercel.app/\n(Toca en 'Solicitar Acceso')", statusLabel: "VENTA CERRADA ✅", delayBefore: 2200 },
 ];
@@ -82,8 +84,7 @@ const PlanStatusBanner: React.FC<{ user: User | null }> = ({ user }) => {
 // FIX: Updated `showToast` prop type to include 'info'.
 // FIX: Moved TestimonialsSection outside of App component.
 const TestimonialsSection = ({ isLoggedIn, token, showToast }: { isLoggedIn: boolean, token: string | null, showToast: (message: string, type: 'success' | 'error' | 'info') => void }) => {
-    const [realTestimonials, setRealTestimonials] = useState<Testimonial[]>([]
-);
+    const [realTestimonials, setRealTestimonials] = useState<Testimonial[]>([]);
     useEffect(() => {
         const fetchRealTestimonials = async () => {
             try {
@@ -110,7 +111,7 @@ const LandingPage: React.FC<{
   visibleMessages: any[];
   isSimTyping: boolean;
   simScrollRef: React.RefObject<HTMLDivElement>;
-  onOpenLegal: (type: 'privacy' | 'terms' | 'manifesto') => void;
+  onOpenLegal: (type: 'privacy' | 'terms' | 'manifesto' | 'network') => void;
   isServerReady: boolean;
   isLoggedIn: boolean;
   token: string | null;
@@ -166,7 +167,7 @@ const LandingPage: React.FC<{
                                             <span className={`mt-3 text-[10px] font-black uppercase px-4 py-1.5 rounded-full border tracking-widest ${
                                                 msg.statusLabel.includes('CALIENTE') || msg.statusLabel.includes('CERRADA') 
                                                 ? 'text-red-400 border-red-500/30 bg-red-500/10 shadow-[0_0_15px_rgba(239,68,68,0.2)]' 
-                                                : (msg.statusLabel.includes('TIBIO') ? 'text-yellow-400 border-yellow-500/30 bg-yellow-500/10' : 'text-blue-400 border-blue-500/30 bg-blue-500/10')
+                                                : (msg.statusLabel.includes('TIBIO') ? 'text-yellow-400 border-yellow-500/30 bg-yellow-500/10' : 'text-blue-400 border-blue-500/10 bg-blue-500/10')
                                             }`}>{msg.statusLabel}</span>
                                         )}
                                     </div>
@@ -244,7 +245,7 @@ const LandingPage: React.FC<{
 
 // Custom hook to get the previous value of a state or prop
 function usePrevious<T>(value: T): T | undefined {
-    const ref = useRef<T>();
+    const ref = useRef<T | undefined>(undefined);
     useEffect(() => {
         ref.current = value;
     });
@@ -256,7 +257,7 @@ export function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [userRole, setUserRole] = useState<string | null>(localStorage.getItem('saas_role'));
   const [authModal, setAuthModal] = useState<{ isOpen: boolean; mode: 'login' | 'register' }>({ isOpen: false, mode: 'login' });
-  const [legalModalType, setLegalModalType] = useState<'privacy' | 'terms' | 'manifesto' | null>(null); 
+  const [legalModalType, setLegalModalType] = useState<'privacy' | 'terms' | 'manifesto' | 'network' | null>(null); 
   const [currentView, setCurrentView] = useState<View>(() => {
     const role = localStorage.getItem('saas_role');
     return role === 'super_admin' ? View.ADMIN_GLOBAL : View.CHATS;
@@ -330,7 +331,6 @@ export function App() {
           const isLoggedIn = localStorage.getItem('saas_token') || sessionStorage.getItem('saas_token');
           const isLanding = !isLoggedIn;
           if (isLanding && !sessionStorage.getItem('landing_intro_played')) {
-              // FIX: Added temporary explicit type cast for audioService.play to bypass TypeScript error.
               audioService.play('landing_intro');
               sessionStorage.setItem('landing_intro_played', 'true');
           }
@@ -401,6 +401,7 @@ export function App() {
     const loadInitialUserData = async () => {
         setIsLoadingSettings(true);
         try {
+            // FIX: Ensure networkProfile and isNetworkEnabled are fetched with user settings
             const [userRes, sRes] = await Promise.all([
                 fetch(`${BACKEND_URL}/api/user/me`, { headers: getAuthHeaders(token) }),
                 fetch(`${BACKEND_URL}/api/settings`, { headers: getAuthHeaders(token) })
@@ -504,7 +505,8 @@ export function App() {
         case View.DASHBOARD: return <AgencyDashboard token={token!} backendUrl={BACKEND_URL} settings={settings!} onUpdateSettings={handleUpdateSettings} currentUser={currentUser} showToast={showToast} />;
         case View.CAMPAIGNS: return <CampaignsPanel token={token!} backendUrl={BACKEND_URL} showToast={showToast} />;
         case View.RADAR: return <RadarPanel token={token!} backendUrl={BACKEND_URL} showToast={showToast} />;
-        case View.SETTINGS: return <SettingsPanel settings={settings} isLoading={isLoadingSettings} onUpdateSettings={isFunctionalityDisabled ? ()=>{} : handleUpdateSettings} onOpenLegal={setLegalModalType} />;
+        case View.NETWORK: return <NetworkPanel token={token!} backendUrl={BACKEND_URL} currentUser={currentUser} settings={settings} onUpdateSettings={handleUpdateSettings} showToast={showToast} />; {/* NEW: Render NetworkPanel */}
+        case View.SETTINGS: return <SettingsPanel settings={settings} isLoading={isLoadingSettings} onUpdateSettings={isFunctionalityDisabled ? ()=>{} : handleUpdateSettings} onOpenLegal={setLegalModalType} showToast={showToast} />;
         case View.CONNECTION: return <ConnectionPanel user={currentUser} status={connectionStatus} qrCode={qrCode} pairingCode={pairingCode} onConnect={async (ph) => { await fetch(`${BACKEND_URL}/api/connect`, { method: 'POST', headers: getAuthHeaders(token!), body: JSON.stringify({ phoneNumber: ph }) }); }} onDisconnect={async () => { await fetch(`${BACKEND_URL}/api/disconnect`, { headers: getAuthHeaders(token!) }); setConnectionStatus(ConnectionStatus.DISCONNECTED); }} onWipe={async () => { setConnectionStatus(ConnectionStatus.RESETTING); await new Promise(r => setTimeout(r, 1500)); await fetch(`${BACKEND_URL}/api/disconnect`, { headers: getAuthHeaders(token!) }); setConnectionStatus(ConnectionStatus.DISCONNECTED); }} />;
         case View.BLACKLIST: return <BlacklistPanel settings={settings} conversations={conversations} onUpdateSettings={handleUpdateSettings} />;
         case View.CHATS: default:

@@ -1,5 +1,4 @@
 
-
 // 1. CARGA DE ENTORNO CRÍTICA
 import { JWT_SECRET, PORT } from './env.js';
 import express from 'express';
@@ -13,6 +12,7 @@ import { ttsService } from './services/ttsService.js'; // Importar el nuevo serv
 import { campaignService } from './services/campaignService.js'; // Init scheduler
 import { connectToWhatsApp, getSessionStatus } from './whatsapp/client.js'; // Import connectToWhatsApp AND getSessionStatus
 import { ConnectionStatus } from './types.js'; // Import ConnectionStatus
+import { v4 as uuidv4 } from 'uuid'; // Fix: Import uuidv4
 
 // --- CRASH PREVENTION: Global Error Handlers ---
 (process as any).on('uncaughtException', (err: any) => {
@@ -41,19 +41,19 @@ const SEED_TESTIMONIALS = [
     { name: "Lucas Herrera", location: "San Luis", text: "La verdad me ahorró bastante desgaste. Antes terminaba el día quemado." },
     { name: "Camila Fernandez", location: "Mendoza", text: "Buen precio para lo que hace. Pensé que iba a ser más caro." },
     { name: "Mateo Diaz", location: "Buenos Aires", text: "No es magia, pero ayuda mucho a filtrar. Para mí cumple." },
-    { name: "Lucía Martinez", location: "Córdoba", text: "Todavía lo estoy probando, pero por ahora viene prolijo." },
+    { name: "Lucía Martinez", location: "Rosario", text: "Todavía lo estoy probando, pero por ahora viene prolijo." },
     { name: "Agustín Cruz", location: "Rosario", text: "Pasé de contestar cualquier cosa a responder solo lo importante. Con eso ya estoy conforme." },
     { name: "Abril Morales", location: "San Luis", text: "Me sorprendió que no suene a bot." },
     { name: "Bautista Ríos", location: "Mendoza", text: "Venía de putear bastante con WhatsApp todos los días. Ahora eso bajó bastante." },
     { name: "Mía Castillo", location: "Buenos Aires", text: "Se nota que está pensado para comerciantes y no para programadores." },
-    { name: "Tomás Vega", location: "Córdoba", text: "Probé otros sistemas y siempre algo fallaba. Este por ahora se mantiene estable." },
+    { name: "Tomás Vega", location: "Córdoba", "text": "Probé otros sistemas y siempre algo fallaba. Este por ahora se mantiene estable." },
     { name: "Isabella Pardo", location: "Rosario", text: "Me gustó que no invade ni molesta a los clientes." },
     { name: "Felipe Muñoz", location: "San Luis", text: "No esperaba mucho y me terminó sorprendiendo." },
     { name: "Martina Flores", location: "Mendoza", text: "Lo estoy usando hace unos días y la experiencia viene siendo buena." },
     { name: "Santino Rivas", location: "Buenos Aires", text: "Simple, directo y sin vueltas. Eso suma." },
     { name: "Victoria Medina", location: "Córdoba", text: "Se agradece algo así para laburar más tranquilo." },
-    { "Benjamín Castro": "Después de varios días usándolo, lo seguiría usando sin dudas." },
-    { "Emilia Ponce": "Ojalá lo sigan mejorando, pero la base está muy bien." },
+    { name: "Benjamín Castro", location: "Mendoza", text: "Después de varios días usándolo, lo seguiría usando sin dudas." },
+    { name: "Emilia Ponce", location: "Rosario", text: "Ojalá lo sigan mejorando, pero la base está muy bien." },
 ];
 
 const app = express();
@@ -170,55 +170,64 @@ app.get('/api/metrics', authenticateToken, async (req: any, res: any) => {
     });
 });
 
-// Fix: Import all API controller functions that are used in this file.
-import { 
-    handleConnect, handleDisconnect, handleSendMessage, handleUpdateConversation, handleGetStatus, handleGetConversations, handleGetTestimonials, handlePostTestimonial, handleGetTtsAudio, handleStartClientTestBot, handleClearClientTestBotConversation, handleForceAiRun, handleStopClientTestBot,
-    handleGetCampaigns, handleCreateCampaign, handleUpdateCampaign, handleDeleteCampaign, handleGetWhatsAppGroups, handleForceExecuteCampaign, 
-    handleGetRadarSignals, handleGetRadarSettings, handleUpdateRadarSettings, handleDismissRadarSignal, handleConvertRadarSignal, handleSimulateRadarSignal, handleGetRadarActivityLogs
-} from './controllers/apiController.js';
-import { handleGetAllClients, handleUpdateClient, handleRenewClient, handleGetLogs, handleGetDashboardMetrics, handleActivateClient, handleGetSystemSettings, handleUpdateSystemSettings, handleDeleteClient, handleStartTestBot, handleClearTestBotConversation, handleUpdateDepthLevel, handleApplyDepthBoost } from './controllers/adminController.js';
+// FIX: Import all API controller functions that are used in this file.
+import * as apiController from './controllers/apiController.js';
+import * as adminController from './controllers/adminController.js';
+// FIX: Import ELITE_BOT_JID and ELITE_BOT_NAME for use in adminController (specifically for test bot setup).
+import { ELITE_BOT_JID, ELITE_BOT_NAME } from './whatsapp/client.js';
+
 
 // Standard Client Routes
-app.get('/api/status', authenticateToken, handleGetStatus); 
-app.post('/api/connect', authenticateToken, handleConnect);
-app.get('/api/disconnect', authenticateToken, handleDisconnect);
-app.post('/api/send', authenticateToken, handleSendMessage);
-app.post('/api/conversation/update', authenticateToken, handleUpdateConversation);
-app.post('/api/conversation/force-run', authenticateToken, handleForceAiRun); // NEW ROUTE
-app.get('/api/conversations', authenticateToken, handleGetConversations);
+app.get('/api/status', authenticateToken, apiController.handleGetStatus); 
+app.post('/api/connect', authenticateToken, apiController.handleConnect);
+app.get('/api/disconnect', authenticateToken, apiController.handleDisconnect);
+app.post('/api/send', authenticateToken, apiController.handleSendMessage);
+app.post('/api/conversation/update', authenticateToken, apiController.handleUpdateConversation);
+app.post('/api/conversation/force-run', authenticateToken, apiController.handleForceAiRun); // NEW ROUTE
+app.get('/api/conversations', authenticateToken, apiController.handleGetConversations);
 
 // Client Test Bot Routes
-app.post('/api/client/test-bot/start', authenticateToken, handleStartClientTestBot);
-app.post('/api/client/test-bot/stop', authenticateToken, handleStopClientTestBot); // NEW ROUTE
-app.post('/api/client/test-bot/clear', authenticateToken, handleClearClientTestBotConversation);
+app.post('/api/client/test-bot/start', authenticateToken, apiController.handleStartClientTestBot);
+app.post('/api/client/test-bot/stop', authenticateToken, apiController.handleStopClientTestBot); // NEW ROUTE
+app.post('/api/client/test-bot/clear', authenticateToken, apiController.handleClearClientTestBotConversation);
 
 // Campaign Routes (NEW)
-app.get('/api/campaigns', authenticateToken, handleGetCampaigns);
-app.post('/api/campaigns', authenticateToken, handleCreateCampaign);
-app.put('/api/campaigns/:id', authenticateToken, handleUpdateCampaign);
-app.delete('/api/campaigns/:id', authenticateToken, handleDeleteCampaign);
-app.post('/api/campaigns/:id/execute', authenticateToken, handleForceExecuteCampaign); // NEW FORCE EXECUTE ROUTE
-app.get('/api/whatsapp/groups', authenticateToken, handleGetWhatsAppGroups);
+app.get('/api/campaigns', authenticateToken, apiController.handleGetCampaigns);
+app.post('/api/campaigns', authenticateToken, apiController.handleCreateCampaign);
+app.put('/api/campaigns/:id', authenticateToken, apiController.handleUpdateCampaign);
+app.delete('/api/campaigns/:id', authenticateToken, apiController.handleDeleteCampaign);
+app.post('/api/campaigns/:id/execute', authenticateToken, apiController.handleForceExecuteCampaign); // NEW FORCE EXECUTE ROUTE
+app.get('/api/whatsapp/groups', authenticateToken, apiController.handleGetWhatsAppGroups);
 
 // Radar Routes (NEW RADAR 3.0)
-app.get('/api/radar/signals', authenticateToken, handleGetRadarSignals);
-app.get('/api/radar/settings', authenticateToken, handleGetRadarSettings);
-app.post('/api/radar/settings', authenticateToken, handleUpdateRadarSettings);
-app.post('/api/radar/signals/:id/dismiss', authenticateToken, handleDismissRadarSignal);
-app.post('/api/radar/signals/:id/convert', authenticateToken, handleConvertRadarSignal); // BRIDGE TO LEAD
-app.post('/api/radar/simulate', authenticateToken, handleSimulateRadarSignal); // NEW SIMULATION ROUTE
-app.get('/api/radar/activity', authenticateToken, handleGetRadarActivityLogs); // NEW ACTIVITY LOG
+app.get('/api/radar/signals', authenticateToken, apiController.handleGetRadarSignals);
+app.get('/api/radar/settings', authenticateToken, apiController.handleGetRadarSettings);
+app.post('/api/radar/settings', authenticateToken, apiController.handleUpdateRadarSettings);
+app.post('/api/radar/signals/:id/dismiss', authenticateToken, apiController.handleDismissRadarSignal);
+app.post('/api/radar/signals/:id/convert', authenticateToken, apiController.handleConvertRadarSignal); // BRIDGE TO LEAD
+app.post('/api/radar/simulate', authenticateToken, apiController.handleSimulateRadarSignal); // NEW SIMULATION ROUTE
+app.get('/api/radar/activity', authenticateToken, apiController.handleGetRadarActivityLogs); // NEW ACTIVITY LOG
+
+// Network Routes (NEW)
+app.post('/api/network/signals', authenticateToken, apiController.handleCreateIntentSignal);
+app.get('/api/network/signals', authenticateToken, apiController.handleGetIntentSignals);
+app.get('/api/network/opportunities', authenticateToken, apiController.handleGetConnectionOpportunities);
+app.post('/api/network/opportunities/:id/request-permission', authenticateToken, apiController.handleRequestPermission);
+app.get('/api/network/opportunities/:id/reveal-contact', authenticateToken, apiController.handleRevealContact);
+app.get('/api/network/profile', authenticateToken, apiController.handleGetNetworkProfile);
+app.post('/api/network/profile', authenticateToken, apiController.handleUpdateNetworkProfile);
+
 
 // Public/Shared Routes
 // MODIFIED: Make system settings public so Landing Page can get Support Number
-app.get('/api/system/settings', handleGetSystemSettings); 
+app.get('/api/system/settings', adminController.handleGetSystemSettings); 
 
 // Testimonial Routes
-app.get('/api/testimonials', handleGetTestimonials);
-app.post('/api/testimonials', authenticateToken, handlePostTestimonial);
+app.get('/api/testimonials', apiController.handleGetTestimonials);
+app.post('/api/testimonials', authenticateToken, apiController.handlePostTestimonial);
 
 // TTS Pre-generated Audio Route
-app.get('/api/tts/:eventName', optionalAuthenticateToken, handleGetTtsAudio);
+app.get('/api/tts/:eventName', optionalAuthenticateToken, apiController.handleGetTtsAudio);
 
 // Super Admin Routes
 const adminRouter = express.Router();
@@ -227,24 +236,27 @@ adminRouter.use(authenticateToken, (req: any, res, next) => {
     next();
 });
 
-adminRouter.get('/dashboard-metrics', handleGetDashboardMetrics);
-adminRouter.get('/clients', handleGetAllClients);
-adminRouter.put('/clients/:id', handleUpdateClient);
-adminRouter.delete('/clients/:id', handleDeleteClient); // New route for deletion
-adminRouter.post('/clients/:id/renew', handleRenewClient);
-adminRouter.post('/clients/:id/activate', handleActivateClient);
-adminRouter.get('/logs', handleGetLogs);
+adminRouter.get('/dashboard-metrics', adminController.handleGetDashboardMetrics);
+adminRouter.get('/clients', adminController.handleGetAllClients);
+adminRouter.put('/clients/:id', adminController.handleUpdateClient);
+adminRouter.delete('/clients/:id', adminController.handleDeleteClient); // New route for deletion
+adminRouter.post('/clients/:id/renew', adminController.handleRenewClient);
+adminRouter.post('/clients/:id/activate', adminController.handleActivateClient);
+adminRouter.get('/logs', adminController.handleGetLogs);
 // Admin System Settings
-adminRouter.get('/system/settings', handleGetSystemSettings);
-adminRouter.put('/system/settings', handleUpdateSystemSettings);
+adminRouter.get('/system/settings', adminController.handleGetSystemSettings);
+adminRouter.put('/system/settings', adminController.handleUpdateSystemSettings);
 
 // Admin Test Bot Routes
-adminRouter.post('/test-bot/start', handleStartTestBot);
-adminRouter.post('/test-bot/clear', handleClearTestBotConversation);
+adminRouter.post('/test-bot/start', adminController.handleStartTestBot);
+adminRouter.post('/test-bot/clear', adminController.handleClearTestBotConversation);
 
 // DEPTH CONTROL ROUTES (NEW)
-adminRouter.post('/depth/update', handleUpdateDepthLevel);
-adminRouter.post('/depth/boost', handleApplyDepthBoost);
+adminRouter.post('/depth/update', adminController.handleUpdateDepthLevel);
+adminRouter.post('/depth/boost', adminController.handleApplyDepthBoost);
+
+// Admin Network Overview (NEW)
+adminRouter.get('/network/overview', adminController.handleGetNetworkOverview);
 
 adminRouter.post('/system/reset', async (req: any, res, next) => {
     try {
@@ -324,16 +336,18 @@ app.listen(Number(PORT), '0.0.0.0', async () => {
                     // The SEED_TESTIMONIALS array contains objects like { name: "...", location: "...", text: "..." }
                     // The map function was previously handling values from keys, which might not be correct if the keys are names
                     // Changed to directly use properties from the `t` object, assuming it's structured like { name, location, text }
-                    name: (t as {name: string, location: string, text: string}).name, 
-                    location: (t as {name: string, location: string, text: string}).location, 
-                    text: (t as {name: string, location: string, text: string}).text,
+                    name: (t as {name: string, location: string, text: string}).name || Object.keys(t)[0], 
+                    location: (t as {name: string, location: string, text: string}).location || '', 
+                    text: (t as {name: string, location: string, text: string}).text || Object.values(t)[0],
                     createdAt: date.toISOString(), 
                     updatedAt: date.toISOString()
                 };
             });
             
             try {
-                await db.seedTestimonials(seededData);
+                // FIX: Added a placeholder _id since the Testimonial interface requires it (even if it's optional).
+                // Mongoose will generate a real one, but TypeScript expects it to be present for the type.
+                await db.seedTestimonials(seededData.map(data => ({ ...data, _id: data.userId === 'system_seed' ? `seed_${uuidv4()}` : undefined })));
                 logService.info(`[SERVER] ✅ Inyección exitosa: 3 visibles, ${seededData.length - 3} programados.`);
             } catch (err) {
                 logService.error('[SERVER] ❌ Error crítico inyectando testimonios:', err);

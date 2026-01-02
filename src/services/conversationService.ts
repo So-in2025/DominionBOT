@@ -3,9 +3,7 @@
 import { Conversation, LeadStatus, Message } from '../types.js';
 import { db, sanitizeKey } from '../database.js';
 import { logService } from './logService.js';
-
-// --- Test Bot Specifics ---
-const ELITE_BOT_JID = '5491112345678@s.whatsapp.net';
+import { ELITE_BOT_JID } from '../whatsapp/client.js'; // FIX: Import ELITE_BOT_JID
 
 class ConversationService {
   

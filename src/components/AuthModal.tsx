@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { IntendedUse } from '../types';
 import { BACKEND_URL, API_HEADERS } from '../config';
@@ -149,7 +150,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClo
     const isSubmitDisabled = loading || (mode === 'register' && !agreedLegal); // Use single legal agreement
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-start justify-center p-4 pt-32"> {/* Adjusted to items-start and pt-32 (128px) */}
+        // FIX: Increased z-index to 5000 to ensure it's above everything
+        <div className="fixed inset-0 z-[5000] flex items-start justify-center p-4 pt-32"> 
             <div className={`absolute inset-0 bg-brand-black/90 backdrop-blur-md transition-opacity duration-300 ${animateIn ? 'opacity-100' : 'opacity-0'}`} onClick={onClose}></div>
             <div className={`relative w-full max-w-md max-h-[calc(100vh-180px)] bg-brand-surface border border-white/10 rounded-2xl shadow-2xl transition-all duration-300 transform custom-scrollbar ${animateIn ? 'scale-100 opacity-100 translate-y-0' : 'scale-95 opacity-0 translate-y-8'}`}>
                 <div className="h-1.5 w-full bg-gradient-to-r from-brand-gold-dark via-brand-gold to-brand-gold-dark flex-shrink-0"></div>

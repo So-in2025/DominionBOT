@@ -1,5 +1,4 @@
 
-
 import makeWASocket, {
   DisconnectReason,
   makeCacheableSignalKeyStore,
@@ -28,7 +27,12 @@ const codeCache = new Map<string, string>();
 const connectionLocks = new Map<string, boolean>(); 
 
 const logger = pino({ level: 'silent' }); 
-const ELITE_BOT_JID = '5491112345678@s.whatsapp.net';
+
+// FIX: Define and export these constants for consistent usage
+export const ELITE_BOT_JID = '5491112345678@s.whatsapp.net';
+export const ELITE_BOT_NAME = 'Simulador Neural';
+export const DOMINION_NETWORK_JID = '5491110000000@s.whatsapp.net';
+
 
 // AI Decoupling (Virtual Queue)
 const aiProcessingQueue = new Set<string>();
@@ -299,9 +303,26 @@ export async function disconnectWhatsApp(userId: string) {
     await db.updateUserSettings(userId, { isActive: false });
 }
 
-export async function sendMessage(userId: string, jid: string, text: string, imageUrl?: string) {
-    const sock = sessions.get(userId);
-    if (!sock) throw new Error(`WhatsApp no conectado.`);
+export async function sendMessage(senderId: string, jid: string, text: string, imageUrl?: string) {
+    let sock: WASocket | undefined;
+    if (senderId === DOMINION_NETWORK_JID) {
+        // Special case for network messages, use a system-wide connection or a dedicated one
+        const systemSettings = await db.getSystemSettings();
+        if (!systemSettings.dominionNetworkJid) {
+            throw new Error("Dominion Network JID no configurado en ajustes del sistema.");
+        }
+        sock = sessions.get('system_network'); // Assuming a dedicated system network socket
+        if (!sock) {
+             // If system_network sock doesn't exist, try to connect it for this special use case
+             // This needs to be a robust, always-on connection.
+             // For now, if no system_network, just throw. In future, implement persistent system-level client.
+             throw new Error("System network client not active for sending permission messages.");
+        }
+    } else {
+        sock = sessions.get(senderId);
+    }
+
+    if (!sock) throw new Error(`WhatsApp no conectado para el usuario ${senderId}.`);
     
     if (imageUrl) {
         try {
