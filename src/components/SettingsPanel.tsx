@@ -372,7 +372,7 @@ ${wizardState.rules}
 
   return (
     <div className="flex-1 bg-brand-black p-4 md:p-10 overflow-y-auto custom-scrollbar font-sans relative z-10 animate-fade-in">
-      <div className="max-w-6xl mx-auto space-y-10 pb-32">
+      <div className="max-w-7xl mx-auto space-y-8 pb-32">
         
         <header className="flex justify-between items-end border-b border-white/5 pb-8">
             <div>
@@ -390,126 +390,126 @@ ${wizardState.rules}
             </div>
         )}
 
-        <section className="bg-brand-surface border border-white/5 rounded-[32px] p-8 shadow-2xl space-y-8 relative overflow-hidden group">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-brand-gold/5 rounded-full blur-3xl pointer-events-none group-hover:bg-brand-gold/10 transition-colors duration-1000"></div>
+        {/* --- 2 COLUMN LAYOUT (GENERAL LEFT, BRAIN RIGHT) --- */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            
+            {/* COLUMN 1: GENERAL SETTINGS */}
+            <section className="bg-brand-surface border border-white/5 rounded-[32px] p-8 shadow-2xl space-y-8 relative overflow-hidden group h-full">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-brand-gold/5 rounded-full blur-3xl pointer-events-none group-hover:bg-brand-gold/10 transition-colors duration-1000"></div>
 
-            <div className="flex items-center gap-3 mb-6">
-                <span className="w-2 h-2 rounded-full bg-brand-gold animate-pulse"></span>
-                <h3 className="text-sm font-black text-white uppercase tracking-widest">Ajustes Generales</h3>
-            </div>
+                <div className="flex items-center gap-3 mb-2">
+                    <span className="w-2 h-2 rounded-full bg-brand-gold animate-pulse"></span>
+                    <h3 className="text-sm font-black text-white uppercase tracking-widest">Identidad del Negocio</h3>
+                </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div>
-                    <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Nombre del Producto/Negocio</label>
-                    <input type="text" value={current.productName} onChange={e => handleUpdate('productName', e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm focus:border-brand-gold outline-none" />
-                </div>
-                <div>
-                    <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Link de Cierre (CTA)</label>
-                    <input type="url" value={current.ctaLink} onChange={e => handleUpdate('ctaLink', e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm focus:border-brand-gold outline-none" placeholder="https://tuweb.com/oferta" />
-                </div>
-                 <div className="md:col-span-2">
-                    <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">API Key de Google Gemini</label>
-                    <div className="flex gap-4">
-                        <input type="password" value={current.geminiApiKey || ''} onChange={e => handleUpdate('geminiApiKey', e.target.value)} className="flex-1 bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm focus:border-brand-gold outline-none" placeholder="AIzaSy..." />
-                        <button onClick={() => onOpenLegal('privacy')} className="flex-shrink-0 px-4 py-2 bg-white/5 border border-white/10 text-gray-400 rounded-xl text-[9px] font-bold uppercase hover:bg-white/10">¿Qué es esto?</button>
+                <div className="space-y-6">
+                    <div>
+                        <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Nombre del Producto/Negocio</label>
+                        <input type="text" value={current.productName} onChange={e => handleUpdate('productName', e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm focus:border-brand-gold outline-none" />
                     </div>
-                    <p className="text-[9px] text-gray-500 mt-2 italic">Necesitas tu propia API Key de Google AI Studio. Asegúrate de que tenga facturación habilitada.</p>
+                    <div>
+                        <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Link de Cierre (CTA)</label>
+                        <input type="url" value={current.ctaLink} onChange={e => handleUpdate('ctaLink', e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm focus:border-brand-gold outline-none" placeholder="https://tuweb.com/oferta" />
+                    </div>
+                    <div>
+                        <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Texto de Precios</label>
+                        <input type="text" value={current.priceText} onChange={e => handleUpdate('priceText', e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm focus:border-brand-gold outline-none" placeholder="Ej: Desde 97 USD / mes" />
+                    </div>
+                    <div>
+                        <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">API Key de Google Gemini</label>
+                        <div className="flex gap-2">
+                            <input type="password" value={current.geminiApiKey || ''} onChange={e => handleUpdate('geminiApiKey', e.target.value)} className="flex-1 bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm focus:border-brand-gold outline-none" placeholder="AIzaSy..." />
+                            <button onClick={() => onOpenLegal('privacy')} className="px-4 bg-white/5 border border-white/10 text-gray-400 rounded-xl text-[9px] font-bold uppercase hover:bg-white/10">?</button>
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Ignorar Números (Blacklist)</label>
+                        <textarea 
+                            value={current.ignoredJids.join('\n')} 
+                            onChange={e => handleUpdate('ignoredJids', e.target.value.split('\n').filter(Boolean).map(s => s.trim()))} 
+                            className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm h-24 focus:border-brand-gold outline-none resize-none font-mono" 
+                            placeholder="54911xxxxxxx (uno por línea)" 
+                        />
+                    </div>
                 </div>
-            </div>
-        </section>
+            </section>
 
-        <section className="bg-brand-surface border border-white/5 rounded-[32px] p-8 shadow-2xl space-y-8 relative overflow-hidden group">
-            <div className="absolute top-0 left-0 w-32 h-32 bg-blue-500/5 rounded-full blur-3xl pointer-events-none group-hover:bg-blue-500/10 transition-colors duration-1000"></div>
-            
-            <div className="flex items-center gap-3 mb-6">
-                <h3 className="text-sm font-black text-white uppercase tracking-widest">Brief de Inferencia (AI)</h3>
-                <button onClick={enhanceWithAI} disabled={isEnhancing} className="px-3 py-1.5 bg-brand-gold/10 text-brand-gold border border-brand-gold/20 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-brand-gold hover:text-black transition-all flex items-center gap-2">
-                    {isEnhancing ? <span className="animate-pulse">Optimizando...</span> : <>✨ Mejorar con IA</>}
-                </button>
-                <select onChange={e => applyTemplate(e.target.value)} className="bg-black/50 border border-white/10 text-white text-[9px] font-bold uppercase tracking-widest rounded-lg px-2 py-1 outline-none">
-                    {Object.entries(TEMPLATES).map(([key, value]) => (
-                        <option key={key} value={key}>{value.name}</option>
-                    ))}
-                </select>
-            </div>
-            
-            <div className="space-y-6">
-                <div>
-                    <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Misión Principal del Bot</label>
-                    <textarea value={wizardState.mission} onChange={e => setWizardState(prev => ({ ...prev, mission: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm h-32 focus:border-brand-gold outline-none resize-none" placeholder="Cuál es su rol principal, qué debe lograr y qué NO debe hacer." />
-                </div>
-                <div>
-                    <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Cliente Ideal</label>
-                    <textarea value={wizardState.idealCustomer} onChange={e => setWizardState(prev => ({ ...prev, idealCustomer: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm h-32 focus:border-brand-gold outline-none resize-none" placeholder="Describe a tu cliente perfecto. ¿Qué problema tiene que tu negocio resuelve?" />
-                </div>
-                <div>
-                    <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Descripción Detallada del Servicio/Producto</label>
-                    <textarea value={wizardState.detailedDescription} onChange={e => setWizardState(prev => ({ ...prev, detailedDescription: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm h-40 focus:border-brand-gold outline-none resize-none" placeholder="Qué ofreces, sus beneficios únicos, y la transformación que logrará el cliente." />
+            {/* COLUMN 2: BRAIN / WIZARD */}
+            <section className="bg-brand-surface border border-white/5 rounded-[32px] p-8 shadow-2xl space-y-8 relative overflow-hidden group h-full">
+                <div className="absolute top-0 left-0 w-32 h-32 bg-blue-500/5 rounded-full blur-3xl pointer-events-none group-hover:bg-blue-500/10 transition-colors duration-1000"></div>
+                
+                <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-sm font-black text-white uppercase tracking-widest">Brief de Inferencia (AI)</h3>
+                    <div className="flex gap-2">
+                        <button onClick={enhanceWithAI} disabled={isEnhancing} className="px-3 py-1 bg-brand-gold/10 text-brand-gold border border-brand-gold/20 rounded-lg text-[8px] font-black uppercase tracking-widest hover:bg-brand-gold hover:text-black transition-all">
+                            {isEnhancing ? '...' : '✨ Mejorar con IA'}
+                        </button>
+                        <select onChange={e => applyTemplate(e.target.value)} className="bg-black/50 border border-white/10 text-white text-[8px] font-bold uppercase tracking-widest rounded-lg px-2 py-1 outline-none">
+                            {Object.entries(TEMPLATES).map(([key, value]) => (
+                                <option key={key} value={key}>{value.name}</option>
+                            ))}
+                        </select>
+                    </div>
                 </div>
                 
-                {/* OBJECTIONS */}
-                <div>
-                    <div className="flex justify-between items-center mb-4">
-                        <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest">Manejo de Objeciones Frecuentes</label>
-                        <button onClick={addObjection} className="px-3 py-1 bg-white/5 text-gray-400 rounded-lg text-[9px] font-bold uppercase hover:bg-white/10">+ Añadir Objeción</button>
+                <div className="space-y-6">
+                    <div>
+                        <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Misión Principal del Bot</label>
+                        <textarea value={wizardState.mission} onChange={e => setWizardState(prev => ({ ...prev, mission: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm h-24 focus:border-brand-gold outline-none resize-none" placeholder="Rol principal..." />
                     </div>
-                    <div className="space-y-4">
-                        {wizardState.objections.map(obj => (
-                            <div key={obj.id} className="bg-black/30 p-4 rounded-xl border border-white/5 space-y-3">
-                                <div className="flex justify-between items-center">
-                                    <label className="text-[9px] font-bold text-gray-400">Objeción</label>
-                                    <button onClick={() => removeObjection(obj.id)} className="text-gray-500 hover:text-red-400 text-xs">✕</button>
+                    <div>
+                        <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Cliente Ideal</label>
+                        <textarea value={wizardState.idealCustomer} onChange={e => setWizardState(prev => ({ ...prev, idealCustomer: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm h-24 focus:border-brand-gold outline-none resize-none" placeholder="Perfil del cliente..." />
+                    </div>
+                    <div>
+                        <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Descripción del Servicio</label>
+                        <textarea value={wizardState.detailedDescription} onChange={e => setWizardState(prev => ({ ...prev, detailedDescription: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm h-32 focus:border-brand-gold outline-none resize-none" placeholder="Detalles de la oferta..." />
+                    </div>
+                    
+                    {/* OBJECTIONS */}
+                    <div>
+                        <div className="flex justify-between items-center mb-2">
+                            <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest">Manejo de Objeciones</label>
+                            <button onClick={addObjection} className="px-2 py-1 bg-white/5 text-gray-400 rounded-lg text-[8px] font-bold uppercase hover:bg-white/10">+ Añadir</button>
+                        </div>
+                        <div className="space-y-3 max-h-60 overflow-y-auto custom-scrollbar pr-2">
+                            {wizardState.objections.map(obj => (
+                                <div key={obj.id} className="bg-black/30 p-3 rounded-xl border border-white/5 space-y-2">
+                                    <div className="flex justify-between items-center">
+                                        <input type="text" value={obj.objection} onChange={e => updateObjection(obj.id, 'objection', e.target.value)} className="w-full bg-transparent border-b border-white/10 p-1 text-white text-xs focus:border-brand-gold outline-none" placeholder="Objeción..." />
+                                        <button onClick={() => removeObjection(obj.id)} className="text-gray-500 hover:text-red-400 text-xs ml-2">✕</button>
+                                    </div>
+                                    <textarea value={obj.response} onChange={e => updateObjection(obj.id, 'response', e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-lg p-2 text-white text-xs h-16 focus:border-brand-gold outline-none resize-none" placeholder="Respuesta..." />
                                 </div>
-                                <input type="text" value={obj.objection} onChange={e => updateObjection(obj.id, 'objection', e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-lg p-2 text-white text-xs focus:border-brand-gold outline-none" placeholder="Ej: Es muy caro" />
-                                <label className="text-[9px] font-bold text-gray-400">Respuesta del Bot</label>
-                                <textarea value={obj.response} onChange={e => updateObjection(obj.id, 'response', e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-lg p-2 text-white text-xs h-20 focus:border-brand-gold outline-none resize-none" placeholder="Cómo debe responder la IA a esta objeción." />
-                            </div>
-                        ))}
+                            ))}
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Reglas de Oro</label>
+                        <textarea value={wizardState.rules} onChange={e => setWizardState(prev => ({ ...prev, rules: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm h-20 focus:border-brand-gold outline-none resize-none" placeholder="Reglas estrictas..." />
                     </div>
                 </div>
+            </section>
+        </div>
 
-                <div>
-                    <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Reglas de Oro y Límites</label>
-                    <textarea value={wizardState.rules} onChange={e => setWizardState(prev => ({ ...prev, rules: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm h-32 focus:border-brand-gold outline-none resize-none" placeholder="Ej: NO usar emojis. SOLO vender. NUNCA mentir." />
-                </div>
-            </div>
-        </section>
-
+        {/* NEURAL SLIDERS (Full Width) */}
         <section className="bg-brand-surface border border-white/5 rounded-[32px] p-8 shadow-2xl space-y-8 relative overflow-hidden group">
             <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/5 rounded-full blur-3xl pointer-events-none group-hover:bg-purple-500/10 transition-colors duration-1000"></div>
             
             <div className="flex items-center gap-3 mb-6">
-                <h3 className="text-sm font-black text-white uppercase tracking-widest">Ajustes Neurales (IA)</h3>
+                <h3 className="text-sm font-black text-white uppercase tracking-widest">Ajuste Fino de Personalidad</h3>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
                 <div>
-                    <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Arquetipo de Conversación</label>
+                    <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Arquetipo</label>
                     <select value={current.archetype} onChange={e => handleArchetypeChange(e.target.value as PromptArchetype)} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm focus:border-brand-gold outline-none">
                         {Object.values(PromptArchetype).map(archetype => (
                             <option key={archetype} value={archetype}>{ARCHETYPE_NAMES[archetype]}</option>
                         ))}
                     </select>
                 </div>
-                <div>
-                    <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Texto de Precios</label>
-                    <input type="text" value={current.priceText} onChange={e => handleUpdate('priceText', e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm focus:border-brand-gold outline-none" placeholder="Ej: Desde 97 USD / mes" />
-                </div>
-                <div className="md:col-span-2">
-                    <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Ignorar Números (JID's) - Blacklist</label>
-                    <p className="text-[9px] text-gray-500 mb-2">
-                        Añade números de WhatsApp que la IA debe ignorar. (Ej: '5492611234567').
-                    </p>
-                    <textarea 
-                        value={current.ignoredJids.join('\n')} 
-                        onChange={e => handleUpdate('ignoredJids', e.target.value.split('\n').filter(Boolean).map(s => s.trim()))} 
-                        className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm h-32 focus:border-brand-gold outline-none resize-none font-mono" 
-                        placeholder="54911xxxxxxx (uno por línea)" 
-                    />
-                </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 pt-8 border-t border-white/5 mt-8">
                 <div>
                     <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Tono ({current.toneValue})</label>
                     <input type="range" min="1" max="5" value={current.toneValue} onChange={e => handleUpdate('toneValue', parseInt(e.target.value))} className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-brand-gold" />
@@ -528,7 +528,7 @@ ${wizardState.rules}
             </div>
         </section>
 
-        {/* Network Participation Section (Appended as a card) */}
+        {/* NETWORK SETTINGS (Appended at bottom) */}
         <section className="bg-brand-surface border border-white/5 rounded-[32px] p-8 shadow-2xl space-y-8 relative overflow-hidden group">
             <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full blur-3xl pointer-events-none group-hover:bg-blue-500/10 transition-colors duration-1000"></div>
 

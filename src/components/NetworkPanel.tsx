@@ -21,14 +21,14 @@ const NETWORK_CATEGORIES = [
 
 const NetworkPanel: React.FC<NetworkPanelProps> = ({ token, backendUrl, currentUser, settings, onUpdateSettings, showToast }) => {
     const [activeTab, setActiveTab] = useState<'CONTRIBUTIONS' | 'OPPORTUNITIES' | 'SETTINGS'>('OPPORTUNITIES');
-    const [isInitialLoading, setIsInitialLoading] = useState(true); // Changed from simple loading
+    const [isInitialLoading, setIsInitialLoading] = useState(true); 
     const [intentSignals, setIntentSignals] = useState<IntentSignal[]>([]);
     const [opportunities, setOpportunities] = useState<ConnectionOpportunity[]>([]
 );
     const [networkProfile, setNetworkProfile] = useState<NetworkProfile | null>(null);
 
-    const fetchNetworkData = useCallback(async (isPolling = false) => {
-        if (!isPolling) setIsInitialLoading(true);
+    const fetchNetworkData = useCallback(async (silent = false) => {
+        if (!silent) setIsInitialLoading(true);
         try {
             const [signalsRes, opportunitiesRes, profileRes] = await Promise.all([
                 fetch(`${backendUrl}/api/network/signals`, { headers: getAuthHeaders(token) }),
@@ -42,14 +42,14 @@ const NetworkPanel: React.FC<NetworkPanelProps> = ({ token, backendUrl, currentU
 
         } catch (error) {
             console.error("Error fetching network data:", error);
-            if(!isPolling) showToast("Error al cargar datos de la red.", "error");
+            if(!silent) showToast("Error al cargar datos de la red.", "error");
         } finally {
-            if (!isPolling) setIsInitialLoading(false);
+            if (!silent) setIsInitialLoading(false);
         }
     }, [token, backendUrl, showToast]);
 
     useEffect(() => {
-        fetchNetworkData(false);
+        fetchNetworkData(false); // Initial load with spinner
         const interval = setInterval(() => fetchNetworkData(true), 15000); // Silent poll every 15s
         return () => clearInterval(interval);
     }, [fetchNetworkData]);
