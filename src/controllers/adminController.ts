@@ -1,15 +1,13 @@
-import { Request, Response } from 'express';
-import { db, sanitizeKey } from '../database.js'; // Import sanitizeKey
+import { Request as ExpressRequest, Response } from 'express';
+import { db, sanitizeKey } from '../database.js'; 
 import { logService } from '../services/logService.js';
-// FIX: Import ConnectionStatus enum for type-safe comparisons.
 import { ConnectionStatus, User, SystemSettings, Message, LeadStatus, Conversation } from '../types.js';
-import { getSessionStatus, processAiResponseForJid, ELITE_BOT_JID, ELITE_BOT_NAME } from '../whatsapp/client.js'; // IMPORTED CONSTANTS HERE
-import { conversationService } from '../services/conversationService.js'; // Import conversationService
-import { v4 as uuidv4 } from 'uuid'; // Need uuid for Boosts
+import { getSessionStatus, processAiResponseForJid, ELITE_BOT_JID, ELITE_BOT_NAME } from '../whatsapp/client.js'; 
+import { conversationService } from '../services/conversationService.js'; 
+import { v4 as uuidv4 } from 'uuid'; 
 
-// Define a custom Request interface to include the 'user' property added by authentication middleware
-// FIX: Changed to type intersection for proper generic compatibility with Express Request
-type AuthenticatedRequest<P = any, ResBody = any, ReqBody = any, ReqQuery = any> = Request<P, ResBody, ReqBody, ReqQuery> & {
+// FIX: Changed to type alias for proper property inheritance from Express Request
+type AuthenticatedRequest<P = any, ResBody = any, ReqBody = any, ReqQuery = any> = ExpressRequest<P, ResBody, ReqBody, ReqQuery> & {
     user: { id: string; username: string; role: string; };
 };
 
@@ -23,13 +21,12 @@ const TEST_SCRIPT = [
     "Suena interesante. Creo que estoy listo para ver una demo o empezar. ¿Qué debo hacer ahora?",
 ];
 
-// FIX: Changed res type to 'any' to bypass 'Property does not exist on Response' errors
 export const handleGetDashboardMetrics = async (req: AuthenticatedRequest, res: any) => {
     try {
         const clients = await db.getAllClients();
         
-        const proPrice = 29; // Nuevo precio del plan Pro
-        const starterPrice = 0; // El plan Starter no genera MRR
+        const proPrice = 29; 
+        const starterPrice = 0; 
 
         const mrr = clients.reduce((acc, client) => {
             if (client.plan_status === 'active') {
@@ -54,15 +51,13 @@ export const handleGetDashboardMetrics = async (req: AuthenticatedRequest, res: 
         const metrics = {
             totalClients: clients.length,
             mrr,
-            // FIX: Removed `as any` cast. `getSessionStatus` returns a type with a `status` property.
             onlineNodes: clients.filter(c => getSessionStatus(c.id).status === ConnectionStatus.CONNECTED).length,
             globalLeads: allConversations.length,
-            // FIX: Explicitly cast `c` to `Conversation` to resolve TypeScript error.
             hotLeads: allConversations.filter((c: Conversation) => c.status === LeadStatus.HOT).length,
             atRiskAccounts: clients.filter(c => c.plan_status !== 'active').length,
             planDistribution,
             expiringSoon,
-            topClients: [] // Placeholder as topClients logic wasn't fully defined in previous context
+            topClients: [] 
         };
 
         res.json(metrics);
@@ -130,7 +125,6 @@ export const handleActivateClient = async (req: AuthenticatedRequest<{ id: strin
             return res.status(404).json({ message: 'Cliente no encontrado.' });
         }
         
-        // FIX: Explicitly pass Date.now() to the Date constructor to avoid potential TypeScript errors in strict environments.
         const newStartDate = new Date(Date.now());
         const newEndDate = new Date(Date.now());
         newEndDate.setDate(newEndDate.getDate() + 30);
@@ -159,7 +153,6 @@ export const handleRenewClient = async (req: AuthenticatedRequest<{ id: string }
             return res.status(404).json({ message: 'Cliente no encontrado.' });
         }
         
-        // FIX: Explicitly pass Date.now() to the Date constructor to avoid potential TypeScript errors in strict environments.
         const newEndDate = new Date(Date.now());
         newEndDate.setDate(newEndDate.getDate() + 30);
 
@@ -179,7 +172,7 @@ export const handleRenewClient = async (req: AuthenticatedRequest<{ id: string }
 
 export const handleGetLogs = async (req: AuthenticatedRequest, res: any) => {
     try {
-        const logs = await db.getLogs(200); // Get last 200 logs
+        const logs = await db.getLogs(200); 
         res.json(logs);
     } catch (error: any) {
         logService.error('Error al obtener logs del sistema', error, getAdminUser(req).id, getAdminUser(req).username);
@@ -243,7 +236,6 @@ export const handleStartTestBot = async (req: AuthenticatedRequest<any, any, { t
             tags: [],
             internalNotes: [],
             isAiSignalsEnabled: true,
-            // FIX: Explicitly pass Date.now() to the Date constructor to avoid potential TypeScript errors in strict environments.
             lastActivity: new Date(Date.now())
         };
         await db.saveUserConversation(targetUserId, cleanConversation);
@@ -276,7 +268,6 @@ export const handleStartTestBot = async (req: AuthenticatedRequest<any, any, { t
     }
 };
 
-// DEPTH CONTROL HANDLERS (NEW)
 export const handleUpdateDepthLevel = async (req: AuthenticatedRequest<any, any, { userId: string, depthLevel: number }>, res: any) => {
     const { userId, depthLevel } = req.body;
     const admin = getAdminUser(req);
@@ -336,7 +327,6 @@ export const handleClearTestBotConversation = async (req: AuthenticatedRequest<a
         }
 
         const safeJid = sanitizeKey(ELITE_BOT_JID);
-        // FIX: Access conversations using the safe key properly in the conditional
         if (user.conversations && (user.conversations[safeJid] || user.conversations[ELITE_BOT_JID])) {
             const conversations = { ...user.conversations };
             delete conversations[safeJid];
@@ -353,7 +343,6 @@ export const handleClearTestBotConversation = async (req: AuthenticatedRequest<a
     }
 };
 
-// --- ADMIN NETWORK ROUTES ---
 export const handleGetNetworkOverview = async (req: AuthenticatedRequest, res: any) => {
     try {
         const stats = await db.getNetworkStats();
