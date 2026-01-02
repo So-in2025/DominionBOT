@@ -335,7 +335,7 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
                                                 <p className="text-[10px] text-red-300 leading-relaxed font-medium">
                                                     <strong>Error:</strong> Has programado el envío a las <strong className="text-white">{timeConflict.hour}:00</strong>, pero la ventana operativa solo permite envíos entre las <strong className="text-white">{timeConflict.start}:00</strong> y las <strong className="text-white">{timeConflict.end}:00</strong>.
                                                     <br/>
-                                                    <span className="text-[9px] opacity-80 mt-1 block">>> Ajusta el horario o amplia la ventana.</span>
+                                                    <span className="text-[9px] opacity-80 mt-1 block">&gt;&gt; Ajusta el horario o amplia la ventana.</span>
                                                 </p>
                                             </div>
                                         ) : (
