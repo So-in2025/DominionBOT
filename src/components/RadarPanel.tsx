@@ -243,6 +243,39 @@ const RadarPanel: React.FC<RadarPanelProps> = ({ token, backendUrl, showToast })
         return 'bg-blue-500';
     };
 
+    const renderSignalCard = (signal: RadarSignal) => (
+        <div key={signal.id} className={`bg-[#0a0a0a] border border-white/10 rounded-2xl p-5 hover:border-brand-gold/30 transition-all group relative overflow-hidden flex flex-col justify-between h-[280px] ${signal.status === 'DISMISSED' ? 'opacity-50 grayscale' : ''}`}>
+            {/* Status Indicator */}
+            <div className={`absolute top-4 right-4 w-3 h-3 rounded-full ${getUrgencyColor(signal.predictedWindow?.urgencyLevel)}`}></div>
+            
+            <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                    <span className="text-[9px] font-black text-brand-gold bg-brand-gold/10 px-2 py-0.5 rounded border border-brand-gold/20">{signal.strategicScore}% COINCIDENCIA</span>
+                    <span className="text-[9px] text-gray-500 font-mono">{signal.analysis.intentType}</span>
+                </div>
+                
+                <p className="text-xs font-bold text-white leading-relaxed line-clamp-4">"{signal.messageContent}"</p>
+                
+                <div className="space-y-1">
+                    <p className="text-[9px] text-gray-500 font-mono truncate">Grupo: {signal.groupName}</p>
+                    <p className="text-[9px] text-gray-500 font-mono truncate">Usuario: {signal.senderName || 'Anon'}</p>
+                    <p className="text-[9px] text-gray-400 italic line-clamp-2 mt-2 border-l-2 border-white/10 pl-2">IA: {signal.predictedWindow?.reasoning || signal.analysis.reasoning}</p>
+                </div>
+            </div>
+
+            {signal.status === 'NEW' && (
+                <div className="flex gap-2 mt-4 pt-4 border-t border-white/5">
+                    <button onClick={() => handleContact(signal)} className="flex-1 py-2 bg-brand-gold text-black rounded-lg text-[10px] font-black uppercase tracking-widest hover:scale-105 transition-all">
+                        Capturar
+                    </button>
+                    <button onClick={() => dismissSignal(signal.id)} className="px-3 py-2 bg-white/5 text-gray-500 hover:text-red-400 rounded-lg border border-white/10 transition-colors">
+                        ✕
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+
     return (
         <div className="flex-1 bg-brand-black p-6 md:p-10 overflow-y-auto custom-scrollbar font-sans animate-fade-in relative">
             <div className="absolute inset-0 neural-grid opacity-20 pointer-events-none"></div>
@@ -266,64 +299,74 @@ const RadarPanel: React.FC<RadarPanelProps> = ({ token, backendUrl, showToast })
                     </div>
                     {view !== 'WIZARD' && (
                         <div className="flex bg-white/5 p-1 rounded-xl border border-white/10 w-full md:w-auto">
-                            <button onClick={() => setView('LIVE')} className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${view === 'LIVE' ? 'bg-brand-gold text-black' : 'text-gray-400 hover:text-white'}`}>Trading Desk</button>
+                            <button onClick={() => setView('LIVE')} className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${view === 'LIVE' ? 'bg-brand-gold text-black' : 'text-gray-400 hover:text-white'}`}>Sala de Trading</button>
                             <button onClick={() => setView('HISTORY')} className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${view === 'HISTORY' ? 'bg-brand-gold text-black' : 'text-gray-400 hover:text-white'}`}>Historial</button>
                             <button onClick={() => setView('CONFIG')} className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${view === 'CONFIG' ? 'bg-brand-gold text-black' : 'text-gray-400 hover:text-white'}`}>Ajustes</button>
                         </div>
                     )}
                 </header>
 
-                {(view === 'LIVE' || view === 'HISTORY') ? (
+                {view === 'LIVE' ? (
+                    <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
+                        <div className="lg:col-span-3">
+                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {signals.length === 0 && (
+                                    <div className="md:col-span-2 text-center py-20 bg-brand-surface rounded-3xl border border-white/5">
+                                        <div className="w-16 h-16 border-4 border-brand-gold/10 border-t-brand-gold rounded-full animate-spin mx-auto mb-4"></div>
+                                        <p className="text-gray-500 text-xs uppercase tracking-widest font-bold">Escaneando grupos...</p>
+                                        <button onClick={handleSimulate} disabled={isSimulating} className="mt-6 px-6 py-2 bg-white/5 text-gray-400 border border-white/10 rounded-lg text-[10px] font-black uppercase transition-all hover:text-brand-gold">
+                                            {isSimulating ? 'Simulando...' : 'Inyectar Señal de Prueba'}
+                                        </button>
+                                    </div>
+                                )}
+                                {signals.map(renderSignalCard)}
+                            </div>
+                        </div>
+                        <div className="lg:col-span-2">
+                             <div className="bg-black/40 border border-white/10 rounded-2xl h-[600px] flex flex-col sticky top-28">
+                                <div className="p-4 border-b border-white/5 flex justify-between items-center flex-shrink-0">
+                                    <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-400">Registro Neural en Vivo</h4>
+                                    <div className="flex items-center gap-2">
+                                        <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                                        <span className="text-[9px] font-bold text-green-500 uppercase tracking-widest">ONLINE</span>
+                                    </div>
+                                </div>
+                                <div ref={terminalRef} className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+                                    <div className="space-y-2 text-xs font-mono">
+                                        {traces.map((trace, index) => (
+                                            <div key={index} className="flex gap-3 animate-fade-in">
+                                                <span className="text-gray-600">{new Date(trace.timestamp).toLocaleTimeString()}</span>
+                                                <span className={`flex-shrink-0 ${
+                                                    trace.message.includes('OPORTUNIDAD VALIDADA') ? 'text-green-400' :
+                                                    trace.message.includes('Error') ? 'text-red-400' :
+                                                    trace.message.includes('Invocando Inferencia') ? 'text-blue-400' :
+                                                    'text-gray-400'
+                                                }`}>
+                                                    {trace.message.includes('📡') ? '📡' : 
+                                                     trace.message.includes('🧠') ? '🧠' :
+                                                     trace.message.includes('✅') ? '✅' :
+                                                     trace.message.includes('📉') ? '📉' :
+                                                     '›'}
+                                                </span>
+                                                <span className="whitespace-pre-wrap break-all text-gray-400">{trace.message.replace(/\[RADAR-TRACE\] (📡|🧠|✅|📉) /, '')}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                ) : view === 'HISTORY' ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                         {signals.length === 0 && (
                             <div className="col-span-full text-center py-20 bg-brand-surface rounded-3xl border border-white/5">
-                                <div className="w-16 h-16 border-4 border-brand-gold/10 border-t-brand-gold rounded-full animate-spin mx-auto mb-4"></div>
-                                <p className="text-gray-500 text-xs uppercase tracking-widest font-bold">{view === 'LIVE' ? 'Escaneando grupos...' : 'Sin historial.'}</p>
-                                {view === 'LIVE' && (
-                                    <button onClick={handleSimulate} disabled={isSimulating} className="mt-6 px-6 py-2 bg-white/5 text-gray-400 border border-white/10 rounded-lg text-[10px] font-black uppercase transition-all hover:text-brand-gold">
-                                        {isSimulating ? 'Simulando...' : 'Inyectar Señal de Prueba'}
-                                    </button>
-                                )}
+                                <p className="text-gray-500 text-xs uppercase tracking-widest font-bold">Sin historial.</p>
                             </div>
                         )}
-                        
-                        {signals.map(signal => (
-                            <div key={signal.id} className={`bg-[#0a0a0a] border border-white/10 rounded-2xl p-5 hover:border-brand-gold/30 transition-all group relative overflow-hidden flex flex-col justify-between h-[280px] ${signal.status === 'DISMISSED' ? 'opacity-50 grayscale' : ''}`}>
-                                {/* Status Indicator */}
-                                <div className={`absolute top-4 right-4 w-3 h-3 rounded-full ${getUrgencyColor(signal.predictedWindow?.urgencyLevel)}`}></div>
-                                
-                                <div className="space-y-4">
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-[9px] font-black text-brand-gold bg-brand-gold/10 px-2 py-0.5 rounded border border-brand-gold/20">{signal.strategicScore}% MATCH</span>
-                                        <span className="text-[9px] text-gray-500 font-mono">{signal.analysis.intentType}</span>
-                                    </div>
-                                    
-                                    <p className="text-xs font-bold text-white leading-relaxed line-clamp-4">"{signal.messageContent}"</p>
-                                    
-                                    <div className="space-y-1">
-                                        <p className="text-[9px] text-gray-500 font-mono truncate">Grupo: {signal.groupName}</p>
-                                        <p className="text-[9px] text-gray-500 font-mono truncate">Usuario: {signal.senderName || 'Anon'}</p>
-                                        <p className="text-[9px] text-gray-400 italic line-clamp-2 mt-2 border-l-2 border-white/10 pl-2">AI: {signal.predictedWindow?.reasoning || signal.analysis.reasoning}</p>
-                                    </div>
-                                </div>
-
-                                {signal.status === 'NEW' && (
-                                    <div className="flex gap-2 mt-4 pt-4 border-t border-white/5">
-                                        <button onClick={() => handleContact(signal)} className="flex-1 py-2 bg-brand-gold text-black rounded-lg text-[10px] font-black uppercase tracking-widest hover:scale-105 transition-all">
-                                            Capturar
-                                        </button>
-                                        <button onClick={() => dismissSignal(signal.id)} className="px-3 py-2 bg-white/5 text-gray-500 hover:text-red-400 rounded-lg border border-white/10 transition-colors">
-                                            ✕
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-                        ))}
+                        {signals.map(renderSignalCard)}
                     </div>
                 ) : view === 'WIZARD' ? (
-                    // WIZARD COMPONENT (Kept same logic, just wrapper)
                     <div className="bg-brand-surface border border-white/5 rounded-3xl p-8 shadow-2xl animate-fade-in max-w-4xl mx-auto min-h-[500px] flex flex-col relative">
-                         {/* Reusing existing wizard JSX logic here... */}
                          <div className="flex justify-between items-center mb-8 border-b border-white/5 pb-6">
                             <div>
                                 <h3 className="text-xl font-black text-white uppercase tracking-widest">Protocolo de Precisión</h3>
@@ -337,7 +380,6 @@ const RadarPanel: React.FC<RadarPanelProps> = ({ token, backendUrl, showToast })
                             </div>
                         </div>
                         <div className="flex-1 flex flex-col justify-center space-y-10">
-                            {/* Steps logic same as previous RadarPanel... */}
                              {wizardStep === 0 && (
                                 <div className="space-y-6 animate-slide-in-right">
                                     <h4 className="text-lg font-black text-white">1. Definición de Oportunidad</h4>
@@ -365,7 +407,6 @@ const RadarPanel: React.FC<RadarPanelProps> = ({ token, backendUrl, showToast })
                         </div>
                     </div>
                 ) : (
-                    // CONFIG VIEW (Simplified)
                     <div className="bg-brand-surface border border-white/5 rounded-3xl p-8 shadow-2xl animate-fade-in space-y-8">
                         <div className="flex items-center justify-between">
                             <h3 className="text-xl font-black text-white uppercase tracking-widest">Configuración de Sensores</h3>
@@ -378,7 +419,6 @@ const RadarPanel: React.FC<RadarPanelProps> = ({ token, backendUrl, showToast })
                             </div>
                             <button onClick={() => setView('WIZARD')} className="px-4 py-2 bg-white/5 border border-white/10 hover:border-brand-gold/50 text-white rounded-lg text-[9px] font-black uppercase tracking-widest">Recalibrar</button>
                         </div>
-                        {/* Group list logic remains same */}
                         <div>
                             <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-4">Grupos Monitoreados</label>
                             <div className="bg-black/50 border border-white/10 rounded-xl p-4 max-h-[400px] overflow-y-auto custom-scrollbar space-y-2">

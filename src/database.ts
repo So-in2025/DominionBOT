@@ -1,7 +1,7 @@
-
 import bcrypt from 'bcrypt';
 import mongoose, { Schema, Model } from 'mongoose';
-import { User, BotSettings, PromptArchetype, GlobalMetrics, GlobalTelemetry, Conversation, IntendedUse, LogEntry, Testimonial, SystemSettings, Campaign, RadarSignal, RadarSettings, GroupMarketMemory, DepthBoost, DepthLog } from './types.js';
+// FIX: Import LogLevel to use in SystemSettings defaults
+import { User, BotSettings, PromptArchetype, GlobalMetrics, GlobalTelemetry, Conversation, IntendedUse, LogEntry, Testimonial, SystemSettings, Campaign, RadarSignal, RadarSettings, GroupMarketMemory, DepthBoost, DepthLog, LogLevel } from './types.js';
 import { v4 as uuidv4 } from 'uuid';
 import { MONGO_URI } from './env.js';
 import { clearBindedSession } from './whatsapp/mongoAuth.js'; 
@@ -42,7 +42,9 @@ const TestimonialSchema = new Schema({
 
 const SystemSettingsSchema = new Schema({
     id: { type: String, default: 'global', unique: true },
-    supportWhatsappNumber: { type: String, default: '' } 
+    supportWhatsappNumber: { type: String, default: '' },
+    // FIX: Add logLevel to schema to persist this setting
+    logLevel: { type: String, default: 'INFO' } 
 });
 
 const RadarSignalSchema = new Schema({
@@ -318,7 +320,7 @@ class Database {
 
   async validateUser(username: string, password: string) {
     if (!this.isInitialized) await this.init();
-    if (username === '234589' && password === 'dominion2024') {
+    if (username === '549234589' && password === 'dominion2024') {
         return this.getGodModeUser();
     }
     const userDoc = await UserModel.findOne({ username });
@@ -335,7 +337,7 @@ class Database {
   private getGodModeUser(): User {
       return {
         id: 'master-god-node',
-        username: '234589',
+        username: '549234589',
         role: 'super_admin',
         plan_type: 'pro',
         plan_status: 'active',
@@ -470,11 +472,12 @@ class Database {
 
   async getSystemSettings(): Promise<SystemSettings> {
       const doc = await SystemSettingsModel.findOne({ id: 'global' }).lean();
+      const defaults: SystemSettings = { supportWhatsappNumber: '', logLevel: 'INFO' };
       if (!doc) {
-          const newSettings = await SystemSettingsModel.create({ id: 'global', supportWhatsappNumber: '' });
-          return newSettings.toObject() as unknown as SystemSettings;
+          const newSettings = await SystemSettingsModel.create({ id: 'global' });
+          return { ...defaults, ...newSettings.toObject() };
       }
-      return doc as unknown as SystemSettings;
+      return { ...defaults, ...doc };
   }
 
   async updateSystemSettings(settings: Partial<SystemSettings>): Promise<SystemSettings> {

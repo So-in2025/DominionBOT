@@ -1,6 +1,5 @@
-
 import React, { useEffect, useState } from 'react';
-import { User, LogEntry, GlobalDashboardMetrics, SystemSettings } from '../../types';
+import { User, LogEntry, GlobalDashboardMetrics, SystemSettings, LogLevel } from '../../types';
 import { getAuthHeaders } from '../../config';
 
 interface AdminDashboardProps {
@@ -32,7 +31,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
     const [clients, setClients] = useState<User[]>([]);
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const [metrics, setMetrics] = useState<GlobalDashboardMetrics | null>(null);
-    const [systemSettings, setSystemSettings] = useState<SystemSettings>({ supportWhatsappNumber: '' });
+    const [systemSettings, setSystemSettings] = useState<SystemSettings>({ supportWhatsappNumber: '', logLevel: 'INFO' });
     const [view, setView] = useState<AdminView>('dashboard');
     const [loading, setLoading] = useState(true);
     const [isResetArmed, setIsResetArmed] = useState(false);
@@ -85,16 +84,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
         return () => clearInterval(interval);
     }, [token, backendUrl]);
 
-    const updateSystemSettings = async () => {
-        if (!supportNumberInput || supportNumberInput.length < 10) {
-            showToast('Número incompleto.', 'error');
-            return;
-        }
+    const updateSystemSettings = async (updates: Partial<SystemSettings>) => {
         try {
             const res = await fetch(`${backendUrl}/api/admin/system/settings`, {
                 method: 'PUT',
                 headers: getAuthHeaders(token),
-                body: JSON.stringify({ supportWhatsappNumber: supportNumberInput })
+                body: JSON.stringify(updates)
             });
             if (res.ok) {
                 const updated = await res.json();
@@ -106,6 +101,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
         } catch (e) {
             showToast('Error de conexión.', 'error');
         }
+    };
+    
+    const handleSupportNumberSave = () => {
+        if (!supportNumberInput || supportNumberInput.length < 10) {
+            showToast('Número incompleto.', 'error');
+            return;
+        }
+        updateSystemSettings({ supportWhatsappNumber: supportNumberInput });
+    };
+
+    const handleLogLevelChange = (level: LogLevel) => {
+        updateSystemSettings({ logLevel: level });
     };
 
     const testSupportLink = () => {
@@ -208,6 +215,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
             WARN: 'bg-yellow-500/10 text-yellow-400',
             ERROR: 'bg-red-500/10 text-red-400',
             AUDIT: 'bg-purple-500/10 text-purple-400',
+            DEBUG: 'bg-gray-500/10 text-gray-400'
         };
         return <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase ${colors[level]}`}>{level}</span>;
     };
@@ -226,7 +234,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
                             <div className="flex items-center gap-3 mb-6">
                                 <h3 className="text-sm font-black text-white uppercase tracking-widest">Configuración Global</h3>
                             </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-end">
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 items-end">
                                 <div className="space-y-3">
                                     <label className="text-[10px] font-bold text-brand-gold uppercase tracking-widest">WhatsApp Soporte</label>
                                     <div className="flex gap-2">
@@ -235,8 +243,22 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
                                             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                                         </button>
                                     </div>
+                                    <button onClick={handleSupportNumberSave} className="w-full py-2 bg-white/10 text-xs rounded-lg hover:bg-white/20">Guardar Número</button>
                                 </div>
-                                <button onClick={updateSystemSettings} className="w-full py-4 bg-brand-gold text-black rounded-xl font-black text-xs uppercase tracking-[0.2em]">Guardar</button>
+                                <div className="space-y-3">
+                                    <label className="text-[10px] font-bold text-brand-gold uppercase tracking-widest">Nivel de Logs del Servidor (Tiempo Real)</label>
+                                     <select
+                                        value={systemSettings.logLevel}
+                                        onChange={(e) => handleLogLevelChange(e.target.value as LogLevel)}
+                                        className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-sm text-white"
+                                    >
+                                        <option value="DEBUG">DEBUG (Todo)</option>
+                                        <option value="INFO">INFO (Normal)</option>
+                                        <option value="WARN">WARN (Advertencias)</option>
+                                        <option value="ERROR">ERROR (Solo Errores)</option>
+                                    </select>
+                                    <p className="text-[9px] text-gray-600 italic">Cambia la verbosidad de la terminal del servidor al instante.</p>
+                                </div>
                             </div>
                         </div>
 
@@ -315,7 +337,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
                                 <li>2. ¿Podrías explicarme un poco más sobre el plan PRO?</li>
                                 <li>3. ¿Cuál es el costo mensual?</li>
                                 <li>4. ¿Ofrecen alguna garantía o prueba?</li>
-                                <li>5. Suena interesante. Creo que estoy listo...</li>
+                                <li>5. Suena interesante. Creo que estoy listo para ver una demo o empezar. ¿Qué debo hacer ahora?</li>
                             </ul>
                         </div>
                     </div>

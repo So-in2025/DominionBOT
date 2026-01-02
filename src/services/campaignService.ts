@@ -20,7 +20,7 @@ class CampaignService {
         if (this.isRunning) return;
         this.isRunning = true;
         
-        console.log('🚀 [CAMPAIGN-SCHEDULER] Motor de Campañas Iniciado (Frecuencia: 10s).');
+        logService.info('🚀 [CAMPAIGN-SCHEDULER] Motor de Campañas Iniciado (Frecuencia: 10s).');
         
         // Heartbeat: Check every 10 seconds (High Frequency)
         this.checkInterval = setInterval(() => this.processPendingCampaigns(), 10000);
@@ -69,7 +69,7 @@ class CampaignService {
                 // Filter out logs to avoid noise, only log real new attempts
                 const realPending = pendingCampaigns.filter(c => !this.processingCampaignIds.has(c.id));
                 if (realPending.length > 0) {
-                    console.log(`[CAMPAIGN-HEARTBEAT] ${new Date().toLocaleTimeString()} | Pendientes Reales: ${realPending.length}`);
+                    logService.debug(`[CAMPAIGN-HEARTBEAT] Pendientes Reales: ${realPending.length}`);
                 }
             }
 
@@ -80,12 +80,12 @@ class CampaignService {
                     continue; 
                 }
 
-                console.log(`[CAMPAIGN-DEBUG] Evaluando campaña "${campaign.name}" (Programada: ${campaign.stats.nextRunAt})`);
+                logService.debug(`[CAMPAIGN-DEBUG] Evaluando campaña "${campaign.name}" (Programada: ${campaign.stats.nextRunAt})`);
                 
                 // 1. Check Operating Window (Hours)
                 if (!this.isInOperatingWindow(campaign)) {
                     // Only log to console to avoid spamming DB logs every 10s
-                    console.log(`[CAMPAIGN-DEBUG] ⏸️ Pausada por horario (Ventana cerrada en ARG).`);
+                    logService.debug(`[CAMPAIGN-DEBUG] ⏸️ Pausada por horario (Ventana cerrada en ARG).`);
                     continue; 
                 }
                 
@@ -96,7 +96,7 @@ class CampaignService {
                 this.executeCampaignBatch(campaign, false).catch(e => console.error(e));
             }
         } catch (error) {
-            console.error('[CAMPAIGN-SCHEDULER] Error en ciclo de reloj:', error);
+            logService.error('[CAMPAIGN-SCHEDULER] Error en ciclo de reloj:', error);
         }
     }
 
@@ -170,7 +170,7 @@ class CampaignService {
             try {
                 groupsMeta = await fetchUserGroups(campaign.userId);
             } catch (e) { 
-                console.warn(`[CAMPAIGN-DEBUG] No se pudieron obtener metadatos de grupos para variables.`);
+                logService.warn(`[CAMPAIGN] No se pudieron obtener metadatos de grupos para variables.`, campaign.userId);
             }
 
             const groups = campaign.groups;
@@ -217,10 +217,10 @@ class CampaignService {
                     // 4. Send
                     await sendMessage(campaign.userId, groupId, finalMessage, campaign.imageUrl);
                     sentCount++;
-                    console.log(`[CAMPAIGN] Enviado a ${groupId} (Delay: ${Math.round(finalDelay)}ms)`);
+                    logService.debug(`[CAMPAIGN] Enviado a ${groupId} (Delay: ${Math.round(finalDelay)}ms)`);
 
                 } catch (error) {
-                    console.error(`[CAMPAIGN] Fallo envío a ${groupId}`, error);
+                    logService.error(`[CAMPAIGN] Fallo envío a ${groupId}`, error, campaign.userId);
                     failedCount++;
                 }
             }
@@ -246,7 +246,7 @@ class CampaignService {
         } finally {
             // CRITICAL: ALWAYS RELEASE THE LOCK WHEN DONE
             this.processingCampaignIds.delete(campaign.id);
-            console.log(`[CAMPAIGN-LOCK] Liberado candado para: ${campaign.name}`);
+            logService.debug(`[CAMPAIGN-LOCK] Liberado candado para: ${campaign.name}`);
         }
     }
 

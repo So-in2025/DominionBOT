@@ -1,3 +1,4 @@
+
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
@@ -18,13 +19,12 @@ if (fs.existsSync(envPath)) {
 }
 
 // 3. Exportar constantes ÚNICAS para toda la app
-// Si no existe la variable, usa 'dominion-local-secret-key' SIEMPRE.
 export const JWT_SECRET = process.env.JWT_SECRET || 'dominion-local-secret-key';
 export const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://admin:C3WcIkonjZ4tnYUN@cluster0.rxgrwk7.mongodb.net/dominion_local?retryWrites=true&w=majority&appName=Cluster0';
 export const PORT = process.env.PORT || 3001;
-// NOTA: La API_KEY de Gemini para el servicio TTS es leída directamente por ttsService
-// La API_KEY de Gemini para el aiService (generación de respuestas) se toma de la configuración del usuario (BYOK).
+export const LOG_LEVEL = process.env.LOG_LEVEL || 'INFO';
 
 // Debug de seguridad (solo muestra los últimos 4 caracteres)
 const secretDisplay = JWT_SECRET === 'dominion-local-secret-key' ? 'DEFAULT_DEV_KEY' : `...${JWT_SECRET.slice(-4)}`;
+console.log(`[ENV] Log Level: [${LOG_LEVEL}]`);
 console.log(`[ENV] JWT Key Hash: [${secretDisplay}]`);

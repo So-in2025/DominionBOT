@@ -57,12 +57,15 @@ const SEED_TESTIMONIALS = [
 
 const app = express();
 
+// --- NEW: Smart API Request Logger ---
+const IGNORED_API_PATHS = ['/api/status', '/api/conversations', '/api/campaigns', '/api/radar/activity', '/api/radar/signals'];
 app.use((req, res, next) => {
-    if (req.url.startsWith('/api')) {
-        console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ${req.url}`);
+    if (req.url.startsWith('/api') && !IGNORED_API_PATHS.some(path => req.url.startsWith(path))) {
+        logService.debug(`[API] ${req.method} ${req.url}`);
     }
     next();
 });
+// ------------------------------------
 
 app.use(cors({
     origin: function (origin, callback) {

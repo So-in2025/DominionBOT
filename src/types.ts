@@ -1,4 +1,5 @@
 
+
 export enum LeadStatus {
   COLD = 'Frío',
   WARM = 'Tibio',
@@ -52,7 +53,7 @@ export type IntendedUse =
 
 export type PlanType = 'starter' | 'pro';
 export type PlanStatus = 'active' | 'expired' | 'suspended' | 'trial';
-export type LogLevel = 'INFO' | 'WARN' | 'ERROR' | 'AUDIT';
+export type LogLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | 'AUDIT';
 
 // --- DEPTH ENGINE TYPES (NEW) ---
 
@@ -400,4 +401,5 @@ export interface Testimonial {
 
 export interface SystemSettings {
     supportWhatsappNumber: string;
+    logLevel: LogLevel;
 }
