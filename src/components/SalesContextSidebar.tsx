@@ -53,7 +53,7 @@ const SalesContextSidebar: React.FC<SalesContextSidebarProps> = ({
       <div className="p-4 border-b border-white/10 bg-black/20">
         <div className="flex justify-between items-center">
             <div>
-                <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-brand-gold">Context Layer</h3>
+                <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-brand-gold">Contexto de Venta</h3>
                 <p className="text-[9px] text-gray-500 mt-0.5 font-bold">OPERACIONES</p>
             </div>
             
@@ -70,7 +70,7 @@ const SalesContextSidebar: React.FC<SalesContextSidebarProps> = ({
         
         <section>
           <div className="flex justify-between items-center mb-4">
-            <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-400">Signals</h4>
+            <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-400">Señales / Etiquetas</h4>
           </div>
           
           <div className="flex flex-wrap gap-2 mb-4">
@@ -85,7 +85,7 @@ const SalesContextSidebar: React.FC<SalesContextSidebarProps> = ({
           <form onSubmit={handleAddTag} className="relative">
             <input 
               type="text" value={newTag} onChange={(e) => setNewTag(e.target.value)}
-              placeholder="Añadir señal..."
+              placeholder="Añadir etiqueta..."
               className="w-full bg-black/50 border border-white/5 rounded-lg py-2 px-3 text-[10px] text-white focus:border-brand-gold outline-none"
             />
           </form>
@@ -93,7 +93,7 @@ const SalesContextSidebar: React.FC<SalesContextSidebarProps> = ({
 
         <section className="flex-1 flex flex-col">
           <div className="flex justify-between items-center mb-4">
-            <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-400">Internal Notes</h4>
+            <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-400">Notas Internas</h4>
           </div>
 
           <div className="space-y-4 mb-6">
