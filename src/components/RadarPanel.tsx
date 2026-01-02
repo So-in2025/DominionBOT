@@ -37,13 +37,21 @@ const RadarPanel: React.FC<RadarPanelProps> = ({ token, backendUrl, showToast })
     const prevSignalsLength = useRef(0);
     const terminalRef = useRef<HTMLDivElement>(null);
 
+    // FIX 1: Fetch Settings immediately on mount regardless of view
+    useEffect(() => {
+        fetchConfigData();
+    }, []);
+
+    // FIX 2: Specific effects for views
     useEffect(() => {
         if (view === 'LIVE') {
             fetchSignals(false);
             fetchTraces();
         }
         if (view === 'HISTORY') fetchSignals(true);
-        if (view === 'CONFIG' || view === 'WIZARD') fetchConfigData();
+        // We don't need to fetchConfigData here again as it runs on mount, 
+        // but if we want to refresh groups when entering config, we can.
+        if (view === 'CONFIG' && groups.length === 0) fetchConfigData();
     }, [view]);
 
     useEffect(() => {
@@ -92,7 +100,7 @@ const RadarPanel: React.FC<RadarPanelProps> = ({ token, backendUrl, showToast })
     };
 
     const fetchConfigData = async () => {
-        setLoading(true);
+        // Don't set global loading true to avoid UI flickering on LIVE view
         try {
             const [settingsRes, groupsRes] = await Promise.all([
                 fetch(`${backendUrl}/api/radar/settings`, { headers: getAuthHeaders(token) }),
@@ -105,13 +113,11 @@ const RadarPanel: React.FC<RadarPanelProps> = ({ token, backendUrl, showToast })
             }
             if (groupsRes.ok) setGroups(await groupsRes.json());
         } catch (e) {
-            showToast('Error cargando configuración.', 'error');
-        } finally {
-            setLoading(false);
+            console.error("Error fetching radar config");
         }
     };
 
-    const saveSettings = async (overrideSettings?: RadarSettings) => {
+    const saveSettings = async (overrideSettings?: RadarSettings, silent: boolean = false) => {
         const payload = overrideSettings || settings;
         if (!payload) return;
         try {
@@ -120,10 +126,26 @@ const RadarPanel: React.FC<RadarPanelProps> = ({ token, backendUrl, showToast })
                 headers: getAuthHeaders(token),
                 body: JSON.stringify(payload)
             });
-            if (res.ok) showToast('Configuración de Radar actualizada.', 'success');
+            if (res.ok && !silent) showToast('Configuración de Radar actualizada.', 'success');
         } catch (e) {
             showToast('Error guardando configuración.', 'error');
         }
+    };
+
+    // FIX 3: Auto-save toggle handler
+    const handleToggleRadar = async () => {
+        if (!settings) return;
+        const newStatus = !settings.isEnabled;
+        const newSettings = { ...settings, isEnabled: newStatus };
+        
+        // Optimistic Update
+        setSettings(newSettings);
+        
+        // Save immediately
+        await saveSettings(newSettings, true); // Silent save
+        
+        if (newStatus) showToast('Radar activado. Escuchando...', 'success');
+        else showToast('Radar en reposo.', 'info');
     };
 
     const dismissSignal = async (id: string) => {
@@ -514,7 +536,7 @@ const RadarPanel: React.FC<RadarPanelProps> = ({ token, backendUrl, showToast })
                             <div className="flex items-center gap-3">
                                 <span className="text-[10px] font-bold text-gray-400 uppercase">Estado:</span>
                                 <button 
-                                    onClick={() => settings && setSettings({...settings, isEnabled: !settings.isEnabled})}
+                                    onClick={handleToggleRadar}
                                     className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${settings?.isEnabled ? 'bg-green-500 text-black' : 'bg-red-500/20 text-red-500'}`}
                                 >
                                     {settings?.isEnabled ? 'ACTIVO' : 'INACTIVO'}

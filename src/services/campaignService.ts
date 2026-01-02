@@ -41,9 +41,11 @@ class CampaignService {
             }
 
             for (const campaign of pendingCampaigns) {
+                console.log(`[CAMPAIGN-DEBUG] Evaluando campaña "${campaign.name}" (ID: ${campaign.id})`);
+                
                 // 1. Check Operating Window (Hours)
                 if (!this.isInOperatingWindow(campaign)) {
-                    // Log warning to help users debug why their campaign isn't running
+                    console.log(`[CAMPAIGN-DEBUG] Pausada por horario (Ventana cerrada en ARG).`);
                     // Solo loguear esto una vez cada tanto o si es crítico, para no spamear
                     // logService.warn(`[CAMPAIGN] Pausando "${campaign.name}" por horario (Ventana cerrada en ARG).`, campaign.userId);
                     continue; 
@@ -87,6 +89,7 @@ class CampaignService {
         const socket = getSocket(campaign.userId);
         
         if (!socket?.user) {
+            console.log(`[CAMPAIGN-DEBUG] Omitiendo. Socket no encontrado para usuario ${campaign.userId}.`);
             logService.warn(`[CAMPAIGN] Omitiendo ejecución para ${campaign.name}. Usuario ${campaign.userId} desconectado.`, campaign.userId);
             return;
         }
@@ -101,7 +104,9 @@ class CampaignService {
         let groupsMeta: WhatsAppGroup[] = [];
         try {
             groupsMeta = await fetchUserGroups(campaign.userId);
-        } catch (e) { /* Ignore if fails, variables just won't work */ }
+        } catch (e) { 
+            console.warn(`[CAMPAIGN-DEBUG] No se pudieron obtener metadatos de grupos para variables.`);
+        }
 
         const groups = campaign.groups;
         let sentCount = 0;

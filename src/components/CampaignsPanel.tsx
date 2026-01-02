@@ -18,6 +18,7 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
     const [loading, setLoading] = useState(false);
 
     // Form State
+    const [editingId, setEditingId] = useState<string | null>(null);
     const [name, setName] = useState('');
     const [message, setMessage] = useState('');
     const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
@@ -76,8 +77,45 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
     };
 
     const handleCreateClick = () => {
+        setEditingId(null);
+        resetForm();
         setView('CREATE');
         fetchGroups();
+    };
+
+    const handleEditClick = (campaign: Campaign) => {
+        setEditingId(campaign.id);
+        setName(campaign.name);
+        setMessage(campaign.message);
+        setSelectedGroups(campaign.groups);
+        setScheduleType(campaign.schedule.type);
+        setImage(campaign.imageUrl || null);
+        
+        // Parse dates
+        if (campaign.schedule.startDate) {
+            setStartDate(campaign.schedule.startDate.split('T')[0]);
+        }
+        setScheduledTime(campaign.schedule.time || '09:00');
+        setSelectedDays(campaign.schedule.daysOfWeek || []);
+        
+        if (campaign.config.operatingWindow) {
+            setStartHour(campaign.config.operatingWindow.startHour);
+            setEndHour(campaign.config.operatingWindow.endHour);
+        }
+        setUseSpintax(campaign.config.useSpintax);
+
+        setView('CREATE');
+        fetchGroups();
+    };
+
+    const resetForm = () => {
+        setName('');
+        setMessage('');
+        setSelectedGroups([]);
+        setImage(null);
+        setSelectedDays([]);
+        setScheduledTime('09:00');
+        setStartDate(new Date().toISOString().split('T')[0]);
     };
 
     const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -122,12 +160,6 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
 
         setLoading(true);
         try {
-            // Important: We construct the ISO string, but the backend will interpret the scheduledTime relative to Argentina.
-            // We just send the raw time string mostly for the backend to handle logic, 
-            // but for 'startDate', we send ISO.
-            // Let's create a date that corresponds to the user's selected time in UTC, but really we rely on 'scheduledTime' (HH:MM) field.
-            
-            // Just for the initial 'nextRunAt' calculation if needed immediately.
             const combinedStart = new Date(`${startDate}T${scheduledTime}:00`).toISOString();
 
             const payload = {
@@ -146,23 +178,32 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
                     maxDelaySec: 25,
                     operatingWindow: { startHour, endHour },
                     useSpintax
-                }
+                },
+                status: 'ACTIVE' // Reset status to active on edit to restart flow
             };
 
-            const res = await fetch(`${backendUrl}/api/campaigns`, {
-                method: 'POST',
-                headers: getAuthHeaders(token),
-                body: JSON.stringify(payload)
-            });
+            let res;
+            if (editingId) {
+                res = await fetch(`${backendUrl}/api/campaigns/${editingId}`, {
+                    method: 'PUT',
+                    headers: getAuthHeaders(token),
+                    body: JSON.stringify(payload)
+                });
+            } else {
+                res = await fetch(`${backendUrl}/api/campaigns`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(token),
+                    body: JSON.stringify(payload)
+                });
+            }
 
             if (res.ok) {
-                showToast('Campaña programada exitosamente.', 'success');
+                showToast(editingId ? 'Campaña actualizada.' : 'Campaña programada exitosamente.', 'success');
                 setView('LIST');
                 fetchCampaigns();
-                // Reset form
-                setName(''); setMessage(''); setSelectedGroups([]); setImage(null); setSelectedDays([]);
+                resetForm();
             } else {
-                showToast('Error al crear campaña.', 'error');
+                showToast('Error al guardar campaña.', 'error');
             }
         } catch (e) {
             showToast('Error de conexión.', 'error');
@@ -212,7 +253,7 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
                 {view === 'CREATE' ? (
                     <div className="bg-brand-surface border border-white/5 rounded-3xl p-8 shadow-2xl animate-fade-in space-y-8">
                         <div className="flex justify-between items-center">
-                            <h3 className="text-xl font-black text-white uppercase tracking-widest">Configuración de Impacto</h3>
+                            <h3 className="text-xl font-black text-white uppercase tracking-widest">{editingId ? 'Editar Campaña' : 'Configuración de Impacto'}</h3>
                             <button onClick={() => setView('LIST')} className="text-gray-500 hover:text-white text-xs font-bold uppercase tracking-widest">Cancelar</button>
                         </div>
 
@@ -363,7 +404,7 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
 
                         <div className="pt-4 border-t border-white/5">
                             <button onClick={handleSave} disabled={loading} className="w-full py-4 bg-white/10 text-white rounded-xl font-black text-xs uppercase tracking-[0.2em] hover:bg-brand-gold hover:text-black transition-all disabled:opacity-50">
-                                {loading ? 'Creando...' : 'Programar Campaña'}
+                                {loading ? 'Procesando...' : (editingId ? 'Actualizar Campaña' : 'Programar Campaña')}
                             </button>
                         </div>
                     </div>
@@ -396,6 +437,11 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
                                         <span className={`px-3 py-1 rounded text-[9px] font-black uppercase border ${c.status === 'ACTIVE' ? 'bg-green-500/10 text-green-400 border-green-500/30' : (c.status === 'COMPLETED' ? 'bg-blue-500/10 text-blue-400 border-blue-500/30' : 'bg-gray-500/10 text-gray-400 border-gray-500/30')}`}>
                                             {c.status}
                                         </span>
+                                        {/* EDIT BUTTON */}
+                                        <button onClick={() => handleEditClick(c)} className="w-8 h-8 flex items-center justify-center bg-white/10 rounded-full hover:bg-brand-gold hover:text-black transition-all text-gray-400">
+                                            ✎
+                                        </button>
+                                        
                                         {c.status !== 'COMPLETED' && (
                                             <button onClick={() => toggleStatus(c)} className="w-8 h-8 flex items-center justify-center bg-white/10 rounded-full hover:bg-brand-gold hover:text-black transition-all">
                                                 {c.status === 'ACTIVE' ? '⏸' : '▶'}

@@ -509,23 +509,31 @@ export const handleCreateCampaign = async (req: any, res: any) => {
     }
 
     try {
+        // FIX: Start Date must be populated in stats for the scheduler to pick it up immediately
         const campaign: Campaign = {
             id: uuidv4(),
             userId,
             name: data.name,
-            message: data.message || "", // Fallback to empty string if only image
-            imageUrl: data.imageUrl, // Capture Image
+            message: data.message || "", 
+            imageUrl: data.imageUrl, 
             groups: data.groups,
-            status: 'DRAFT',
+            status: 'ACTIVE', // Default to ACTIVE so scheduler picks it up if time matches
             schedule: data.schedule || { type: 'ONCE' },
             config: data.config || { minDelaySec: 10, maxDelaySec: 30 },
-            stats: { totalSent: 0, totalFailed: 0 },
+            stats: { 
+                totalSent: 0, 
+                totalFailed: 0,
+                // CRITICAL FIX: Explicitly set nextRunAt to the schedule start date on creation
+                nextRunAt: data.schedule.startDate 
+            },
             createdAt: new Date().toISOString()
         };
 
         const created = await db.createCampaign(campaign);
+        logService.info(`[CAMPAIGN] Nueva campaña creada: ${campaign.name} (Start: ${campaign.stats.nextRunAt})`, userId);
         res.status(201).json(created);
     } catch(e) {
+        logService.error('Error creando campaña', e, userId);
         res.status(500).json({ message: 'Error creando campaña.' });
     }
 };
@@ -541,20 +549,28 @@ export const handleUpdateCampaign = async (req: any, res: any) => {
             return res.status(404).json({ message: 'Campaña no encontrada.' });
         }
 
-        // Logic for nextRunAt if Activating
+        // Logic for nextRunAt if Activating or Rescheduling
         if (updates.status === 'ACTIVE' && campaign.status !== 'ACTIVE') {
             const now = new Date();
-            // If it's a future scheduled one, keep schedule. If it's ONCE and no date, run now.
             if (updates.schedule?.startDate) {
+                // If rescheduling, use new date
                 updates.stats = { ...campaign.stats, nextRunAt: updates.schedule.startDate };
             } else if (!campaign.stats.nextRunAt) {
+                // If just activating and no run time, set to now
                 updates.stats = { ...campaign.stats, nextRunAt: now.toISOString() };
             }
         }
+        
+        // Ensure stats object is merged correctly if passed
+        if (updates.stats) {
+            updates.stats = { ...campaign.stats, ...updates.stats };
+        }
 
         const updated = await db.updateCampaign(id, updates);
+        logService.info(`[CAMPAIGN] Campaña actualizada: ${id}`, userId);
         res.json(updated);
     } catch(e) {
+        logService.error('Error actualizando campaña', e, userId);
         res.status(500).json({ message: 'Error actualizando campaña.' });
     }
 };
@@ -756,28 +772,6 @@ export const handleSimulateRadarSignal = async (req: any, res: any) => {
 export const handleGetRadarActivityLogs = async (req: any, res: any) => {
     const userId = getUserId(req);
     try {
-        // Query the main log collection for logs from this user containing the trace tag
-        // We rely on logService persistence
-        // Accessing db directly here as a shortcut, ideally via logService method but logService is a wrapper.
-        // We'll use a direct DB query for now as `db.getLogs` is admin only usually.
-        // Let's implement a specific query in `db` for this or reuse getLogs but filter.
-        
-        // Since `db.getLogs` fetches ALL, we need a user-specific one.
-        // Let's assume we can query LogModel directly via a new db method or add one.
-        // For simplicity, I'll add `getUserLogs` to `Database` class in the future, but here I can hack it if `LogModel` was exported.
-        // Since `db` encapsulates models, I should add `db.getRadarTraceLogs(userId)`.
-        
-        // Let's modify `database.ts` to add this method or use existing one if possible.
-        // Existing `getLogs` has no filter.
-        
-        // Wait, I can't modify `database.ts` in this specific file block easily without repeating the whole file.
-        // However, I can use `db.getLogs` and filter in memory if volume is low, OR assume `db` has a method I will add.
-        // I will add `getRadarTraceLogs` to `database.ts` in the next change block if needed, but to keep it simple:
-        // I'll create the method in `database.ts` in the same step/commit logic if possible.
-        // BUT, I can't edit multiple files in one `change` block.
-        
-        // Actually, I can edit `database.ts` too.
-        
         const logs = await db.getRadarTraceLogs(userId);
         res.json(logs);
     } catch (e) {
