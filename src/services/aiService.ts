@@ -5,7 +5,8 @@ import { planService } from './planService.js';
 import { logService } from './logService.js';
 import { capabilityResolver } from './capabilityResolver.js'; // NEW IMPORT
 
-const MODEL_PRIORITY = ["gemini-3-flash-preview", "gemini-flash-lite-latest"];
+// Updated Priority List: Try new preview, then stable flash exp, then lite.
+const MODEL_PRIORITY = ["gemini-3-flash-preview", "gemini-2.0-flash-exp", "gemini-flash-lite-latest"];
 
 export const generateBotResponse = async (
   conversationHistory: Message[],
@@ -22,7 +23,10 @@ export const generateBotResponse = async (
       }
   }
 
-  if (!user.settings.geminiApiKey || user.settings.geminiApiKey.trim() === '') {
+  // Trim key here as well for safety
+  const cleanKey = user.settings.geminiApiKey?.trim();
+
+  if (!cleanKey) {
       logService.error(`[AI-SERVICE] Usuario ${user.username} (ID: ${user.id}) intentó generar respuesta AI sin API Key de Gemini configurada.`, null, user.id, user.username);
       if (isSimulation) {
           return { responseText: "[ERROR SISTEMA] No has configurado tu API Key de Gemini. Ve a Configuración > Panel de Control de Gemini.", newStatus: LeadStatus.COLD, tags: ['ERROR_CONFIG'] };
@@ -105,7 +109,7 @@ Analiza el historial y determina el estado del lead (Frío, Tibio, Caliente).
 ${JSON.stringify(Object.keys(responseSchema.properties))}
 `;
   
-  const ai = new GoogleGenAI({ apiKey: settings.geminiApiKey });
+  const ai = new GoogleGenAI({ apiKey: cleanKey });
 
   for (const modelName of MODEL_PRIORITY) {
     try {

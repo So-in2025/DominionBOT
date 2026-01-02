@@ -120,20 +120,37 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
   const [apiKeyStatus, setApiKeyStatus] = useState<'UNKNOWN' | 'VALID' | 'INVALID' | 'VERIFYING'>('UNKNOWN');
   
   const verifyApiKey = async () => {
-    if (!settings?.geminiApiKey) {
-        alert('API Key de Gemini no configurada. Ve a Ajustes para añadirla.');
+    // 1. Clean the key (Trim spaces)
+    const cleanKey = settings?.geminiApiKey?.trim();
+    
+    if (!cleanKey) {
+        alert('API Key de Gemini no configurada o vacía.');
+        setApiKeyStatus('INVALID');
         return;
     }
+
     setApiKeyStatus('VERIFYING');
     try {
-        const ai = new GoogleGenAI({ apiKey: settings.geminiApiKey });
-        await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: [{ parts: [{text: 'test'}] }] }); // Corrected usage
+        const ai = new GoogleGenAI({ apiKey: cleanKey });
+        // Use gemini-2.0-flash-exp for verification as it's more widely available than 3-preview
+        // This ensures we test the KEY, not the Model availability.
+        await ai.models.generateContent({ 
+            model: 'gemini-2.5-flash', 
+            contents: [{ parts: [{text: 'ping'}] }] 
+        }); 
+        
         setApiKeyStatus('VALID');
-        alert('API Key verificada y operativa.');
-    } catch (error) {
+        alert('✅ Conexión Exitosa: API Key verificada y operativa.');
+    } catch (error: any) {
         setApiKeyStatus('INVALID');
-        alert('API Key inválida o sin permisos.');
         console.error("API Key verification failed:", error);
+        
+        let msg = 'Error desconocido.';
+        if (error.message?.includes('403')) msg = 'Permisos insuficientes o Key inválida (403).';
+        if (error.message?.includes('404')) msg = 'Modelo no encontrado (404). Tu Key funciona, pero el modelo no está disponible en tu región.';
+        if (error.message?.includes('400')) msg = 'Petición inválida (400). Verifica el formato de la Key.';
+        
+        alert(`❌ Error de Verificación: ${msg}\n\nDetalle técnico: ${error.message}`);
     }
   };
 
