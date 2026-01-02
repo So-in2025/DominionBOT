@@ -81,6 +81,20 @@ class CampaignService {
                     continue; 
                 }
 
+                // 🛡️ SAFETY LAYER 2: DB Double Check (Prevent Ghost Runs)
+                // Re-fetch campaign to ensure 'lastRunAt' hasn't changed since the query started
+                const freshCampaign = await db.getCampaign(campaign.id);
+                if (!freshCampaign) continue;
+
+                if (freshCampaign.stats.lastRunAt) {
+                    const lastRunDate = new Date(freshCampaign.stats.lastRunAt).toDateString();
+                    const todayDate = new Date().toDateString();
+                    if (lastRunDate === todayDate && freshCampaign.schedule.type !== 'ONCE') {
+                        logService.warn(`[CAMPAIGN-SKIP] Omitiendo ${freshCampaign.name}. Ya ejecutada hoy (DB Check).`, freshCampaign.userId);
+                        continue;
+                    }
+                }
+
                 logService.debug(`[CAMPAIGN-DEBUG] Evaluando campaña "${campaign.name}" (Programada: ${campaign.stats.nextRunAt})`);
                 
                 // 1. Check Operating Window (Hours)
@@ -94,7 +108,10 @@ class CampaignService {
                 this.processingCampaignIds.add(campaign.id);
 
                 // Ejecutar sin await para no bloquear el loop (Normal execution, force=false)
-                this.executeCampaignBatch(campaign, false).catch(e => console.error(e));
+                this.executeCampaignBatch(campaign, false).catch(e => {
+                    console.error(`[CAMPAIGN-CRASH]`, e);
+                    this.processingCampaignIds.delete(campaign.id); // Release lock on crash
+                });
             }
         } catch (error) {
             logService.error('[CAMPAIGN-SCHEDULER] Error en ciclo de reloj:', error);
@@ -151,6 +168,21 @@ class CampaignService {
             }
         }
         // --- END IDEMPOTENCY LAYER ---
+
+        // 🛡️ PRE-LOCK STRATEGY (CRITICAL FOR SLEEP SAFETY)
+        // Mark as "Run Today" BEFORE sending messages.
+        // If server crashes mid-batch, it will NOT retry today. Better safe than spam.
+        const preLockNextRun = this.calculateNextRun(campaign);
+        await db.updateCampaign(campaign.id, {
+            stats: {
+                ...campaign.stats,
+                lastRunAt: new Date().toISOString(), // TIMESTAMPED NOW
+                nextRunAt: preLockNextRun // PUSHED TO FUTURE IMMEDIATELY
+            },
+            // If ONCE, mark as completed immediately to prevent pickup
+            status: campaign.schedule.type === 'ONCE' ? 'COMPLETED' : 'ACTIVE'
+        });
+        logService.debug(`[CAMPAIGN-LOCK] 🔒 Campaña bloqueada en DB para evitar duplicados.`);
 
         try {
             const socket = getSocket(campaign.userId);
@@ -226,21 +258,24 @@ class CampaignService {
                 }
             }
 
-            // 5. Update Campaign State after batch
-            const nextRun = this.calculateNextRun(campaign);
-            const updates: Partial<Campaign> = {
-                stats: {
-                    totalSent: (campaign.stats?.totalSent || 0) + sentCount,
-                    totalFailed: (campaign.stats?.totalFailed || 0) + failedCount,
-                    lastRunAt: new Date().toISOString(),
-                    nextRunAt: nextRun
-                },
-                // If ONCE, mark as completed immediately
-                status: campaign.schedule.type === 'ONCE' ? 'COMPLETED' : 'ACTIVE'
-            };
-
-            await db.updateCampaign(campaign.id, updates);
-            logService.info(`[CAMPAIGN] ✅ Campaña ${campaign.name} finalizada. Enviados: ${sentCount}. Prox: ${nextRun || 'Fin'}`, campaign.userId);
+            // 5. Update Campaign Stats (Counts only, times were pre-locked)
+            // We fetch the latest campaign state again just to be safe about the ID, 
+            // but we only update the counters.
+            const finalCampaignState = await db.getCampaign(campaign.id);
+            if(finalCampaignState) {
+                const updates: Partial<Campaign> = {
+                    stats: {
+                        ...finalCampaignState.stats,
+                        totalSent: (finalCampaignState.stats?.totalSent || 0) + sentCount,
+                        totalFailed: (finalCampaignState.stats?.totalFailed || 0) + failedCount,
+                        // DO NOT UPDATE lastRunAt or nextRunAt HERE. 
+                        // They were set at the start to ensure safety.
+                    }
+                };
+                await db.updateCampaign(campaign.id, updates);
+            }
+            
+            logService.info(`[CAMPAIGN] ✅ Campaña ${campaign.name} finalizada. Enviados: ${sentCount}.`, campaign.userId);
 
         } catch(err) {
             logService.error(`[CAMPAIGN] Error crítico ejecutando batch de ${campaign.name}`, err, campaign.userId);
