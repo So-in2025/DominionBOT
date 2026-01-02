@@ -22,11 +22,18 @@ class RadarService {
         const user = await db.getUser(userId);
         if (senderJid.includes(user?.whatsapp_number || 'xxxxx')) return; 
 
+        // LOG: Ingestion Real
+        logService.info(`[RADAR-TRACE] 📡 Señal detectada en "${groupName}": "${messageContent.substring(0, 30)}..."`, userId);
+
         // 4. Keyword Pre-filter (Optional optimization)
         if (settings.keywordsInclude && settings.keywordsInclude.length > 0) {
             const lowerContent = messageContent.toLowerCase();
             const hasKeyword = settings.keywordsInclude.some(k => lowerContent.includes(k.toLowerCase()));
-            if (!hasKeyword) return;
+            if (!hasKeyword) {
+                // LOG: Filter drop
+                // logService.info(`[RADAR-TRACE] 🗑️ Descartado por keyword filter.`, userId); // Opcional para no saturar
+                return;
+            }
         }
 
         // 5. RADAR 4.0: Context Injection using CAPABILITIES
@@ -49,6 +56,9 @@ class RadarService {
             `.trim();
         }
 
+        // LOG: Thinking start
+        logService.info(`[RADAR-TRACE] 🧠 Invocando Inferencia Neural (Depth Lvl ${capabilities.depthLevel})...`, userId);
+
         // 6. AI Analysis (Predictive Engine)
         try {
             const analysisResult = await this.analyzeMessageWithAI(messageContent, groupName, contextHistory, memoryContext, user!, capabilities, settings);
@@ -63,52 +73,65 @@ class RadarService {
                 baseThreshold = Math.max(20, Math.min(95, baseThreshold + sensitivityMod));
             }
 
-            if (analysisResult && analysisResult.analysis.score >= baseThreshold) {
+            if (analysisResult) {
+                const score = analysisResult.analysis.score;
+                const reasoning = analysisResult.analysis.reasoning;
                 
-                // Calculate Strategic Score (Composite)
-                let strategicScore = analysisResult.analysis.score;
-                if (analysisResult.predictedWindow?.urgencyLevel === 'CRITICAL') strategicScore += 15;
-                if (analysisResult.predictedWindow?.urgencyLevel === 'HIGH') strategicScore += 10;
-                if (analysisResult.predictedWindow?.delayRisk === 'HIGH') strategicScore -= 10;
-                strategicScore = Math.min(100, Math.max(0, strategicScore));
+                // LOG: AI Result
+                if (score >= baseThreshold) {
+                    logService.info(`[RADAR-TRACE] ✅ OPORTUNIDAD VALIDADA (Score: ${score}). Razón: ${reasoning.substring(0, 50)}...`, userId);
+                } else {
+                    logService.info(`[RADAR-TRACE] 📉 Señal débil (Score: ${score}/${baseThreshold}). Descartada.`, userId);
+                }
 
-                const signal: RadarSignal = {
-                    id: uuidv4(),
-                    userId,
-                    groupJid,
-                    groupName: groupName || 'Grupo Desconocido',
-                    senderJid,
-                    senderName: senderName || 'Usuario Desconocido',
-                    messageContent,
-                    timestamp: new Date().toISOString(),
+                if (score >= baseThreshold) {
                     
-                    // Mapped fields from AI
-                    analysis: analysisResult.analysis,
-                    marketContext: analysisResult.marketContext,
-                    predictedWindow: analysisResult.predictedWindow,
-                    hiddenSignals: analysisResult.hiddenSignals,
-                    actionIntelligence: analysisResult.actionIntelligence,
-                    strategicScore,
+                    // Calculate Strategic Score (Composite)
+                    let strategicScore = score;
+                    if (analysisResult.predictedWindow?.urgencyLevel === 'CRITICAL') strategicScore += 15;
+                    if (analysisResult.predictedWindow?.urgencyLevel === 'HIGH') strategicScore += 10;
+                    if (analysisResult.predictedWindow?.delayRisk === 'HIGH') strategicScore -= 10;
+                    strategicScore = Math.min(100, Math.max(0, strategicScore));
+
+                    const signal: RadarSignal = {
+                        id: uuidv4(),
+                        userId,
+                        groupJid,
+                        groupName: groupName || 'Grupo Desconocido',
+                        senderJid,
+                        senderName: senderName || 'Usuario Desconocido',
+                        messageContent,
+                        timestamp: new Date().toISOString(),
+                        
+                        // Mapped fields from AI
+                        analysis: analysisResult.analysis,
+                        marketContext: analysisResult.marketContext,
+                        predictedWindow: analysisResult.predictedWindow,
+                        hiddenSignals: analysisResult.hiddenSignals,
+                        actionIntelligence: analysisResult.actionIntelligence,
+                        strategicScore,
+                        
+                        status: 'NEW'
+                    };
+
+                    await db.createRadarSignal(signal);
                     
-                    status: 'NEW'
-                };
+                    // 8. Update Group Memory (Feedback Loop)
+                    const newSentiment = analysisResult.marketContext?.sentiment || 'NEUTRAL';
+                    const currentHistory = groupMemory?.sentimentHistory || [];
+                    const newHistory = [...currentHistory, newSentiment].slice(-10); 
+                    
+                    await db.updateGroupMemory(groupJid, {
+                        lastUpdated: new Date().toISOString(),
+                        sentimentHistory: newHistory
+                    });
 
-                await db.createRadarSignal(signal);
-                
-                // 8. Update Group Memory (Feedback Loop)
-                const newSentiment = analysisResult.marketContext?.sentiment || 'NEUTRAL';
-                const currentHistory = groupMemory?.sentimentHistory || [];
-                const newHistory = [...currentHistory, newSentiment].slice(-10); 
-                
-                await db.updateGroupMemory(groupJid, {
-                    lastUpdated: new Date().toISOString(),
-                    sentimentHistory: newHistory
-                });
-
-                logService.info(`[RADAR-4.0] 🔮 Predicción (Depth ${capabilities.depthLevel}): ${analysisResult.predictedWindow?.confidenceScore}% Confianza`, userId);
+                    logService.info(`[RADAR-4.0] 🔮 Predicción (Depth ${capabilities.depthLevel}): ${analysisResult.predictedWindow?.confidenceScore}% Confianza`, userId);
+                }
             }
         } catch (error) {
             console.error(`[RADAR] Error analyzing message:`, error);
+            logService.error(`[RADAR-TRACE] ❌ Error en motor de inferencia.`, error, userId);
         }
     }
 

@@ -11,12 +11,19 @@ interface RadarPanelProps {
     showToast: (message: string, type: 'success' | 'error' | 'info') => void;
 }
 
+interface LogTrace {
+    timestamp: string;
+    message: string;
+}
+
 const RadarPanel: React.FC<RadarPanelProps> = ({ token, backendUrl, showToast }) => {
     const [view, setView] = useState<'LIVE' | 'HISTORY' | 'CONFIG' | 'WIZARD'>('LIVE');
     const [signals, setSignals] = useState<RadarSignal[]>([]);
+    const [traces, setTraces] = useState<LogTrace[]>([]);
     const [settings, setSettings] = useState<RadarSettings | null>(null);
     const [groups, setGroups] = useState<WhatsAppGroup[]>([]);
     const [loading, setLoading] = useState(false);
+    const [isSimulating, setIsSimulating] = useState(false);
     
     // WIZARD STATE
     const [wizardStep, setWizardStep] = useState(0);
@@ -28,18 +35,41 @@ const RadarPanel: React.FC<RadarPanelProps> = ({ token, backendUrl, showToast })
     const [isEnhancing, setIsEnhancing] = useState(false);
     
     const prevSignalsLength = useRef(0);
+    const terminalRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
-        if (view === 'LIVE') fetchSignals(false);
+        if (view === 'LIVE') {
+            fetchSignals(false);
+            fetchTraces();
+        }
         if (view === 'HISTORY') fetchSignals(true);
         if (view === 'CONFIG' || view === 'WIZARD') fetchConfigData();
     }, [view]);
 
     useEffect(() => {
         if (view !== 'LIVE') return;
-        const interval = setInterval(() => fetchSignals(false), 8000);
+        const interval = setInterval(() => {
+            fetchSignals(false);
+            fetchTraces();
+        }, 3000); 
         return () => clearInterval(interval);
     }, [view]);
+
+    useEffect(() => {
+        if (terminalRef.current) {
+            terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
+        }
+    }, [traces]);
+
+    const fetchTraces = async () => {
+        try {
+            const res = await fetch(`${backendUrl}/api/radar/activity`, { headers: getAuthHeaders(token) });
+            if (res.ok) {
+                const data = await res.json();
+                setTraces(data);
+            }
+        } catch(e) {}
+    };
 
     const fetchSignals = async (history: boolean) => {
         try {
@@ -50,7 +80,6 @@ const RadarPanel: React.FC<RadarPanelProps> = ({ token, backendUrl, showToast })
                 
                 if (!history && data.length > prevSignalsLength.current) {
                     const latest = data[0];
-                    // Alert logic based on Strategic Score (V4)
                     if (latest && (latest.strategicScore || latest.analysis.score) >= 80) {
                         audioService.play('radar_ping'); 
                         showToast(`¡Radar! Oportunidad Crítica (${latest.strategicScore}%)`, 'info');
@@ -129,6 +158,26 @@ const RadarPanel: React.FC<RadarPanelProps> = ({ token, backendUrl, showToast })
         }
     };
 
+    const handleSimulate = async () => {
+        setIsSimulating(true);
+        try {
+            const res = await fetch(`${backendUrl}/api/radar/simulate`, {
+                method: 'POST',
+                headers: getAuthHeaders(token)
+            });
+            if (res.ok) {
+                showToast('Señal de prueba inyectada.', 'success');
+                setTimeout(() => fetchSignals(false), 1000);
+            } else {
+                showToast('Error simulando señal.', 'error');
+            }
+        } catch (e) {
+            showToast('Error de conexión.', 'error');
+        } finally {
+            setIsSimulating(false);
+        }
+    };
+
     // --- WIZARD LOGIC ---
     const handleWizardSave = () => {
         if (!settings) return;
@@ -142,7 +191,6 @@ const RadarPanel: React.FC<RadarPanelProps> = ({ token, backendUrl, showToast })
     const autoCalibrateWithAI = async () => {
         setIsEnhancing(true);
         try {
-            // Fetch user bot settings to get business description
             const settingsRes = await fetch(`${backendUrl}/api/settings`, { headers: getAuthHeaders(token) });
             const botSettings: BotSettings = await settingsRes.json();
             
@@ -192,6 +240,23 @@ const RadarPanel: React.FC<RadarPanelProps> = ({ token, backendUrl, showToast })
         return 'bg-blue-500 text-white';
     };
 
+    const renderTraceLine = (trace: LogTrace, idx: number) => {
+        const msg = trace.message.replace('[RADAR-TRACE]', '').trim();
+        let color = 'text-gray-400';
+        if (msg.includes('📡')) color = 'text-blue-400';
+        if (msg.includes('🧠')) color = 'text-purple-400';
+        if (msg.includes('✅')) color = 'text-green-400';
+        if (msg.includes('📉')) color = 'text-gray-600';
+        if (msg.includes('❌')) color = 'text-red-400';
+
+        return (
+            <div key={idx} className="flex gap-3 text-[10px] font-mono leading-tight">
+                <span className="text-gray-700 select-none flex-shrink-0">{new Date(trace.timestamp).toLocaleTimeString()}</span>
+                <span className={`${color} break-all`}>{msg}</span>
+            </div>
+        );
+    };
+
     return (
         <div className="flex-1 bg-brand-black p-6 md:p-10 overflow-y-auto custom-scrollbar font-sans animate-fade-in relative">
             {/* Background Grid */}
@@ -202,10 +267,15 @@ const RadarPanel: React.FC<RadarPanelProps> = ({ token, backendUrl, showToast })
                     <div>
                         <h2 className="text-3xl font-black text-white tracking-tighter uppercase flex items-center gap-3">
                             Radar <span className="text-brand-gold">4.0</span>
-                            <div className="relative flex h-3 w-3">
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-gold opacity-75"></span>
-                                <span className="relative inline-flex rounded-full h-3 w-3 bg-brand-gold"></span>
-                            </div>
+                            {settings?.isEnabled && (
+                                <div className="relative flex items-center gap-2 bg-green-500/10 px-3 py-1 rounded-full border border-green-500/30">
+                                    <div className="relative flex h-2 w-2">
+                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-500 opacity-75"></span>
+                                        <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                                    </div>
+                                    <span className="text-[9px] font-black text-green-500 uppercase tracking-widest">Escaneando</span>
+                                </div>
+                            )}
                         </h2>
                         <p className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.3em] mt-1">Predictive Advantage Engine</p>
                     </div>
@@ -219,95 +289,99 @@ const RadarPanel: React.FC<RadarPanelProps> = ({ token, backendUrl, showToast })
                 </header>
 
                 {(view === 'LIVE' || view === 'HISTORY') ? (
-                    <div className="grid grid-cols-1 gap-6">
-                        {signals.length === 0 && (
-                            <div className="text-center py-20 bg-brand-surface rounded-3xl border border-white/5">
-                                <div className="w-16 h-16 border-4 border-brand-gold/10 border-t-brand-gold rounded-full animate-spin mx-auto mb-4"></div>
-                                <p className="text-gray-500 text-xs uppercase tracking-widest font-bold">{view === 'LIVE' ? 'Escaneando espectro...' : 'Sin historial registrado.'}</p>
-                                {view === 'LIVE' && <p className="text-gray-600 text-[10px] mt-2">El sistema predictivo está buscando ventanas de oportunidad.</p>}
-                            </div>
-                        )}
-                        {signals.map(signal => (
-                            <div key={signal.id} className={`bg-brand-surface border border-white/5 rounded-3xl p-6 hover:bg-white/5 transition-all group relative overflow-hidden ${signal.status === 'DISMISSED' ? 'opacity-50 grayscale' : ''}`}>
-                                
-                                {/* Strategic Score Bar */}
-                                <div className="absolute top-0 left-0 bottom-0 w-1.5 bg-gradient-to-b from-brand-gold to-transparent opacity-50"></div>
-                                
-                                <div className="flex flex-col lg:flex-row gap-8">
-                                    {/* LEFT: Context & Content */}
-                                    <div className="flex-1 space-y-4">
-                                        <div className="flex items-center gap-3 mb-2">
-                                            <span className={`px-3 py-1 rounded text-[10px] font-black uppercase tracking-widest border border-white/10 ${getUrgencyColor(signal.predictedWindow?.urgencyLevel)}`}>
-                                                {signal.predictedWindow?.urgencyLevel || 'NORMAL'}
-                                            </span>
-                                            <span className="text-[10px] text-gray-500 font-mono uppercase tracking-wider bg-black/40 px-2 py-1 rounded">{signal.analysis.intentType}</span>
-                                            <span className="text-[10px] text-gray-600">Hace {Math.floor((Date.now() - new Date(signal.timestamp).getTime()) / 60000)} min</span>
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        {/* SIGNALS COLUMN */}
+                        <div className="lg:col-span-2 space-y-6">
+                            {signals.length === 0 && (
+                                <div className="text-center py-20 bg-brand-surface rounded-3xl border border-white/5">
+                                    <div className="w-16 h-16 border-4 border-brand-gold/10 border-t-brand-gold rounded-full animate-spin mx-auto mb-4"></div>
+                                    <p className="text-gray-500 text-xs uppercase tracking-widest font-bold">{view === 'LIVE' ? 'Escaneando espectro...' : 'Sin historial registrado.'}</p>
+                                    {view === 'LIVE' && (
+                                        <div className="mt-6 flex flex-col items-center gap-3">
+                                            <p className="text-gray-600 text-[10px]">El sistema espera pasivamente nuevos mensajes.</p>
+                                            <button 
+                                                onClick={handleSimulate} 
+                                                disabled={isSimulating}
+                                                className="px-6 py-2 bg-white/5 hover:bg-brand-gold/10 hover:text-brand-gold text-gray-400 border border-white/10 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all"
+                                            >
+                                                {isSimulating ? 'Simulando...' : 'Prueba de Sistema (Simular Señal)'}
+                                            </button>
                                         </div>
-                                        
-                                        <p className="text-base font-bold text-white leading-relaxed font-sans">"{signal.messageContent}"</p>
-                                        
-                                        <div className="flex gap-6 text-[10px] text-gray-500 font-mono pt-2 border-t border-white/5">
-                                            <span className="flex items-center gap-2"><span className="w-2 h-2 bg-gray-600 rounded-full"></span> {signal.groupName}</span>
-                                            <span className="flex items-center gap-2"><span className="w-2 h-2 bg-gray-600 rounded-full"></span> {signal.senderName || signal.senderJid.split('@')[0]}</span>
-                                        </div>
-
-                                        {/* V4 Hidden Signals */}
-                                        {signal.hiddenSignals && signal.hiddenSignals.length > 0 && (
-                                            <div className="flex flex-wrap gap-2 mt-3">
-                                                {signal.hiddenSignals.map((hs, idx) => (
-                                                    <span key={idx} className="text-[9px] bg-purple-500/10 text-purple-300 border border-purple-500/20 px-2 py-1 rounded flex items-center gap-1">
-                                                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
-                                                        {hs.type.replace('_', ' ')}
-                                                    </span>
-                                                ))}
+                                    )}
+                                </div>
+                            )}
+                            {signals.map(signal => (
+                                <div key={signal.id} className={`bg-brand-surface border border-white/5 rounded-3xl p-6 hover:bg-white/5 transition-all group relative overflow-hidden animate-slide-in-right ${signal.status === 'DISMISSED' ? 'opacity-50 grayscale' : ''}`}>
+                                    {/* Strategic Score Bar */}
+                                    <div className="absolute top-0 left-0 bottom-0 w-1.5 bg-gradient-to-b from-brand-gold to-transparent opacity-50"></div>
+                                    
+                                    <div className="flex flex-col gap-4">
+                                        {/* HEADER */}
+                                        <div className="flex justify-between items-start">
+                                            <div className="flex items-center gap-3">
+                                                <span className={`px-3 py-1 rounded text-[10px] font-black uppercase tracking-widest border border-white/10 ${getUrgencyColor(signal.predictedWindow?.urgencyLevel)}`}>
+                                                    {signal.predictedWindow?.urgencyLevel || 'NORMAL'}
+                                                </span>
+                                                <span className="text-[10px] text-gray-500 font-mono uppercase tracking-wider bg-black/40 px-2 py-1 rounded">{signal.analysis.intentType}</span>
                                             </div>
-                                        )}
+                                            <span className="text-[10px] font-black text-brand-gold">{signal.strategicScore}% MATCH</span>
+                                        </div>
+                                        
+                                        <p className="text-sm font-bold text-white leading-relaxed font-sans pl-2 border-l-2 border-white/10">"{signal.messageContent}"</p>
+                                        
+                                        <div className="flex justify-between items-end border-t border-white/5 pt-3">
+                                            <div className="space-y-1">
+                                                <div className="flex gap-2 text-[10px] text-gray-500 font-mono">
+                                                    <span>👥 {signal.groupName}</span>
+                                                    <span>👤 {signal.senderName || 'Anon'}</span>
+                                                </div>
+                                                <p className="text-[10px] text-gray-400 italic">"{signal.predictedWindow?.reasoning || signal.analysis.reasoning}"</p>
+                                            </div>
+
+                                            {signal.status === 'NEW' && (
+                                                <div className="flex gap-2">
+                                                    <button 
+                                                        onClick={() => handleContact(signal)}
+                                                        className="px-4 py-2 bg-brand-gold text-black rounded-lg text-[10px] font-black uppercase tracking-widest hover:scale-105 transition-all shadow-lg"
+                                                    >
+                                                        Actuar
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => dismissSignal(signal.id)}
+                                                        className="px-3 py-2 bg-white/5 text-gray-500 hover:text-red-400 rounded-lg transition-colors border border-white/10"
+                                                    >
+                                                        ✕
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
+                                </div>
+                            ))}
+                        </div>
 
-                                    {/* RIGHT: Predictive Intelligence */}
-                                    <div className="flex flex-col gap-4 min-w-[280px] bg-black/20 p-4 rounded-2xl border border-white/5">
-                                        
-                                        <div className="flex justify-between items-center mb-2">
-                                            <span className="text-[10px] font-black text-brand-gold uppercase tracking-widest">Ventana Predictiva</span>
-                                            <span className="text-xl font-black text-white">{signal.strategicScore || signal.analysis.score}%</span>
-                                        </div>
-                                        
-                                        <div className="w-full bg-white/10 h-1.5 rounded-full overflow-hidden mb-2">
-                                            <div className="h-full bg-brand-gold" style={{width: `${signal.strategicScore || signal.analysis.score}%`}}></div>
-                                        </div>
-
-                                        {/* Action Intel */}
-                                        {signal.actionIntelligence && (
-                                            <div className="bg-white/5 p-3 rounded-xl border border-white/5">
-                                                <p className="text-[9px] text-gray-400 uppercase font-bold mb-1">Estrategia Recomendada</p>
-                                                <p className="text-[11px] text-white font-bold">{signal.actionIntelligence.suggestedEntryType} ENTRY</p>
-                                                <p className="text-[10px] text-gray-500 italic mt-1">{signal.actionIntelligence.communicationFraming}</p>
-                                            </div>
+                        {/* LIVE TERMINAL COLUMN (NEW) */}
+                        {view === 'LIVE' && (
+                            <div className="lg:col-span-1">
+                                <div className="bg-[#050505] border border-white/10 rounded-2xl p-4 h-[500px] flex flex-col shadow-2xl sticky top-28">
+                                    <div className="flex justify-between items-center mb-4 pb-2 border-b border-white/5">
+                                        <h4 className="text-[10px] font-black text-brand-gold uppercase tracking-widest flex items-center gap-2">
+                                            <span className="w-1.5 h-1.5 bg-brand-gold rounded-full animate-pulse"></span>
+                                            Telemetría Neural
+                                        </h4>
+                                        <span className="text-[9px] text-gray-600 font-mono">LIVE LINK</span>
+                                    </div>
+                                    <div className="flex-1 overflow-y-auto custom-scrollbar space-y-3 font-mono p-1" ref={terminalRef}>
+                                        {traces.length === 0 ? (
+                                            <p className="text-[10px] text-gray-700 italic text-center mt-20">Esperando actividad de red...</p>
+                                        ) : (
+                                            traces.map((trace, idx) => renderTraceLine(trace, idx))
                                         )}
-
-                                        <p className="text-[10px] text-gray-400 italic leading-snug">"{signal.predictedWindow?.reasoning || signal.analysis.reasoning}"</p>
-
-                                        {signal.status === 'NEW' && (
-                                            <div className="flex gap-2 mt-auto">
-                                                <button 
-                                                    onClick={() => handleContact(signal)}
-                                                    className="flex-1 py-3 bg-brand-gold text-black rounded-xl text-[10px] font-black uppercase tracking-widest text-center hover:scale-105 transition-all shadow-lg"
-                                                >
-                                                    Ejecutar Acción
-                                                </button>
-                                                <button 
-                                                    onClick={() => dismissSignal(signal.id)}
-                                                    className="px-4 py-3 bg-white/5 text-gray-500 hover:text-red-400 rounded-xl transition-colors border border-white/10"
-                                                    title="Ignorar Señal"
-                                                >
-                                                    ✕
-                                                </button>
-                                            </div>
-                                        )}
+                                        <div className="h-4"></div>
                                     </div>
                                 </div>
                             </div>
-                        ))}
+                        )}
                     </div>
                 ) : view === 'WIZARD' ? (
                     // --- PRECISION PROTOCOL WIZARD ---

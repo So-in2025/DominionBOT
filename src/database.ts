@@ -411,6 +411,17 @@ class Database {
       return await LogModel.find().sort({ timestamp: -1 }).limit(limit).lean();
   }
 
+  // NEW: Get Radar Traces for User
+  async getRadarTraceLogs(userId: string, limit = 20) {
+      return await LogModel.find({ 
+          userId, 
+          message: { $regex: /\[RADAR-TRACE\]/ } 
+      })
+      .sort({ timestamp: -1 }) // Newest first
+      .limit(limit)
+      .lean();
+  }
+
   async getGlobalMetrics(): Promise<GlobalMetrics> {
       if (!this.isReady()) return { activeVendors: 0, onlineNodes: 0, globalLeads: 0, hotLeadsTotal: 0, aiRequestsTotal: 0, riskAccountsCount: 0 };
       const activeVendors = await UserModel.countDocuments({ role: 'client' });

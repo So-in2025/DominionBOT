@@ -169,7 +169,7 @@ app.get('/api/metrics', authenticateToken, async (req: any, res: any) => {
 import { 
     handleConnect, handleDisconnect, handleSendMessage, handleUpdateConversation, handleGetStatus, handleGetConversations, handleGetTestimonials, handlePostTestimonial, handleGetTtsAudio, handleStartClientTestBot, handleClearClientTestBotConversation, handleForceAiRun, handleStopClientTestBot,
     handleGetCampaigns, handleCreateCampaign, handleUpdateCampaign, handleDeleteCampaign, handleGetWhatsAppGroups,
-    handleGetRadarSignals, handleGetRadarSettings, handleUpdateRadarSettings, handleDismissRadarSignal, handleConvertRadarSignal
+    handleGetRadarSignals, handleGetRadarSettings, handleUpdateRadarSettings, handleDismissRadarSignal, handleConvertRadarSignal, handleSimulateRadarSignal, handleGetRadarActivityLogs
 } from './controllers/apiController.js';
 import { handleGetAllClients, handleUpdateClient, handleRenewClient, handleGetLogs, handleGetDashboardMetrics, handleActivateClient, handleGetSystemSettings, handleUpdateSystemSettings, handleDeleteClient, handleStartTestBot, handleClearTestBotConversation, handleUpdateDepthLevel, handleApplyDepthBoost } from './controllers/adminController.js';
 
@@ -200,6 +200,8 @@ app.get('/api/radar/settings', authenticateToken, handleGetRadarSettings);
 app.post('/api/radar/settings', authenticateToken, handleUpdateRadarSettings);
 app.post('/api/radar/signals/:id/dismiss', authenticateToken, handleDismissRadarSignal);
 app.post('/api/radar/signals/:id/convert', authenticateToken, handleConvertRadarSignal); // BRIDGE TO LEAD
+app.post('/api/radar/simulate', authenticateToken, handleSimulateRadarSignal); // NEW SIMULATION ROUTE
+app.get('/api/radar/activity', authenticateToken, handleGetRadarActivityLogs); // NEW ACTIVITY LOG
 
 // Public/Shared Routes
 // MODIFIED: Make system settings public so Landing Page can get Support Number

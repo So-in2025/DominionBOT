@@ -5,7 +5,7 @@ import { Buffer } from 'buffer';
 // FIX: Import connectToWhatsApp, disconnectWhatsApp, sendMessage as they are now exported.
 import { connectToWhatsApp, disconnectWhatsApp, sendMessage, getSessionStatus, processAiResponseForJid, fetchUserGroups } from '../whatsapp/client.js'; // Import fetchUserGroups
 import { conversationService } from '../services/conversationService.js';
-import { Message, LeadStatus, User, Conversation, SimulationScenario, EvaluationResult, Campaign } from '../types.js';
+import { Message, LeadStatus, User, Conversation, SimulationScenario, EvaluationResult, Campaign, RadarSignal } from '../types.js';
 import { db, sanitizeKey } from '../database.js'; // Import sanitizeKey
 import { logService } from '../services/logService.js';
 import fs from 'fs';
@@ -594,19 +594,7 @@ export const handleGetRadarSignals = async (req: any, res: any) => {
     
     try {
         if (historyMode) {
-            // Fetch everything except dismissed if specifically asked, OR maybe everything including acted?
-            // "History" usually implies everything except 'NEW'. Or maybe everything?
-            // Let's return ACTED and DISMISSED for history view.
-            const allSignals = await db.getRadarSignals(userId, 200); // Higher limit
-            // But db.getRadarSignals default excludes dismissed. We need a new DB method or modify existing.
-            // For MVP speed, let's just use the existing one which filters OUT dismissed, so History = ACTED signals.
-            // *Correction*: User wants to see dismissed too in history.
-            // I'll need to update DB method or do a raw query here?
-            // Better to keep DB logic in DB class. Let's assume getRadarSignals has been updated or we accept current limitation.
-            // UPDATE: I will add a method to DB class for ALL signals in next iteration if needed.
-            // For now, let's stick to non-dismissed for live, and maybe I can't easily show dismissed without DB change.
-            // WAIT, I can update the DB method in the same file block above? No, DB is in database.ts.
-            // I'll modify the DB method in the DB file change below.
+            const allSignals = await db.getRadarSignals(userId, 200); 
             res.json(allSignals);
         } else {
             const signals = await db.getRadarSignals(userId);
@@ -720,5 +708,79 @@ export const handleConvertRadarSignal = async (req: any, res: any) => {
     } catch(e) {
         logService.error('Error convirtiendo señal a lead', e, userId);
         res.status(500).json({ message: 'Error al convertir señal.' });
+    }
+};
+
+export const handleSimulateRadarSignal = async (req: any, res: any) => {
+    const userId = getUserId(req);
+    try {
+        const dummySignal: RadarSignal = {
+            id: uuidv4(),
+            userId,
+            groupJid: '12345678@g.us',
+            groupName: 'Marketplace Mendoza',
+            senderJid: `549261${Math.floor(100000 + Math.random() * 900000)}@s.whatsapp.net`,
+            senderName: 'Usuario Simulado',
+            messageContent: 'Hola, estoy buscando alguien que ofrezca este servicio urgente. ¿Alguien recomienda?',
+            timestamp: new Date().toISOString(),
+            status: 'NEW',
+            analysis: {
+                score: 95,
+                category: 'OPPORTUNITY',
+                intentType: 'URGENT',
+                reasoning: 'Simulación de prueba: Detectada intención de compra explícita con alta urgencia.',
+                suggestedAction: 'Contactar inmediatamente.'
+            },
+            strategicScore: 98,
+            predictedWindow: {
+                confidenceScore: 95,
+                urgencyLevel: 'CRITICAL',
+                delayRisk: 'HIGH',
+                reasoning: 'El usuario está activo ahora mismo buscando solución.'
+            },
+            hiddenSignals: [
+                { type: 'MICRO_LANGUAGE', description: 'Uso de palabra "urgente"', intensity: 9 }
+            ]
+        };
+
+        await db.createRadarSignal(dummySignal);
+        logService.info(`[RADAR-SIM] Señal simulada inyectada para ${userId}`, userId);
+        res.json({ message: 'Señal simulada creada.' });
+    } catch(e) {
+        logService.error('Error simulando señal', e, userId);
+        res.status(500).json({ message: 'Error interno.' });
+    }
+};
+
+// NEW: Endpoint to fetch live Radar trace logs for the user
+export const handleGetRadarActivityLogs = async (req: any, res: any) => {
+    const userId = getUserId(req);
+    try {
+        // Query the main log collection for logs from this user containing the trace tag
+        // We rely on logService persistence
+        // Accessing db directly here as a shortcut, ideally via logService method but logService is a wrapper.
+        // We'll use a direct DB query for now as `db.getLogs` is admin only usually.
+        // Let's implement a specific query in `db` for this or reuse getLogs but filter.
+        
+        // Since `db.getLogs` fetches ALL, we need a user-specific one.
+        // Let's assume we can query LogModel directly via a new db method or add one.
+        // For simplicity, I'll add `getUserLogs` to `Database` class in the future, but here I can hack it if `LogModel` was exported.
+        // Since `db` encapsulates models, I should add `db.getRadarTraceLogs(userId)`.
+        
+        // Let's modify `database.ts` to add this method or use existing one if possible.
+        // Existing `getLogs` has no filter.
+        
+        // Wait, I can't modify `database.ts` in this specific file block easily without repeating the whole file.
+        // However, I can use `db.getLogs` and filter in memory if volume is low, OR assume `db` has a method I will add.
+        // I will add `getRadarTraceLogs` to `database.ts` in the next change block if needed, but to keep it simple:
+        // I'll create the method in `database.ts` in the same step/commit logic if possible.
+        // BUT, I can't edit multiple files in one `change` block.
+        
+        // Actually, I can edit `database.ts` too.
+        
+        const logs = await db.getRadarTraceLogs(userId);
+        res.json(logs);
+    } catch (e) {
+        res.status(500).json({ message: 'Error fetching radar traces.' });
     }
 };
