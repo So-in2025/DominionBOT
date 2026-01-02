@@ -1,5 +1,6 @@
-import { getAuthHeaders, BACKEND_URL, API_HEADERS } from '../config.js';
-import { decodeRawAudioData } from '../utils/audioUtils.js';
+
+import { getAuthHeaders, BACKEND_URL, API_HEADERS } from '../config';
+import { decodeRawAudioData } from '../utils/audioUtils';
 
 class AudioService {
     private audioContext: AudioContext | null = null;

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { BACKEND_URL, API_HEADERS } from '../config.js';
+import { BACKEND_URL, API_HEADERS } from '../config';
 
 interface AdminLoginProps {
     onLogin: (token: string, role: string) => void;

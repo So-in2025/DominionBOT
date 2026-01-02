@@ -1,8 +1,7 @@
 
 import React, { useState } from 'react';
 import { User, PlanType, PlanStatus } from '../../types';
-import { getAuthHeaders } from '../../config';
-import { BACKEND_URL } from '../../config';
+import { getAuthHeaders, BACKEND_URL } from '../../config';
 
 interface ClientManagementViewProps {
     user: User;
