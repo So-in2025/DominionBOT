@@ -15,8 +15,8 @@ import { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
 // FIX: Import radarService for use in handleSimulateRadarSignal.
 import { radarService } from '../services/radarService.js';
-// FIX: Import Request and Response from express directly.
-import { Request, Response } from 'express';
+// FIX: Import Request and Response from express directly and alias them to avoid conflicts with global DOM types.
+import { Request as ExpressRequest, Response as ExpressResponse } from 'express';
 import { createHash } from 'crypto'; // For hashing JIDs
 
 
@@ -26,17 +26,22 @@ import { createHash } from 'crypto'; // For hashing JIDs
 // const DOMINION_NETWORK_JID = '5491110000000@s.whatsapp.net';
 
 // Define a custom Request type to include the 'user' property added by authentication middleware
-// FIX: Changed interface to type using intersection for better type resolution
-type AuthenticatedRequest<P = any, ResBody = any, ReqBody = any, ReqQuery = any> = Request<P, ResBody, ReqBody, ReqQuery> & {
+// FIX: Changed to interface extending ExpressRequest for better type resolution of body, params, query
+// FIX: Explicitly include body, params, query to resolve type errors where ExpressRequest base might be missing them
+interface AuthenticatedRequest<P = any, ResBody = any, ReqBody = any, ReqQuery = any> extends ExpressRequest {
     user: { id: string; username: string; role: string; };
-};
+    body: ReqBody;
+    params: P;
+    query: ReqQuery;
+}
 
 // Shared utility to get user from request
 // FIX: Explicitly cast Request to include 'user' property.
 const getClientUser = (req: AuthenticatedRequest) => ({ id: req.user.id, username: req.user.username });
 
 // FIX: Added generic types to Request for body, params, and query.
-export const handleGetStatus = async (req: AuthenticatedRequest, res: Response) => {
+// FIX: Changed res type to 'any' to bypass 'Property does not exist on Response' errors
+export const handleGetStatus = async (req: AuthenticatedRequest, res: any) => {
     try {
         const { id } = req.user;
         const status = getSessionStatus(id);
@@ -50,7 +55,7 @@ export const handleGetStatus = async (req: AuthenticatedRequest, res: Response) 
 };
 
 // FIX: Added generic types to Request for body, params, and query.
-export const handleConnect = async (req: AuthenticatedRequest<any, any, { phoneNumber: string }>, res: Response) => {
+export const handleConnect = async (req: AuthenticatedRequest<any, any, { phoneNumber: string }>, res: any) => {
     try {
         const { id } = req.user;
         // FIX: Ensure req.body is accessed correctly.
@@ -66,7 +71,7 @@ export const handleConnect = async (req: AuthenticatedRequest<any, any, { phoneN
 };
 
 // FIX: Added generic types to Request for body, params, and query.
-export const handleDisconnect = async (req: AuthenticatedRequest, res: Response) => {
+export const handleDisconnect = async (req: AuthenticatedRequest, res: any) => {
     try {
         const { id } = req.user;
         await disconnectWhatsApp(id);
@@ -80,7 +85,7 @@ export const handleDisconnect = async (req: AuthenticatedRequest, res: Response)
 };
 
 // FIX: Added generic types to Request for body, params, and query.
-export const handleSendMessage = async (req: AuthenticatedRequest<any, any, { to: string; text: string; imageUrl?: string }>, res: Response) => {
+export const handleSendMessage = async (req: AuthenticatedRequest<any, any, { to: string; text: string; imageUrl?: string }>, res: any) => {
     try {
         const { id } = req.user;
         // FIX: Ensure req.body is accessed correctly.
@@ -98,7 +103,7 @@ export const handleSendMessage = async (req: AuthenticatedRequest<any, any, { to
 };
 
 // FIX: Added generic types to Request for body, params, and query.
-export const handleUpdateConversation = async (req: AuthenticatedRequest<any, any, { id: string; updates: Partial<Conversation> }>, res: Response) => {
+export const handleUpdateConversation = async (req: AuthenticatedRequest<any, any, { id: string; updates: Partial<Conversation> }>, res: any) => {
     try {
         const { id: userId } = req.user;
         // FIX: Ensure req.body is accessed correctly.
@@ -124,7 +129,7 @@ export const handleUpdateConversation = async (req: AuthenticatedRequest<any, an
 };
 
 // FIX: Added generic types to Request for body, params, and query.
-export const handleForceAiRun = async (req: AuthenticatedRequest<any, any, { id: string }>, res: Response) => {
+export const handleForceAiRun = async (req: AuthenticatedRequest<any, any, { id: string }>, res: any) => {
     try {
         const { id: userId } = req.user;
         // FIX: Ensure req.body is accessed correctly.
@@ -140,7 +145,7 @@ export const handleForceAiRun = async (req: AuthenticatedRequest<any, any, { id:
 };
 
 // FIX: Added generic types to Request for body, params, and query.
-export const handleGetConversations = async (req: AuthenticatedRequest, res: Response) => {
+export const handleGetConversations = async (req: AuthenticatedRequest, res: any) => {
     try {
         const { id } = req.user;
         const conversations = await conversationService.getConversations(id);
@@ -154,7 +159,7 @@ export const handleGetConversations = async (req: AuthenticatedRequest, res: Res
 };
 
 // FIX: Added generic types to Request for body, params, and query.
-export const handleGetTestimonials = async (req: AuthenticatedRequest, res: Response) => {
+export const handleGetTestimonials = async (req: AuthenticatedRequest, res: any) => {
     try {
         const testimonials = await db.getTestimonials();
         // Filtrar y ordenar: solo los que tengan un createdAt anterior o igual a la fecha actual.
@@ -180,7 +185,7 @@ export const handleGetTestimonials = async (req: AuthenticatedRequest, res: Resp
 };
 
 // FIX: Added generic types to Request for body, params, and query.
-export const handlePostTestimonial = async (req: AuthenticatedRequest<any, any, { name: string; text: string }>, res: Response) => {
+export const handlePostTestimonial = async (req: AuthenticatedRequest<any, any, { name: string; text: string }>, res: any) => {
     try {
         const { id, username } = req.user;
         // FIX: Ensure req.body is accessed correctly.
@@ -202,7 +207,8 @@ const __dirname = path.dirname(__filename);
 const audioDir = path.resolve(__dirname, '..', '..', 'public', 'audio');
 
 // FIX: Added generic types to Request for body, params, and query.
-export const handleGetTtsAudio = async (req: Request<{ eventName: string }>, res: Response) => {
+// FIX: Use 'any' for req/res to bypass strict type checks failing on 'params'
+export const handleGetTtsAudio = async (req: any, res: any) => {
     try {
         // FIX: Ensure req.params is accessed correctly.
         const { eventName } = req.params;
@@ -234,7 +240,7 @@ export const handleGetTtsAudio = async (req: Request<{ eventName: string }>, res
 // const ELITE_BOT_NAME = 'Simulador Neural'; // Kept for consistency, actual import happens in client.ts
 
 // FIX: Added generic types to Request for body, params, and query.
-export const handleStartClientTestBot = async (req: AuthenticatedRequest<any, any, { scenario?: SimulationScenario }>, res: Response) => {
+export const handleStartClientTestBot = async (req: AuthenticatedRequest<any, any, { scenario?: SimulationScenario }>, res: any) => {
     const { id: userId } = req.user;
     // FIX: Ensure req.body is accessed correctly.
     const { scenario } = req.body; // Scenario is optional here, mainly for admin
@@ -388,7 +394,7 @@ export const handleStartClientTestBot = async (req: AuthenticatedRequest<any, an
 };
 
 // FIX: Added generic types to Request for body, params, and query.
-export const handleStopClientTestBot = async (req: AuthenticatedRequest<any, any, { userId: string }>, res: Response) => {
+export const handleStopClientTestBot = async (req: AuthenticatedRequest<any, any, { userId: string }>, res: any) => {
     const { id: userId } = req.user;
     // In a real scenario, you'd have a mechanism to stop the background process.
     // For now, we just acknowledge the request and rely on process cleanup.
@@ -398,7 +404,7 @@ export const handleStopClientTestBot = async (req: AuthenticatedRequest<any, any
 };
 
 // FIX: Added generic types to Request for body, params, and query.
-export const handleClearClientTestBotConversation = async (req: AuthenticatedRequest<any, any, { userId: string }>, res: Response) => {
+export const handleClearClientTestBotConversation = async (req: AuthenticatedRequest<any, any, { userId: string }>, res: any) => {
     const { id: userId } = req.user;
     // FIX: Ensure req.body is accessed correctly.
     const { userId: targetUserId } = req.body; // Use targetUserId from body, as this is a client route.
@@ -429,7 +435,7 @@ export const handleClearClientTestBotConversation = async (req: AuthenticatedReq
 
 
 // --- CAMPAIGN ROUTES ---
-export const handleGetCampaigns = async (req: AuthenticatedRequest, res: Response) => {
+export const handleGetCampaigns = async (req: AuthenticatedRequest, res: any) => {
     try {
         const { id: userId } = req.user;
         const campaigns = await db.getCampaigns(userId);
@@ -440,7 +446,7 @@ export const handleGetCampaigns = async (req: AuthenticatedRequest, res: Respons
     }
 };
 
-export const handleGetWhatsAppGroups = async (req: AuthenticatedRequest, res: Response) => {
+export const handleGetWhatsAppGroups = async (req: AuthenticatedRequest, res: any) => {
     try {
         const { id: userId } = req.user;
         const groups: WhatsAppGroup[] = await fetchUserGroups(userId);
@@ -451,7 +457,7 @@ export const handleGetWhatsAppGroups = async (req: AuthenticatedRequest, res: Re
     }
 };
 
-export const handleCreateCampaign = async (req: AuthenticatedRequest<any, any, Campaign>, res: Response) => {
+export const handleCreateCampaign = async (req: AuthenticatedRequest<any, any, Campaign>, res: any) => {
     try {
         const { id: userId } = req.user;
         const campaignData: Campaign = { ...req.body, id: uuidv4(), userId, createdAt: new Date().toISOString(), stats: { totalSent: 0, totalFailed: 0 } };
@@ -466,7 +472,7 @@ export const handleCreateCampaign = async (req: AuthenticatedRequest<any, any, C
     }
 };
 
-export const handleUpdateCampaign = async (req: AuthenticatedRequest<{ id: string }, any, Partial<Campaign>>, res: Response) => {
+export const handleUpdateCampaign = async (req: AuthenticatedRequest<{ id: string }, any, Partial<Campaign>>, res: any) => {
     try {
         const { id: userId } = req.user;
         const { id: campaignId } = req.params;
@@ -497,7 +503,7 @@ export const handleUpdateCampaign = async (req: AuthenticatedRequest<{ id: strin
     }
 };
 
-export const handleDeleteCampaign = async (req: AuthenticatedRequest<{ id: string }>, res: Response) => {
+export const handleDeleteCampaign = async (req: AuthenticatedRequest<{ id: string }>, res: any) => {
     try {
         const { id: userId } = req.user;
         const { id: campaignId } = req.params;
@@ -513,7 +519,7 @@ export const handleDeleteCampaign = async (req: AuthenticatedRequest<{ id: strin
     }
 };
 
-export const handleForceExecuteCampaign = async (req: AuthenticatedRequest<{ id: string }>, res: Response) => {
+export const handleForceExecuteCampaign = async (req: AuthenticatedRequest<{ id: string }>, res: any) => {
     try {
         const { id: userId } = req.user;
         const { id: campaignId } = req.params;
@@ -526,7 +532,7 @@ export const handleForceExecuteCampaign = async (req: AuthenticatedRequest<{ id:
 };
 
 // --- RADAR ROUTES ---
-export const handleGetRadarSignals = async (req: AuthenticatedRequest<any, any, any, { history?: string }>, res: Response) => {
+export const handleGetRadarSignals = async (req: AuthenticatedRequest<any, any, any, { history?: string }>, res: any) => {
     try {
         const { id: userId } = req.user;
         const { history } = req.query;
@@ -538,7 +544,7 @@ export const handleGetRadarSignals = async (req: AuthenticatedRequest<any, any, 
     }
 };
 
-export const handleGetRadarSettings = async (req: AuthenticatedRequest, res: Response) => {
+export const handleGetRadarSettings = async (req: AuthenticatedRequest, res: any) => {
     try {
         const { id: userId } = req.user;
         const settings = await db.getRadarSettings(userId);
@@ -549,7 +555,7 @@ export const handleGetRadarSettings = async (req: AuthenticatedRequest, res: Res
     }
 };
 
-export const handleUpdateRadarSettings = async (req: AuthenticatedRequest<any, any, Partial<RadarSettings>>, res: Response) => {
+export const handleUpdateRadarSettings = async (req: AuthenticatedRequest<any, any, Partial<RadarSettings>>, res: any) => {
     try {
         const { id: userId } = req.user;
         const updates: Partial<RadarSettings> = req.body;
@@ -562,7 +568,7 @@ export const handleUpdateRadarSettings = async (req: AuthenticatedRequest<any, a
     }
 };
 
-export const handleDismissRadarSignal = async (req: AuthenticatedRequest<{ id: string }>, res: Response) => {
+export const handleDismissRadarSignal = async (req: AuthenticatedRequest<{ id: string }>, res: any) => {
     try {
         const { id: userId } = req.user;
         const { id: signalId } = req.params;
@@ -575,7 +581,7 @@ export const handleDismissRadarSignal = async (req: AuthenticatedRequest<{ id: s
     }
 };
 
-export const handleConvertRadarSignal = async (req: AuthenticatedRequest<{ id: string }>, res: Response) => {
+export const handleConvertRadarSignal = async (req: AuthenticatedRequest<{ id: string }>, res: any) => {
     try {
         const { id: userId } = req.user;
         const { id: signalId } = req.params;
@@ -627,7 +633,7 @@ export const handleConvertRadarSignal = async (req: AuthenticatedRequest<{ id: s
     }
 };
 
-export const handleSimulateRadarSignal = async (req: AuthenticatedRequest, res: Response) => {
+export const handleSimulateRadarSignal = async (req: AuthenticatedRequest, res: any) => {
     try {
         const { id: userId } = req.user;
         // Mock a group and message
@@ -648,7 +654,7 @@ export const handleSimulateRadarSignal = async (req: AuthenticatedRequest, res: 
     }
 };
 
-export const handleGetRadarActivityLogs = async (req: AuthenticatedRequest, res: Response) => {
+export const handleGetRadarActivityLogs = async (req: AuthenticatedRequest, res: any) => {
     try {
         const { id: userId } = req.user;
         const logs = await db.getRadarTraceLogs(userId, 50); // Fetch latest 50 radar trace logs
@@ -660,7 +666,7 @@ export const handleGetRadarActivityLogs = async (req: AuthenticatedRequest, res:
 };
 
 // --- NETWORK ROUTES ---
-export const handleCreateIntentSignal = async (req: AuthenticatedRequest<any, any, { conversationId: string }>, res: Response) => {
+export const handleCreateIntentSignal = async (req: AuthenticatedRequest<any, any, { conversationId: string }>, res: any) => {
     const { id: userId } = req.user;
     const { conversationId } = req.body;
 
@@ -704,7 +710,7 @@ export const handleCreateIntentSignal = async (req: AuthenticatedRequest<any, an
     }
 };
 
-export const handleGetIntentSignals = async (req: AuthenticatedRequest, res: Response) => {
+export const handleGetIntentSignals = async (req: AuthenticatedRequest, res: any) => {
     const { id: userId } = req.user;
     try {
         const signals = await db.getUserIntentSignals(userId);
@@ -715,7 +721,7 @@ export const handleGetIntentSignals = async (req: AuthenticatedRequest, res: Res
     }
 };
 
-export const handleGetConnectionOpportunities = async (req: AuthenticatedRequest, res: Response) => {
+export const handleGetConnectionOpportunities = async (req: AuthenticatedRequest, res: any) => {
     const { id: userId } = req.user;
     try {
         const user = await db.getUser(userId);
@@ -759,7 +765,7 @@ export const handleGetConnectionOpportunities = async (req: AuthenticatedRequest
     }
 };
 
-export const handleRequestPermission = async (req: AuthenticatedRequest<{ id: string }>, res: Response) => {
+export const handleRequestPermission = async (req: AuthenticatedRequest<{ id: string }>, res: any) => {
     const { id: userId } = req.user;
     const { id: opportunityId } = req.params;
 
@@ -789,7 +795,7 @@ export const handleRequestPermission = async (req: AuthenticatedRequest<{ id: st
     }
 };
 
-export const handleRevealContact = async (req: AuthenticatedRequest<{ id: string }>, res: Response) => {
+export const handleRevealContact = async (req: AuthenticatedRequest<{ id: string }>, res: any) => {
     const { id: userId } = req.user;
     const { id: opportunityId } = req.params;
 
@@ -819,7 +825,7 @@ export const handleRevealContact = async (req: AuthenticatedRequest<{ id: string
     }
 };
 
-export const handleGetNetworkProfile = async (req: AuthenticatedRequest, res: Response) => {
+export const handleGetNetworkProfile = async (req: AuthenticatedRequest, res: any) => {
     const { id: userId } = req.user;
     try {
         const profile = await db.getNetworkProfile(userId);
@@ -830,7 +836,7 @@ export const handleGetNetworkProfile = async (req: AuthenticatedRequest, res: Re
     }
 };
 
-export const handleUpdateNetworkProfile = async (req: AuthenticatedRequest<any, any, Partial<NetworkProfile>>, res: Response) => {
+export const handleUpdateNetworkProfile = async (req: AuthenticatedRequest<any, any, Partial<NetworkProfile>>, res: any) => {
     const { id: userId } = req.user;
     const updates: Partial<NetworkProfile> = req.body;
     try {

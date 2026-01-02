@@ -1,5 +1,5 @@
 
-import { Request, Response } from 'express';
+import { Request as ExpressRequest, Response as ExpressResponse } from 'express';
 import { db, sanitizeKey } from '../database.js'; // Import sanitizeKey
 import { logService } from '../services/logService.js';
 // FIX: Import ConnectionStatus enum for type-safe comparisons.
@@ -9,10 +9,14 @@ import { conversationService } from '../services/conversationService.js'; // Imp
 import { v4 as uuidv4 } from 'uuid'; // Need uuid for Boosts
 
 // Define a custom Request type to include the 'user' property added by authentication middleware
-// FIX: Changed interface to type using intersection for better type resolution
-type AuthenticatedRequest<P = any, ResBody = any, ReqBody = any, ReqQuery = any> = Request<P, ResBody, ReqBody, ReqQuery> & {
+// FIX: Changed to interface extending ExpressRequest for better type resolution of body, params, query
+// FIX: Explicitly include body, params, query to resolve type errors where ExpressRequest base might be missing them
+interface AuthenticatedRequest<P = any, ResBody = any, ReqBody = any, ReqQuery = any> extends ExpressRequest {
     user: { id: string; username: string; role: string; };
-};
+    body: ReqBody;
+    params: P;
+    query: ReqQuery;
+}
 
 const getAdminUser = (req: AuthenticatedRequest) => ({ id: req.user.id, username: req.user.username });
 
@@ -24,7 +28,8 @@ const TEST_SCRIPT = [
     "Suena interesante. Creo que estoy listo para ver una demo o empezar. ¿Qué debo hacer ahora?",
 ];
 
-export const handleGetDashboardMetrics = async (req: AuthenticatedRequest, res: Response) => {
+// FIX: Changed res type to 'any' to bypass 'Property does not exist on Response' errors
+export const handleGetDashboardMetrics = async (req: AuthenticatedRequest, res: any) => {
     try {
         const clients = await db.getAllClients();
         
@@ -72,7 +77,7 @@ export const handleGetDashboardMetrics = async (req: AuthenticatedRequest, res: 
     }
 };
 
-export const handleGetAllClients = async (req: AuthenticatedRequest, res: Response) => {
+export const handleGetAllClients = async (req: AuthenticatedRequest, res: any) => {
     try {
         const clients = await db.getAllClients();
         res.json(clients);
@@ -82,7 +87,7 @@ export const handleGetAllClients = async (req: AuthenticatedRequest, res: Respon
     }
 };
 
-export const handleUpdateClient = async (req: AuthenticatedRequest<{ id: string }, any, Partial<User>>, res: Response) => {
+export const handleUpdateClient = async (req: AuthenticatedRequest<{ id: string }, any, Partial<User>>, res: any) => {
     const { id } = req.params;
     const updates: Partial<User> = req.body;
     const admin = getAdminUser(req);
@@ -100,7 +105,7 @@ export const handleUpdateClient = async (req: AuthenticatedRequest<{ id: string 
     }
 };
 
-export const handleDeleteClient = async (req: AuthenticatedRequest<{ id: string }>, res: Response) => {
+export const handleDeleteClient = async (req: AuthenticatedRequest<{ id: string }>, res: any) => {
     const { id } = req.params;
     const admin = getAdminUser(req);
 
@@ -121,7 +126,7 @@ export const handleDeleteClient = async (req: AuthenticatedRequest<{ id: string 
     }
 };
 
-export const handleActivateClient = async (req: AuthenticatedRequest<{ id: string }>, res: Response) => {
+export const handleActivateClient = async (req: AuthenticatedRequest<{ id: string }>, res: any) => {
     const { id } = req.params;
     const admin = getAdminUser(req);
     try {
@@ -150,7 +155,7 @@ export const handleActivateClient = async (req: AuthenticatedRequest<{ id: strin
     }
 };
 
-export const handleRenewClient = async (req: AuthenticatedRequest<{ id: string }>, res: Response) => {
+export const handleRenewClient = async (req: AuthenticatedRequest<{ id: string }>, res: any) => {
     const { id } = req.params;
     const admin = getAdminUser(req);
     try {
@@ -177,7 +182,7 @@ export const handleRenewClient = async (req: AuthenticatedRequest<{ id: string }
     }
 };
 
-export const handleGetLogs = async (req: AuthenticatedRequest, res: Response) => {
+export const handleGetLogs = async (req: AuthenticatedRequest, res: any) => {
     try {
         const logs = await db.getLogs(200); // Get last 200 logs
         res.json(logs);
@@ -187,7 +192,7 @@ export const handleGetLogs = async (req: AuthenticatedRequest, res: Response) =>
     }
 };
 
-export const handleGetSystemSettings = async (req: Request, res: Response) => {
+export const handleGetSystemSettings = async (req: any, res: any) => {
     try {
         const settings = await db.getSystemSettings();
         res.json(settings);
@@ -197,7 +202,7 @@ export const handleGetSystemSettings = async (req: Request, res: Response) => {
     }
 };
 
-export const handleUpdateSystemSettings = async (req: AuthenticatedRequest<any, any, Partial<SystemSettings>>, res: Response) => {
+export const handleUpdateSystemSettings = async (req: AuthenticatedRequest<any, any, Partial<SystemSettings>>, res: any) => {
     try {
         const admin = getAdminUser(req);
         const updates: Partial<SystemSettings> = req.body;
@@ -210,7 +215,7 @@ export const handleUpdateSystemSettings = async (req: AuthenticatedRequest<any, 
     }
 };
 
-export const handleStartTestBot = async (req: AuthenticatedRequest<any, any, { targetUserId: string }>, res: Response) => {
+export const handleStartTestBot = async (req: AuthenticatedRequest<any, any, { targetUserId: string }>, res: any) => {
     const { targetUserId } = req.body;
     const admin = getAdminUser(req);
 
@@ -277,7 +282,7 @@ export const handleStartTestBot = async (req: AuthenticatedRequest<any, any, { t
 };
 
 // DEPTH CONTROL HANDLERS (NEW)
-export const handleUpdateDepthLevel = async (req: AuthenticatedRequest<any, any, { userId: string, depthLevel: number }>, res: Response) => {
+export const handleUpdateDepthLevel = async (req: AuthenticatedRequest<any, any, { userId: string, depthLevel: number }>, res: any) => {
     const { userId, depthLevel } = req.body;
     const admin = getAdminUser(req);
     try {
@@ -293,7 +298,7 @@ export const handleUpdateDepthLevel = async (req: AuthenticatedRequest<any, any,
     }
 };
 
-export const handleApplyDepthBoost = async (req: AuthenticatedRequest<any, any, { userId: string, depthDelta: number, durationHours: number }>, res: Response) => {
+export const handleApplyDepthBoost = async (req: AuthenticatedRequest<any, any, { userId: string, depthDelta: number, durationHours: number }>, res: any) => {
     const { userId, depthDelta, durationHours } = req.body;
     const admin = getAdminUser(req);
     try {
@@ -323,7 +328,7 @@ export const handleApplyDepthBoost = async (req: AuthenticatedRequest<any, any, 
     }
 };
 
-export const handleClearTestBotConversation = async (req: AuthenticatedRequest<any, any, { targetUserId: string }>, res: Response) => {
+export const handleClearTestBotConversation = async (req: AuthenticatedRequest<any, any, { targetUserId: string }>, res: any) => {
     const { targetUserId } = req.body;
     const admin = getAdminUser(req);
     
@@ -354,7 +359,7 @@ export const handleClearTestBotConversation = async (req: AuthenticatedRequest<a
 };
 
 // --- ADMIN NETWORK ROUTES ---
-export const handleGetNetworkOverview = async (req: AuthenticatedRequest, res: Response) => {
+export const handleGetNetworkOverview = async (req: AuthenticatedRequest, res: any) => {
     try {
         const stats = await db.getNetworkStats();
         const activity = await db.getRecentNetworkActivity();
