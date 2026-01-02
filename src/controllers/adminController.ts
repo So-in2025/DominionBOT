@@ -9,13 +9,9 @@ import { conversationService } from '../services/conversationService.js'; // Imp
 import { v4 as uuidv4 } from 'uuid'; // Need uuid for Boosts
 
 // Define a custom Request type to include the 'user' property added by authentication middleware
-// FIX: Changed to interface extending ExpressRequest for better type resolution of body, params, query
-// FIX: Explicitly include body, params, query to resolve type errors where ExpressRequest base might be missing them
-interface AuthenticatedRequest<P = any, ResBody = any, ReqBody = any, ReqQuery = any> extends ExpressRequest {
+// FIX: Changed to interface extension for proper generic compatibility with ExpressRequest
+interface AuthenticatedRequest<P = any, ResBody = any, ReqBody = any, ReqQuery = any> extends ExpressRequest<P, ResBody, ReqBody, ReqQuery> {
     user: { id: string; username: string; role: string; };
-    body: ReqBody;
-    params: P;
-    query: ReqQuery;
 }
 
 const getAdminUser = (req: AuthenticatedRequest) => ({ id: req.user.id, username: req.user.username });

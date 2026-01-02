@@ -26,13 +26,9 @@ import { createHash } from 'crypto'; // For hashing JIDs
 // const DOMINION_NETWORK_JID = '5491110000000@s.whatsapp.net';
 
 // Define a custom Request type to include the 'user' property added by authentication middleware
-// FIX: Changed to interface extending ExpressRequest for better type resolution of body, params, query
-// FIX: Explicitly include body, params, query to resolve type errors where ExpressRequest base might be missing them
-interface AuthenticatedRequest<P = any, ResBody = any, ReqBody = any, ReqQuery = any> extends ExpressRequest {
+// FIX: Changed to interface extension for proper generic compatibility with ExpressRequest
+interface AuthenticatedRequest<P = any, ResBody = any, ReqBody = any, ReqQuery = any> extends ExpressRequest<P, ResBody, ReqBody, ReqQuery> {
     user: { id: string; username: string; role: string; };
-    body: ReqBody;
-    params: P;
-    query: ReqQuery;
 }
 
 // Shared utility to get user from request
