@@ -9,6 +9,9 @@ import { v4 as uuidv4 } from 'uuid';
 // FIX: Changed to interface for proper property inheritance from Express Request
 interface AuthenticatedRequest<P = any, ResBody = any, ReqBody = any, ReqQuery = any> extends ExpressRequest<P, ResBody, ReqBody, ReqQuery> {
     user: { id: string; username: string; role: string; };
+    body: ReqBody;
+    params: P;
+    query: ReqQuery;
 }
 
 const getAdminUser = (req: AuthenticatedRequest) => ({ id: req.user.id, username: req.user.username });

@@ -17,6 +17,9 @@ import { createHash } from 'crypto';
 // FIX: Changed to interface for proper property inheritance from Express Request
 interface AuthenticatedRequest<P = any, ResBody = any, ReqBody = any, ReqQuery = any> extends ExpressRequest<P, ResBody, ReqBody, ReqQuery> {
     user: { id: string; username: string; role: string; };
+    body: ReqBody;
+    params: P;
+    query: ReqQuery;
 }
 
 // Shared utility to get user from request

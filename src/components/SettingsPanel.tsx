@@ -34,7 +34,7 @@ const ARCHETYPE_MAPPING = {
     [PromptArchetype.CUSTOM]: { toneValue: 3, rhythmValue: 3, intensityValue: 3 },
 };
 
-// --- HIGH-LEVEL INDUSTRY TEMPLATES ---
+// --- HIGH-LEVEL INDUSTRY TEMPLATES (ELITE LEVEL) ---
 const INDUSTRY_TEMPLATES: Record<string, { label: string, data: Partial<WizardState & { priceText: string }> }> = {
     'AGENCY': {
         label: 'Agencia de Marketing High-Ticket',
@@ -441,7 +441,7 @@ ${wizardState.rules}
                                         <p className="text-xs text-gray-400 mt-1">Define quién es la IA y a quién sirve.</p>
                                     </div>
                                     <div className="flex gap-2">
-                                        {/* FIX: Improved Select Styling for visibility */}
+                                        {/* FIX: Improved Select Styling for visibility with bg-brand-black on options */}
                                         <select onChange={(e) => applyTemplate(e.target.value)} className="bg-brand-surface border border-white/20 text-white text-[9px] font-bold uppercase rounded-lg px-3 py-2 outline-none focus:border-brand-gold cursor-pointer hover:bg-white/5 transition-colors shadow-lg">
                                             <option value="" className="bg-brand-black text-gray-400">⚡ Cargar Plantilla...</option>
                                             {Object.entries(INDUSTRY_TEMPLATES).map(([k, v]) => (
@@ -600,16 +600,16 @@ ${wizardState.rules}
                 </div>
 
                 {/* --- RIGHT COLUMN: PERSONALITY & CONFIG (5 Cols) --- */}
-                <div className="lg:col-span-5 space-y-6">
+                <div className="lg:col-span-5 space-y-4">
                     
                     {/* PERSONALITY SETTINGS */}
-                    <div className="bg-brand-surface border border-white/5 rounded-[32px] p-8 shadow-2xl relative overflow-hidden flex flex-col h-full">
+                    <div className="bg-brand-surface border border-white/5 rounded-[32px] p-6 shadow-2xl relative overflow-hidden flex flex-col">
                         <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/5 rounded-full blur-3xl pointer-events-none"></div>
                         
-                        <h3 className="text-sm font-black text-white uppercase tracking-widest mb-6">Ajustes de Personalidad</h3>
+                        <h3 className="text-sm font-black text-white uppercase tracking-widest mb-4">Ajustes de Personalidad</h3>
 
                         {/* Archetype Grid */}
-                        <div className="grid grid-cols-2 gap-2 mb-8">
+                        <div className="grid grid-cols-2 gap-2 mb-6">
                             {Object.values(PromptArchetype).filter(a => a !== PromptArchetype.CUSTOM).map(arch => (
                                 <button
                                     key={arch}
@@ -622,7 +622,7 @@ ${wizardState.rules}
                         </div>
 
                         {/* Sliders */}
-                        <div className="space-y-6 flex-1">
+                        <div className="space-y-5">
                             {[
                                 { label: 'Tono de Voz', val: current.toneValue, key: 'toneValue', minLabel: 'Agresivo', maxLabel: 'Amigable' },
                                 { label: 'Ritmo de Chat', val: current.rhythmValue, key: 'rhythmValue', minLabel: 'Rápido', maxLabel: 'Pausado' },
@@ -648,7 +648,7 @@ ${wizardState.rules}
                         </div>
 
                         {/* PERSONALITY ACTIONS FOOTER (ADDED) */}
-                        <div className="mt-8 pt-6 border-t border-white/5 flex gap-3">
+                        <div className="mt-6 pt-6 border-t border-white/5 flex gap-3">
                             <button 
                                 onClick={resetPersonality} 
                                 className="flex-1 py-3 bg-white/5 text-gray-400 hover:text-white border border-white/10 rounded-xl font-black text-[9px] uppercase tracking-widest transition-all"
@@ -665,7 +665,7 @@ ${wizardState.rules}
                     </div>
 
                     {/* GEMINI PANEL */}
-                    <div className="bg-brand-surface border border-white/5 rounded-[32px] p-8 shadow-2xl relative overflow-hidden">
+                    <div className="bg-brand-surface border border-white/5 rounded-[32px] p-6 shadow-2xl relative overflow-hidden">
                         <h3 className="text-sm font-black text-white uppercase tracking-widest mb-2">Panel de Control Gemini</h3>
                         <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest mb-6">El motor neural de la IA. <a href="https://aistudio.google.com/app/apikey" target="_blank" className="text-brand-gold underline hover:text-white">Obtener Key Aquí</a>.</p>
                         
@@ -688,7 +688,7 @@ ${wizardState.rules}
                     </div>
 
                     {/* NETWORK CARD (Simplified) */}
-                    <div className="bg-brand-surface border border-white/5 rounded-[32px] p-6 shadow-2xl flex items-center justify-between">
+                    <div className="bg-brand-surface border border-white/5 rounded-[32px] p-5 shadow-2xl flex items-center justify-between">
                         <div className="flex items-center gap-4">
                             <div className="p-3 bg-blue-500/10 rounded-full text-blue-500 border border-blue-500/20">
                                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9V3m0 18a9 9 0 009-9m-9 9a9 9 0 00-9-9" /></svg>

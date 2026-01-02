@@ -253,7 +253,8 @@ const TestBotSimulator: React.FC<TestBotSimulatorProps> = ({ token, backendUrl, 
         </div>
 
         {activeTab === 'VAULT' ? renderVault() : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 min-h-[550px] relative z-10">
+            // FIX: Set fixed height to enforce internal scrolling
+            <div className="grid grid-cols-1 lg:grid-cols-2 h-[600px] relative z-10">
                 {/* Controls Overlay (Mobile optimized) */}
                 <div className="lg:hidden p-4 border-b border-white/5 bg-black/40">
                      <select 
@@ -272,7 +273,7 @@ const TestBotSimulator: React.FC<TestBotSimulatorProps> = ({ token, backendUrl, 
                 </div>
 
                 {/* LEFT: Chat Interface */}
-                <div className="bg-[#050505] border-r border-white/5 p-6 flex flex-col relative">
+                <div className="bg-[#050505] border-r border-white/5 p-6 flex flex-col relative h-full">
                     <div className="absolute top-0 left-0 right-0 h-16 bg-gradient-to-b from-[#050505] to-transparent z-10 pointer-events-none"></div>
                     
                     {/* Desktop Controls embedded in chat header area */}
@@ -322,8 +323,8 @@ const TestBotSimulator: React.FC<TestBotSimulatorProps> = ({ token, backendUrl, 
                 </div>
 
                 {/* RIGHT: Neural Telemetry & Evaluation */}
-                <div className="bg-[#0a0a0a] p-6 flex flex-col">
-                    <div className="flex justify-between items-center mb-6 border-b border-white/5 pb-2">
+                <div className="bg-[#0a0a0a] p-6 flex flex-col h-full">
+                    <div className="flex justify-between items-center mb-6 border-b border-white/5 pb-2 flex-shrink-0">
                         <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500">Telemetría en Vivo</h4>
                         <div className="flex items-center gap-2">
                             <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
@@ -332,7 +333,7 @@ const TestBotSimulator: React.FC<TestBotSimulatorProps> = ({ token, backendUrl, 
                     </div>
                     
                     {/* Temperature Gauge */}
-                    <div className="mb-6 bg-black/40 p-4 rounded-2xl border border-white/5">
+                    <div className="mb-6 bg-black/40 p-4 rounded-2xl border border-white/5 flex-shrink-0">
                         <div className="flex justify-between items-center mb-2">
                             <span className="text-[10px] font-bold text-gray-300 uppercase">Temperatura del Lead</span>
                             <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${currentLeadStatus === LeadStatus.HOT ? 'text-red-400 bg-red-900/20' : 'text-gray-400'}`}>
@@ -379,7 +380,7 @@ const TestBotSimulator: React.FC<TestBotSimulatorProps> = ({ token, backendUrl, 
                     </div>
 
                     {/* Comparison Mini-Stats */}
-                    <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+                    <div className="bg-white/5 border border-white/10 rounded-2xl p-4 flex-shrink-0">
                         <div className="flex justify-between items-center mb-3">
                             <h5 className="text-[9px] font-black uppercase tracking-widest text-gray-400">Rendimiento Histórico</h5>
                             <span className={`text-[10px] font-black ${scoreColor(labData?.aggregatedScore || 0)}`}>{labData?.aggregatedScore || 0}/100</span>

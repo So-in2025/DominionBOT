@@ -36,14 +36,27 @@ const KpiCard: React.FC<{
     icon: React.ReactNode;
     isGold?: boolean;
     isRisk?: boolean; // NEW: Alert color
-}> = ({ label, value, trend, icon, isGold, isRisk }) => (
-    <div className={`relative overflow-hidden rounded-[24px] border p-6 transition-all duration-500 hover:translate-y-[-4px] group ${
+    tooltip?: string; // NEW: Tooltip text
+}> = ({ label, value, trend, icon, isGold, isRisk, tooltip }) => (
+    <div className={`relative overflow-visible rounded-[24px] border p-6 transition-all duration-500 hover:translate-y-[-4px] group ${
         isRisk 
         ? 'bg-red-900/10 border-red-500/30'
         : isGold 
             ? 'bg-gradient-to-br from-brand-gold/15 to-brand-black border-brand-gold/20 shadow-[0_20px_50px_rgba(212,175,55,0.05)]' 
             : 'bg-brand-surface border-white/5'
     }`}>
+        {/* Tooltip Icon & Popup */}
+        {tooltip && (
+            <div className="absolute top-4 right-4 z-20 group/tooltip">
+                <div className="w-5 h-5 rounded-full border border-white/10 bg-white/5 flex items-center justify-center text-[10px] text-gray-400 cursor-help hover:text-white hover:border-brand-gold transition-colors">
+                    ?
+                </div>
+                <div className="absolute right-0 top-6 w-48 p-3 bg-black border border-white/10 rounded-xl shadow-2xl opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all duration-200 z-50 pointer-events-none">
+                    <p className="text-[10px] text-gray-300 leading-relaxed font-medium">{tooltip}</p>
+                </div>
+            </div>
+        )}
+
         <div className="flex justify-between items-start mb-6">
             <div className={`p-3 rounded-xl transition-colors ${isRisk ? 'bg-red-500/20 text-red-500' : (isGold ? 'bg-brand-gold/20 text-brand-gold' : 'bg-white/5 text-gray-500')}`}>
                 {icon}
@@ -227,12 +240,34 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
                 isGold={!isRisk}
                 isRisk={isRisk}
                 icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>} 
-                trend={!isRisk ? "+14% Sem" : undefined} 
+                trend={!isRisk ? "+14% Sem" : undefined}
+                tooltip="Proyección de ingresos basada en un valor promedio de mercado de $150 USD por cada Lead calificado como 'Caliente' (Listo para comprar)."
             />
-            <KpiCard label="Tasa Conversión" value={`${metrics.conversionRate}%`} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>} />
-            <KpiCard label="Leads Captados" value={metrics.totalLeads} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857" /></svg>} />
-            <KpiCard label="Peticiones IA" value={metrics.totalMessages} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01" /></svg>} />
-            <KpiCard label="Difusión (Msgs)" value={metrics.campaignMessagesSent || 0} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" /></svg>} trend={metrics.campaignsActive > 0 ? `${metrics.campaignsActive} Activas` : 'Inactivo'} />
+            <KpiCard 
+                label="Tasa Conversión" 
+                value={`${metrics.conversionRate}%`} 
+                icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>} 
+                tooltip="Porcentaje de conversaciones totales que resultaron en una oportunidad de venta calificada (Lead Caliente)."
+            />
+            <KpiCard 
+                label="Leads Captados" 
+                value={metrics.totalLeads} 
+                icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857" /></svg>} 
+                tooltip="Cantidad total de conversaciones iniciadas y procesadas por el bot en el período actual."
+            />
+            <KpiCard 
+                label="Peticiones IA" 
+                value={metrics.totalMessages} 
+                icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01" /></svg>} 
+                tooltip="Total de interacciones individuales procesadas por el motor de inteligencia artificial (Gemini)."
+            />
+            <KpiCard 
+                label="Difusión (Msgs)" 
+                value={metrics.campaignMessagesSent || 0} 
+                icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" /></svg>} 
+                trend={metrics.campaignsActive > 0 ? `${metrics.campaignsActive} Activas` : 'Inactivo'} 
+                tooltip="Número total de mensajes enviados a través del módulo de Campañas/Difusión Masiva."
+            />
         </div>
 
         {/* Client Test Bot Simulator */}
