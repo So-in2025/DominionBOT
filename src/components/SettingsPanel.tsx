@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect } from 'react';
 import { BotSettings, PromptArchetype } from '../types';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
 
 interface SettingsPanelProps {
   settings: BotSettings | null;
@@ -46,7 +45,7 @@ Ofrecemos un servicio de "Growth Partner" donde nos integramos a tu equipo para 
                 { id: 1, objection: '¿Cuánto cuesta?', response: 'La inversión depende del nivel de agresividad y escala que busquemos. Para darte un número preciso, primero necesito entender tu situación actual. ¿Cuál es tu presupuesto de marketing mensual actual?' },
                 { id: 2, objection: 'Ya tengo una agencia / freelancer', response: 'Entendido. No buscamos reemplazar lo que funciona. Muchos de nuestros mejores clientes vienen para una segunda opinión o para enfocar una parte de su presupuesto en nuestra metodología de "performance". ¿Qué es lo que más valoras de tu proveedor actual?' }
             ],
-            rules: `// [LÍMITES Y DIRECTIVAS]: Reglas INQUEBRANTABLES para la IA.
+            rules: `// [LÍMITES Y DIRECTIVAS]: Reglas INQUEBRABLES para la IA.
 - Tono: Profesional, directo, como un consultor senior. Con autoridad pero sin ser arrogante.
 - Prohibido: Usar emojis, tutear, garantizar resultados, ofrecer descuentos, hablar de política o temas no relacionados al negocio.
 - Finalidad: Mi único objetivo es determinar si el lead tiene un problema que podemos resolver y el presupuesto para hacerlo. Si es así, mi trabajo es pasarlo a un humano con la frase: "Excelente, basado en esto, creo que podemos ayudarte. Un estratega de nuestro equipo se pondrá en contacto contigo en breve para coordinar una llamada."`,
@@ -223,7 +222,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
   const [current, setCurrent] = useState<BotSettings | null>(null);
   const [isSaved, setIsSaved] = useState(false);
   const [wizardStep, setWizardStep] = useState(0); 
-  const [isEnhancing, setIsEnhancing] = useState<keyof WizardState | null>(null);
+  const [isEnhancing, setIsEnhancing] = useState(false);
   const [sessionTokenCount, setSessionTokenCount] = useState(0);
   const [isSavingApiKey, setIsSavingApiKey] = useState(false);
   
@@ -292,32 +291,61 @@ ${state.rules}
     }
   };
 
-  const enhanceWithAI = async (field: keyof Pick<WizardState, 'mission' | 'idealCustomer' | 'detailedDescription'>) => {
+  const handleAutoCompleteWithAI = async () => {
     if (!current?.geminiApiKey) {
         alert("Por favor, ingresa tu API Key de Gemini en la sección correspondiente antes de usar esta función.");
         return;
     }
-    const contentToEnhance = wizardState[field];
-    if (!contentToEnhance.trim()) {
-        alert("Por favor, escribe algo en el campo antes de mejorarlo con IA.");
+    if (!current.productName.trim() || !wizardState.mission.trim() || !wizardState.idealCustomer.trim()) {
+        alert("Por favor, completa el nombre de tu negocio, la misión y el cliente ideal antes de usar la IA.");
         return;
     }
-    setIsEnhancing(field);
+    setIsEnhancing(true);
     try {
         const ai = new GoogleGenAI({ apiKey: current.geminiApiKey });
-        const fieldMap = {
-            mission: 'misión principal del bot',
-            idealCustomer: 'descripción del cliente ideal',
-            detailedDescription: 'descripción detallada del producto/servicio'
-        };
-        const prompt = `Eres un experto en prompt engineering y copywriting para ventas. Toma el siguiente texto, que define la "${fieldMap[field]}", y mejóralo drásticamente. Hazlo más detallado, preciso, persuasivo y efectivo para instruir a una IA de ventas en WhatsApp. Mantén un tono profesional y directo. No agregues introducciones ni conclusiones, solo devuelve el texto mejorado.\n\nTEXTO A MEJORAR:\n"${contentToEnhance}"`;
         
+        const prompt = `Eres un experto en estrategia de ventas y prompt engineering. Basado en la siguiente información de un negocio, genera un "playbook de ventas" completo para una IA que opera en WhatsApp.
+
+**Información del Negocio:**
+- **Nombre del Negocio/Producto:** "${current.productName}"
+- **Misión de la IA:** "${wizardState.mission}"
+- **Cliente Ideal:** "${wizardState.idealCustomer}"
+
+**Tu Tarea:**
+Debes generar una respuesta en formato JSON que contenga los siguientes campos:
+1.  **detailedDescription**: Una descripción detallada y persuasiva del producto/servicio.
+2.  **objections**: Un array de 2 a 3 objeciones comunes que un cliente podría tener, cada una con una respuesta estratégica y efectiva.
+3.  **rules**: Un conjunto de reglas de oro y límites que la IA debe seguir (tono, prohibiciones, etc.).
+
+La respuesta DEBE ser un objeto JSON válido con la estructura exacta definida en el schema.`;
+        
+        const responseSchema = {
+            type: Type.OBJECT,
+            properties: {
+                detailedDescription: { type: Type.STRING },
+                objections: {
+                    type: Type.ARRAY,
+                    items: {
+                        type: Type.OBJECT,
+                        properties: {
+                            id: { type: Type.NUMBER },
+                            objection: { type: Type.STRING },
+                            response: { type: Type.STRING }
+                        },
+                        required: ["id", "objection", "response"]
+                    }
+                },
+                rules: { type: Type.STRING }
+            },
+            required: ["detailedDescription", "objections", "rules"]
+        };
+
         const response = await ai.models.generateContent({
             model: 'gemini-3-flash-preview',
-            contents: [{ parts: [{ text: prompt }] }], // Use contents with parts for text-only input
+            contents: [{ parts: [{ text: prompt }] }],
             config: {
-                // Ensure systemInstruction is not used here directly as prompt already contains all instructions
-                // The prompt variable itself serves as the main instruction for this call
+                responseMimeType: "application/json",
+                responseSchema
             },
         });
 
@@ -326,17 +354,28 @@ ${state.rules}
             setSessionTokenCount(prev => prev + usage.totalTokenCount);
         }
 
-        const enhancedText = response.text;
-        if (enhancedText) {
-            handleWizardStateChange(field, enhancedText.trim());
+        const jsonText = response.text;
+        if (jsonText) {
+            const result = JSON.parse(jsonText);
+            
+            // Add unique IDs to objections if they don't have them
+            const objectionsWithIds = result.objections.map((o: any, i: number) => ({ ...o, id: Date.now() + i }));
+
+            setWizardState(prev => ({
+                ...prev,
+                detailedDescription: result.detailedDescription,
+                objections: objectionsWithIds,
+                rules: result.rules
+            }));
+            setWizardStep(1); // Auto-advance to the next step
         } else {
-            throw new Error("La IA no devolvió texto.");
+            throw new Error("La IA no devolvió un playbook completo.");
         }
     } catch (error) {
-        console.error("Error enhancing with AI:", error);
-        alert("Hubo un error al comunicarse con la IA. Revisa tu API Key y la consola para más detalles.");
+        console.error("Error auto-completing with AI:", error);
+        alert("Hubo un error al generar el playbook con la IA. Revisa tu API Key y la consola.");
     } finally {
-        setIsEnhancing(null);
+        setIsEnhancing(false);
     }
   };
   
@@ -386,16 +425,6 @@ ${state.rules}
     </div>
   );
 
-  const AiEnhanceButton: React.FC<{ field: keyof Pick<WizardState, 'mission' | 'idealCustomer' | 'detailedDescription'> }> = ({ field }) => (
-    <button type="button" onClick={() => enhanceWithAI(field)} disabled={isEnhancing !== null || !current?.geminiApiKey?.trim()} className="flex items-center justify-center gap-2 text-[10px] text-brand-gold font-bold hover:underline disabled:opacity-50">
-        {isEnhancing === field ? (
-            <><div className="w-3 h-3 border-2 border-brand-gold/30 border-t-brand-gold rounded-full animate-spin"></div> Mejorando...</>
-        ) : (
-            'Mejorar con IA ✨'
-        )}
-    </button>
-  );
-
   const handleCompleteWizard = () => {
     const combinedDescription = getCombinedProductDescription(wizardState, current.productName);
     onUpdateSettings({ ...current, productDescription: combinedDescription, isWizardCompleted: true });
@@ -413,7 +442,7 @@ ${state.rules}
       <div className="max-w-6xl mx-auto space-y-10 pb-32">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-white/5 pb-8">
             <div>
-                <h2 className="text-3xl font-black text-white tracking-tighter uppercase">Cerebro <span className="text-brand-gold">Neural</span></h2>
+                <h2 className="text-3xl font-black text-white tracking-tighter uppercase">Ajustes <span className="text-brand-gold">Neurales</span></h2>
                 <p className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.3em]">Configuración de Red Inferencia v3.2</p>
             </div>
             <button onClick={saveAllSettings} className={`px-12 py-5 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all duration-500 shadow-2xl ${isSaved ? 'bg-green-600 text-white scale-95' : 'bg-brand-gold text-black hover:scale-105 active:opacity-80'}`}>{isSaved ? "SINCRONIZACIÓN EXITOSA ✓" : "Sincronizar IA"}</button>
@@ -444,22 +473,30 @@ ${state.rules}
                         </div>
                     ) : (
                         <div className="flex-1 p-10 flex flex-col justify-center">
+                            <div className="text-center text-xs text-gray-400 bg-black/20 p-4 rounded-xl border border-white/10 mb-8 animate-fade-in">
+                                Dominion se configura en minutos. El sistema complejo lo manejamos nosotros.
+                            </div>
                             {wizardStep === 0 && (
                                 <div className="space-y-6 animate-fade-in">
                                     <div className="space-y-3 mb-8"><label className="text-[12px] font-black text-brand-gold uppercase tracking-[0.3em]">FASE 1: LA MISIÓN</label><h4 className="text-2xl font-black text-white tracking-tighter">Define tu Identidad y Cliente Ideal</h4><p className="text-sm text-gray-400 leading-relaxed font-medium">La IA necesita saber quién es y para quién trabaja. Esto define el 80% de su éxito.</p></div>
                                     <div className="space-y-4">
                                         <input value={current.productName} onChange={e => setCurrent({...current, productName: e.target.value})} className="w-full bg-black/60 border border-white/10 rounded-xl p-4 text-sm font-bold text-white focus:border-brand-gold outline-none" placeholder="Nombre de tu Negocio/Producto" />
-                                        <div><textarea value={wizardState.mission} onChange={e => handleWizardStateChange('mission', e.target.value)} className="w-full bg-black/60 border border-white/10 rounded-xl p-4 text-sm text-gray-300 h-24 resize-none focus:border-brand-gold outline-none" placeholder="Misión: Mi propósito es..."/><div className="text-right mt-1"><AiEnhanceButton field="mission"/></div></div>
-                                        <div><textarea value={wizardState.idealCustomer} onChange={e => handleWizardStateChange('idealCustomer', e.target.value)} className="w-full bg-black/60 border border-white/10 rounded-xl p-4 text-sm text-gray-300 h-24 resize-none focus:border-brand-gold outline-none" placeholder="Cliente Ideal: Agencias que facturan..."/><div className="text-right mt-1"><AiEnhanceButton field="idealCustomer"/></div></div>
+                                        <textarea value={wizardState.mission} onChange={e => handleWizardStateChange('mission', e.target.value)} className="w-full bg-black/60 border border-white/10 rounded-xl p-4 text-sm text-gray-300 h-24 resize-none focus:border-brand-gold outline-none" placeholder="Ej: 'Soy el asistente de [Mi Agencia] y mi objetivo es calificar leads para pasarlos a un vendedor...'"/>
+                                        <textarea value={wizardState.idealCustomer} onChange={e => handleWizardStateChange('idealCustomer', e.target.value)} className="w-full bg-black/60 border border-white/10 rounded-xl p-4 text-sm text-gray-300 h-24 resize-none focus:border-brand-gold outline-none" placeholder="Ej: 'Empresas que facturan más de 10k/mes y quieren escalar con publicidad...'"/>
                                     </div>
-                                    <div className="pt-4"><button onClick={() => setWizardStep(1)} disabled={!current.productName || !wizardState.mission || !wizardState.idealCustomer} className="w-full py-5 bg-white/5 hover:bg-white/10 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest disabled:opacity-20 transition-all border border-white/10">Siguiente: Arsenal &rarr;</button></div>
+                                    <div className="pt-4 space-y-4">
+                                        <button onClick={handleAutoCompleteWithAI} disabled={isEnhancing || !current.productName.trim() || !wizardState.mission.trim() || !wizardState.idealCustomer.trim()} className="w-full py-5 bg-brand-gold/10 text-brand-gold border border-brand-gold/20 rounded-2xl font-black text-[11px] uppercase tracking-widest disabled:opacity-20 transition-all flex items-center justify-center gap-2">
+                                            {isEnhancing ? <><div className="w-4 h-4 border-2 border-brand-gold/30 border-t-brand-gold rounded-full animate-spin"></div> Generando Playbook...</> : '✨ Auto-Completar con IA (Opcional)'}
+                                        </button>
+                                        <button onClick={() => setWizardStep(1)} className="w-full text-center text-gray-500 font-bold text-xs uppercase hover:text-white transition-colors">Omitir y Llenar Manualmente &rarr;</button>
+                                    </div>
                                 </div>
                             )}
                             {wizardStep === 1 && (
                                 <div className="space-y-6 animate-fade-in">
                                     <div className="space-y-3 mb-8"><label className="text-[12px] font-black text-brand-gold uppercase tracking-[0.3em]">FASE 2: EL ARSENAL</label><h4 className="text-2xl font-black text-white tracking-tighter">Detalla tu Oferta y Cierre</h4><p className="text-sm text-gray-400 leading-relaxed font-medium">Qué vendes, cuánto cuesta y cuál es el siguiente paso para el cliente.</p></div>
                                     <div className="space-y-4">
-                                        <div><textarea value={wizardState.detailedDescription} onChange={e => handleWizardStateChange('detailedDescription', e.target.value)} className="w-full bg-black/60 border border-white/10 rounded-xl p-4 text-sm text-gray-300 h-32 resize-none focus:border-brand-gold outline-none" placeholder="Descripción detallada del producto/servicio..."/><div className="text-right mt-1"><AiEnhanceButton field="detailedDescription"/></div></div>
+                                        <textarea value={wizardState.detailedDescription} onChange={e => handleWizardStateChange('detailedDescription', e.target.value)} className="w-full bg-black/60 border border-white/10 rounded-xl p-4 text-sm text-gray-300 h-32 resize-none focus:border-brand-gold outline-none" placeholder="Descripción detallada del producto/servicio..."/>
                                         <input value={current.priceText} onChange={e => setCurrent({...current, priceText: e.target.value})} className="w-full bg-black/60 border border-white/10 rounded-xl p-4 text-sm text-white focus:border-brand-gold outline-none" placeholder="Inversión / Precio. Ej: $1.000 USD" />
                                         <textarea value={current.ctaLink} onChange={e => setCurrent({...current, ctaLink: e.target.value})} className="w-full bg-black/60 border border-white/10 rounded-xl p-4 text-sm text-gray-300 h-24 resize-none focus:border-brand-gold outline-none" placeholder="Llamada a la acción. Ej: 'Excelente, agenda una llamada aquí: [link]'"/>
                                     </div>

@@ -1,4 +1,3 @@
-
 # 🦅 CÓDICE DOMINION v3.0.0 [ADN DEL PROYECTO]
 
 > "En la era de la saturación digital, la velocidad es la moneda y la inteligencia es el arma. Dominion no es un bot; es la herramienta para no perder ventas en WhatsApp."
@@ -151,37 +150,48 @@ Dominion opera como una plataforma de Software como Servicio (SaaS) donde múlti
 - **Infraestructura Centralizada:** Un único backend y base de datos sirven a todos los clientes.
 - **Aislamiento de Datos:** Cada pieza de información (usuarios, conversaciones, configuraciones) está estrictamente vinculada a un `userId`.
 
-### 2. Estrategia de Plan Único (One Plan)
-Dominion simplifica la oferta comercial. **Solo existe UN plan comercial completo (PRO).** No hay planes básicos ni intermedios.
+### 2. Estrategia de Precios por Profundidad (Tiered Pricing)
+La oferta comercial de Dominion está directamente ligada a la potencia del **Depth Engine**. Los clientes eligen el nivel de profundidad cognitiva que necesitan, pagando solo por la capacidad de razonamiento que utilizan.
 
-#### a) Plan `pro` (Licencia Completa) - **USD 29/mes**
-- **Funcionalidades Totales:**
-    - `intent_detection`: Capacidad de la IA para entender la intención real del cliente.
-    - `lead_scoring`: Calificación automática de leads en **Frío, Tibio, Caliente**.
-    - `priority_alerts`: Notificaciones o cambios visuales para leads calientes.
-    - `close_assist`: Modo "Copiloto" donde la IA sugiere respuestas al vendedor humano.
-    - `force_run`: Capacidad de forzar manualmente la ejecución de la IA en cualquier chat.
-- **Filosofía:** Si vas a usar Dominion, lo usas con toda su potencia. No vendemos versiones diluidas.
+#### a) Nivel 3: Standard (Protocolo Base) - **USD 29/mes**
+- **Funcionalidades:** `intent_detection`, `lead_scoring` básico, `auto_reply`.
+- **Caso de Uso:** Ideal para negocios con alto volumen de consultas y que necesitan un filtrado rápido y eficiente. Automatiza respuestas frecuentes y califica leads con intención de compra explícita.
+- **Filosofía:** El punto de entrada para automatizar tu WhatsApp y dejar de perder ventas por demoras.
 
-#### b) Estado `fallback` (Sin Licencia / Expirado)
-*Técnicamente etiquetado como `starter` en la base de datos por compatibilidad legacy.*
-- **Funcionalidades:** Limitado estrictamente a `auto_reply` (respuestas automáticas simples) y `professional_tone`.
-- **Caso de Uso:** **NO es un plan comercial.** Es un estado de seguridad operativa. Si la licencia PRO de un cliente expira, el sistema "cae" a este modo para evitar que el bot se apague y deje de responder, protegiendo la imagen del negocio, pero pierde toda inteligencia comercial avanzada.
+#### b) Nivel 7: Sniper (Modo Estratega) - **USD 49/mes**
+- **Funcionalidades Totales:** Incluye todo lo del plan Standard más `close_assist` (Copiloto), `force_run`, y acceso al **Radar 4.0**.
+- **Capacidades Aumentadas:** Memoria contextual extendida, análisis de sentimiento, detección de micro-lenguaje y manejo de objeciones complejas.
+- **Caso de Uso:** Esencial para ventas consultivas, servicios de alto valor (High-Ticket) y cualquier negocio donde entender el matiz de la conversación es crítico para la venta.
+- **Filosofía:** La experiencia Dominion completa. No solo responde, sino que entiende, razona y asiste estratégicamente al vendedor humano.
+
+#### c) Nivel 10: Neuro-Boost (Inyección de Potencia) - **USD 15/48hs**
+- **Funcionalidad:** Un "boost" temporal que eleva la cuenta a la máxima capacidad cognitiva.
+- **Capacidades Máximas:** Múltiples pases de inferencia (Chain-of-Thought), predicción de tendencias de mercado en grupos y análisis de señales ocultas.
+- **Caso de Uso:** Diseñado para períodos críticos de alta intensidad comercial, como lanzamientos de productos, eventos o campañas de marketing agresivas.
+- **Filosofía:** Potencia de cómputo bajo demanda para momentos en los que no se puede dejar pasar ni una sola oportunidad.
 
 ### 3. Ciclo de Vida de la Suscripción
 1.  **Registro (`trial`):**
     - Al registrarse, un nuevo cliente comienza automáticamente en un período de prueba (`plan_status: 'trial'`).
-    - **Protocolo de Escasez:** Este período otorga acceso a todas las funcionalidades PRO durante **3 días o hasta calificar 10 conversaciones**, lo que ocurra primero.
+    - **Protocolo de Escasez:** Este período otorga acceso a todas las funcionalidades del nivel **Sniper (Nivel 7)** durante **3 días o hasta calificar 10 conversaciones**, lo que ocurra primero.
 2.  **Activación (`active`):**
-    - Un `super_admin` activa manualmente la licencia.
-    - La activación cambia el `plan_status` a `active` y establece una nueva `billing_end_date` a **30 días en el futuro**.
+    - Un `super_admin` activa manually la licencia para un plan específico.
+    - La activación cambia el `plan_status` a `active` y establece una nueva `billing_end_date`.
 3.  **Expiración (`expired`):**
     - Si llega la `billing_end_date` y el plan no se ha renovado, el `plan_status` cambia a `expired`.
-    - Las funcionalidades se limitan a las del estado `fallback`.
+    - Las funcionalidades se limitan a un estado `fallback` (respuestas básicas) para no interrumpir el servicio, pero se pierde toda la inteligencia avanzada.
 
 ### 4. Lógica de Monetización y Métricas
-- **MRR (Ingreso Mensual Recurrente):** El panel de `super_admin` calcula el MRR sumando `USD 29` por cada cliente con `plan_status: 'active'`.
+- **MRR (Ingreso Mensual Recurrente):** El panel de `super_admin` calcula el MRR sumando el precio del plan de cada cliente con `plan_status: 'active'`.
 - **ROIE (Retorno de Inversión Estimado):** En el dashboard del cliente, se muestra un "Retorno Estimado" calculado como `(Nº de Leads Calientes) x (Valor Fijo por Lead)`.
+
+### 5. Estrategia de Lanzamiento: Precio Fundadores (Early Adopter)
+Para recompensar a los primeros usuarios y construir una base de clientes leal, se establece una política de "Precio Fundadores".
+
+- **Definición:** Todo usuario que se suscriba durante la etapa de lanzamiento del producto es marcado como `is_founder`.
+- **Beneficio Principal:** El usuario fundador mantiene el precio de su plan **de forma indefinida**, siempre y cuando su suscripción permanezca activa e ininterrumpida.
+- **Condición de Pérdida:** Si el usuario cancela su suscripción o esta vence por falta de pago, pierde irrevocablemente el beneficio de "Precio Fundadores". Cualquier reactivación futura se realizará al precio de lista vigente en ese momento.
+- **Objetivo:** Incentivar la adopción temprana, reducir la tasa de cancelación (churn) y preparar el terreno para futuras actualizaciones de precios sin afectar a la base de usuarios original.
 
 ---
 

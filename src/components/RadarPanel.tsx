@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { RadarSignal, RadarSettings, WhatsAppGroup, BotSettings } from '../types';
 import { getAuthHeaders } from '../config';
@@ -81,6 +80,7 @@ const RadarPanel: React.FC<RadarPanelProps> = ({ token, backendUrl, showToast })
                     const latest = data[0];
                     if (latest && (latest.strategicScore || latest.analysis.score) >= 80) {
                         audioService.play('radar_ping'); 
+                        // FIX: Added 'info' as the second argument to showToast and used template literal for string interpolation.
                         showToast(`¡Radar! Oportunidad Crítica (${latest.strategicScore}%)`, 'info');
                     }
                 }
@@ -284,7 +284,7 @@ const RadarPanel: React.FC<RadarPanelProps> = ({ token, backendUrl, showToast })
                 <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 border-b border-white/5 pb-6">
                     <div>
                         <h2 className="text-3xl font-black text-white tracking-tighter uppercase flex items-center gap-3">
-                            Inteligencia <span className="text-brand-gold">De Mercado</span>
+                            Radar <span className="text-brand-gold">De Mercado</span>
                             {settings?.isEnabled && (
                                 <div className="relative flex items-center gap-2 bg-green-500/10 px-3 py-1 rounded-full border border-green-500/30">
                                     <div className="relative flex h-2 w-2">

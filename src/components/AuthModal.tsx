@@ -1,7 +1,7 @@
-
 import React, { useState, useEffect } from 'react';
 import { IntendedUse } from '../types';
 import { BACKEND_URL, API_HEADERS } from '../config';
+import { audioService } from '../services/audioService';
 
 interface AuthModalProps {
     isOpen: boolean;
@@ -118,6 +118,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
                 }
             } else {
                 setError(data.message || 'Error en la operación. Verifique sus datos.');
+                audioService.play('alert_error_credentials');
             }
         } catch (err: any) {
             console.error("Auth Fail", err);
@@ -128,6 +129,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
             } else {
                 setError('Fallo de conexión. Verifique que el Backend esté activo.');
             }
+            audioService.play('alert_error_connection');
         } finally {
             setLoading(false);
         }
@@ -233,20 +235,25 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
                                 )}
 
                                 {mode === 'register' && (
-                                    <div className="bg-black/20 rounded-2xl p-4 md:p-5 space-y-4 border border-white/5 animate-fade-in">
-                                        <label className="flex items-start gap-4 cursor-pointer group">
-                                            <input type="checkbox" checked={agreedTerms} onChange={(e) => setAgreedTerms(e.target.checked)} className="mt-1 w-4 h-4 rounded border-white/10 bg-black checked:bg-brand-gold flex-shrink-0" />
-                                            <span className="text-[10px] text-gray-400 group-hover:text-gray-300">Acepto los <button type="button" onClick={() => onOpenLegal('terms')} className="text-brand-gold font-bold">Términos de Servicio</button>.</span>
-                                        </label>
-                                        <label className="flex items-start gap-4 cursor-pointer group">
-                                            <input type="checkbox" checked={agreedPrivacy} onChange={(e) => setAgreedPrivacy(e.target.checked)} className="mt-1 w-4 h-4 rounded border-white/10 bg-black checked:bg-brand-gold flex-shrink-0" />
-                                            <span className="text-[10px] text-gray-400 group-hover:text-gray-300">Entiendo la <button type="button" onClick={() => onOpenLegal('privacy')} className="text-brand-gold font-bold">Privacidad BYOK</button>.</span>
-                                        </label>
-                                        <label className="flex items-start gap-4 cursor-pointer group">
-                                            <input type="checkbox" checked={agreedManifesto} onChange={(e) => setAgreedManifesto(e.target.checked)} className="mt-1 w-4 h-4 rounded border-white/10 bg-black checked:bg-brand-gold flex-shrink-0" />
-                                            <span className="text-[10px] text-gray-400 group-hover:text-gray-300">He leído el <button type="button" onClick={() => onOpenLegal('manifesto')} className="text-brand-gold font-bold">Manifiesto Dominion</button>.</span>
-                                        </label>
-                                    </div>
+                                    <>
+                                        <div className="bg-black/20 rounded-2xl p-4 md:p-5 space-y-4 border border-white/5 animate-fade-in">
+                                            <label className="flex items-start gap-4 cursor-pointer group">
+                                                <input type="checkbox" checked={agreedTerms} onChange={(e) => setAgreedTerms(e.target.checked)} className="mt-1 w-4 h-4 rounded border-white/10 bg-black checked:bg-brand-gold flex-shrink-0" />
+                                                <span className="text-[10px] text-gray-400 group-hover:text-gray-300">Acepto los <button type="button" onClick={() => onOpenLegal('terms')} className="text-brand-gold font-bold">Términos de Servicio</button>.</span>
+                                            </label>
+                                            <label className="flex items-start gap-4 cursor-pointer group">
+                                                <input type="checkbox" checked={agreedPrivacy} onChange={(e) => setAgreedPrivacy(e.target.checked)} className="mt-1 w-4 h-4 rounded border-white/10 bg-black checked:bg-brand-gold flex-shrink-0" />
+                                                <span className="text-[10px] text-gray-400 group-hover:text-gray-300">Entiendo la <button type="button" onClick={() => onOpenLegal('privacy')} className="text-brand-gold font-bold">Privacidad BYOK</button>.</span>
+                                            </label>
+                                            <label className="flex items-start gap-4 cursor-pointer group">
+                                                <input type="checkbox" checked={agreedManifesto} onChange={(e) => setAgreedManifesto(e.target.checked)} className="mt-1 w-4 h-4 rounded border-white/10 bg-black checked:bg-brand-gold flex-shrink-0" />
+                                                <span className="text-[10px] text-gray-400 group-hover:text-gray-300">He leído el <button type="button" onClick={() => onOpenLegal('manifesto')} className="text-brand-gold font-bold">Manifiesto Dominion</button>.</span>
+                                            </label>
+                                        </div>
+                                        <div className="text-center text-xs text-brand-gold bg-brand-gold/10 p-3 rounded-lg border border-brand-gold/20 animate-fade-in">
+                                            Estás accediendo al <strong>Precio Fundadores</strong>. Se mantendrá para vos mientras no canceles tu suscripción.
+                                        </div>
+                                    </>
                                 )}
 
                                 {error && <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-[10px] text-center font-black uppercase tracking-widest animate-shake">{error}</div>}

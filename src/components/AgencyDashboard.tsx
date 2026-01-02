@@ -1,10 +1,10 @@
-
 import React, { useEffect, useState } from 'react';
 import { BotSettings, DashboardMetrics, User } from '../types.js';
 import { getAuthHeaders } from '../config';
 import { GoogleGenAI } from '@google/genai';
 import TestBotSimulator from './Client/TestBotSimulator.js'; 
 import { openSupportWhatsApp } from '../utils/textUtils';
+import { audioService } from '../services/audioService.js';
 
 interface AgencyDashboardProps {
   token: string;
@@ -136,7 +136,8 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
   const verifyApiKey = async () => {
     const cleanKey = settings?.geminiApiKey?.trim();
     if (!cleanKey) {
-        alert('API Key de Gemini no configurada o vacía.');
+        showToast('API Key de Gemini no configurada o vacía.', 'error');
+        audioService.play('alert_error_apikey');
         setApiKeyStatus('INVALID');
         return;
     }
@@ -148,10 +149,11 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
             contents: [{ parts: [{text: 'ping'}] }] 
         }); 
         setApiKeyStatus('VALID');
-        alert('✅ Conexión Exitosa: API Key verificada y operativa.');
+        showToast('Conexión Exitosa: API Key verificada y operativa.', 'success');
     } catch (error: any) {
         setApiKeyStatus('INVALID');
-        alert(`❌ Error de Verificación: ${error.message}`);
+        showToast(`Error de Verificación: ${error.message}`, 'error');
+        audioService.play('alert_error_apikey');
     }
   };
 
@@ -207,7 +209,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
         <header className="flex flex-col md:flex-row justify-between items-end gap-6 border-b border-white/5 pb-10">
             <div>
                 <h1 className="text-5xl font-black text-white tracking-tighter leading-none uppercase">
-                    Resultados <span className="text-brand-gold">Pro</span>
+                    Métricas <span className="text-brand-gold">Pro</span>
                 </h1>
                 <p className="text-gray-500 mt-3 text-[10px] uppercase font-black tracking-[0.3em] flex items-center gap-2">
                     <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-[0_0_10px_rgba(34,197,94,0.8)]"></span>

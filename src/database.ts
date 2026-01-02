@@ -147,6 +147,8 @@ const UserSchema = new Schema({
     billing_end_date: { type: String, default: () => new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() },
     trial_qualified_leads_count: { type: Number, default: 0 },
     
+    is_founder: { type: Boolean, default: false },
+
     // NEW: Depth Level
     depthLevel: { type: Number, default: 1 },
 
@@ -281,6 +283,7 @@ class Database {
         billing_start_date: new Date().toISOString(),
         billing_end_date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(), 
         trial_qualified_leads_count: 0,
+        is_founder: true, // NEW: Mark new users as founders
         depthLevel: 1, // Default depth
         created_at: new Date().toISOString(),
         settings: { 

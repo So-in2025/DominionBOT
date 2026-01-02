@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Conversation, LeadStatus } from '../types';
 import { formatPhoneNumber } from '../utils/textUtils';
@@ -19,16 +18,9 @@ const ConversationListItem: React.FC<ConversationListItemProps> = ({ conversatio
   const lastMessage = conversation.messages[conversation.messages.length - 1];
   const colorClass = statusColorClass[conversation.status];
   
-  // ROBUST NAME CHECK LOGIC:
-  // 1. Strip non-digits to check if it's a pure number.
-  // 2. If it's a number > 6 digits, assume it's a phone number and use leadIdentifier formatting.
-  // 3. Otherwise use the name.
-  const cleanLeadName = conversation.leadName.replace(/[^0-9]/g, '');
-  const isLeadNameNumber = cleanLeadName.length > 6 && !isNaN(Number(cleanLeadName));
-
-  const displayTitle = isLeadNameNumber 
-      ? formatPhoneNumber(conversation.leadIdentifier) 
-      : conversation.leadName;
+  // Display leadName as the main title and formatted leadIdentifier as subtitle
+  const displayTitle = conversation.leadName;
+  const displaySubtitle = formatPhoneNumber(conversation.leadIdentifier);
 
   return (
     <li
@@ -61,9 +53,12 @@ const ConversationListItem: React.FC<ConversationListItemProps> = ({ conversatio
           </span>
         </div>
         
+        {/* Always display formatted phone number as a subtitle */}
+        <p className="text-[10px] text-gray-500 font-mono mt-0.5 tracking-wider">{displaySubtitle}</p>
+
         {/* Signal Tags (Signals) */}
         {conversation.tags && conversation.tags.length > 0 && (
-            <div className="flex flex-wrap gap-1 mb-1.5">
+            <div className="flex flex-wrap gap-1 mb-1.5 mt-2"> {/* Adjusted margin-top */}
                 {conversation.tags.slice(0, 3).map(tag => (
                     <span key={tag} className="px-1.5 py-0.5 rounded bg-brand-gold/5 border border-brand-gold/20 text-brand-gold text-[8px] font-black uppercase tracking-tighter">
                         {tag}
@@ -73,7 +68,7 @@ const ConversationListItem: React.FC<ConversationListItemProps> = ({ conversatio
             </div>
         )}
 
-        <p className="text-xs text-gray-400 truncate group-hover:text-gray-300 transition-colors opacity-80">
+        <p className="text-xs text-gray-400 truncate group-hover:text-gray-300 transition-colors opacity-80 mt-1"> {/* Adjusted margin-top */}
           {conversation.isMuted ? (
               <span className="text-brand-gold font-bold uppercase text-[9px] mr-2 tracking-tighter">[Escalado]</span>
           ) : (

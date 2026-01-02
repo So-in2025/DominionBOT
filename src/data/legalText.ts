@@ -1,4 +1,3 @@
-
 export const LEGAL_TEXTS = {
     privacy: {
         title: "Política de Privacidad (Modelo BYOK)",
@@ -53,9 +52,9 @@ No vendemos software. Vendemos **tiempo** y **tasa de cierre**.
 *   Imagina despertar con 5 reuniones agendadas en lugar de 50 mensajes sin leer.
 *   Imagina que tus vendedores solo hablen con gente que ya dijo "quiero comprar".
 
-### 4. EL PRECIO: Menos que un Café al Día
-Por $29 USD/mes, tienes un empleado estrella que no duerme, no pide vacaciones y no se queja.
-*   **Plan Único (PRO):** Toda la potencia. Sin límites artificiales.
+### 4. EL PRECIO: Infraestructura de Alto Retorno
+Con planes flexibles basados en la potencia que necesitas, tienes un empleado estrella que no duerme, no pide vacaciones y no se queja.
+*   **Planes Escalables:** Desde filtrado básico hasta predicción de mercado. Elige tu nivel de profundidad.
 *   **Garantía:** Si no recuperas la inversión con UNA sola venta, este sistema no es para ti.
 `
     }

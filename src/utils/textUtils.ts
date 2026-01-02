@@ -1,5 +1,7 @@
 
+
 import { BACKEND_URL } from '../config.js';
+import { hexToRgb, interpolateColor } from './colorUtils.js'; // Import new color utilities
 
 export const formatPhoneNumber = (input: string | undefined): string => {
     if (!input) return 'Desconocido';
@@ -36,7 +38,9 @@ export const getInitials = (name: string): string => {
         .toUpperCase();
 };
 
-export const openSupportWhatsApp = async (message: string) => {
+// FIX: Added a default message parameter to allow the function to be called with zero arguments if needed,
+// addressing the "Expected 1 arguments, but got 0" error in App.tsx.
+export const openSupportWhatsApp = async (message: string = 'Hola, necesito ayuda con Dominion Bot.') => {
     let supportNumber = '5492617145654'; // Default fallback number
     
     try {

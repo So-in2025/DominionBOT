@@ -308,6 +308,8 @@ export interface User {
   billing_start_date: string;
   billing_end_date: string;
   
+  is_founder?: boolean;
+
   // DEPTH ENGINE
   depthLevel: number; // Base depth (default: 1)
 

@@ -1,4 +1,3 @@
-
 export const LEGAL_TEXTS = {
     privacy: {
         title: "Política de Privacidad",
@@ -41,12 +40,15 @@ Dominion Bot es una herramienta SaaS de orquestación técnica que conecta Whats
 *   **Protocolo No Oficial:** Dominion Bot utiliza librerías de emulación de navegador para conectar con WhatsApp Web. No utilizamos la API oficial de WhatsApp Business (BSP) para permitir flexibilidad y reducción de costos al cliente.
 *   **Riesgo de Bloqueo:** Existe un riesgo inherente de bloqueo numérico por parte de WhatsApp si se detectan patrones abusivos. **Dominion Bot NO se hace responsable por la pérdida, suspensión o bloqueo de números de WhatsApp.** El usuario asume este riesgo al utilizar la plataforma.
 
-### 4. Google Gemini y Costos de IA
+### 4. Precio Fundadores
+El "Precio Fundadores" es un beneficio para los primeros usuarios (Early Adopters). El precio de suscripción se mantiene fijo únicamente mientras la suscripción permanezca activa e ininterrumpida. En caso de cancelación o vencimiento por falta de pago, el beneficio se pierde irrevocablemente. Cualquier reactivación se realizará al precio de lista vigente en ese momento.
+
+### 5. Google Gemini y Costos de IA
 *   El usuario es responsable de cumplir con los Términos de Servicio de Google AI Studio.
 *   Dominion Bot no se hace responsable por costos inesperados en la facturación de Google Cloud del cliente si este excede la capa gratuita.
 *   Garantizamos compatibilidad técnica con la capa gratuita (Free Tier) de Gemini, sujeto a los límites de rate-limit de Google.
 
-### 5. Suspensión del Servicio
+### 6. Suspensión del Servicio
 Nos reservamos el derecho de suspender el servicio si detectamos: uso abusivo de recursos, intentos de ingeniería inversa, o violaciones a la política de privacidad de terceros.
 `
     },

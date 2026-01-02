@@ -1,4 +1,3 @@
-
 import React, { useRef, useEffect, useState } from 'react';
 import { Conversation, LeadStatus, InternalNote, BotSettings } from '../types';
 import MessageBubble from './MessageBubble';
@@ -118,10 +117,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   
   const currentBadge = statusBadgeClass[conversation.status];
   
-  const cleanLeadName = conversation.leadName.replace(/[^0-9]/g, '');
-  const isLeadNameNumber = cleanLeadName.length > 6 && !isNaN(Number(cleanLeadName));
-  const displayTitle = isLeadNameNumber ? formatPhoneNumber(conversation.leadIdentifier) : conversation.leadName;
-  const showSubtitle = !isLeadNameNumber;
+  // Simplified display logic: always show leadName as title, leadIdentifier as subtitle
+  const displayTitle = conversation.leadName;
+  const displaySubtitle = formatPhoneNumber(conversation.leadIdentifier);
   const currentNumber = conversation.id.split('@')[0];
   const isBlacklisted = settings?.ignoredJids?.includes(currentNumber);
 
@@ -154,9 +152,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                     {displayTitle}
                     {isBlacklisted && <span className="text-[9px] bg-red-500 text-white px-1.5 py-0.5 rounded uppercase font-black tracking-wider">Bloqueado</span>}
                 </h2>
-                {showSubtitle && (
-                    <p className="text-[10px] text-gray-500 font-mono mt-0.5 tracking-wider">{formatPhoneNumber(conversation.leadIdentifier)}</p>
-                )}
+                {/* Always show formatted phone number as a subtitle */}
+                <p className="text-[10px] text-gray-500 font-mono mt-0.5 tracking-wider">{displaySubtitle}</p>
               </div>
           </div>
           

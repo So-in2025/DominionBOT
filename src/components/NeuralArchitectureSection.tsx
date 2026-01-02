@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { openSupportWhatsApp } from '../utils/textUtils';
 
@@ -31,8 +30,9 @@ const NeuralArchitectureSection = () => {
                     {/* LEVEL 1: STANDARD */}
                     <div className="bg-[#0a0a0a] border border-white/10 rounded-3xl p-8 relative group hover:border-white/20 transition-all duration-300 flex flex-col">
                         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-gray-800 to-gray-600"></div>
-                        <div className="mb-6">
+                        <div className="flex justify-between items-center mb-6">
                             <span className="bg-white/10 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border border-white/10">Nivel 3: Standard</span>
+                            <span className="bg-brand-gold/10 text-brand-gold text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded">PRECIO FUNDADORES</span>
                         </div>
                         <h3 className="text-2xl font-black text-white mb-2">Protocolo Base</h3>
                         <p className="text-sm text-gray-500 font-medium mb-8 min-h-[60px]">
@@ -53,6 +53,7 @@ const NeuralArchitectureSection = () => {
                             </li>
                         </ul>
                         <div className="pt-6 border-t border-white/5 mt-auto">
+                             <p className="text-[10px] text-gray-600 font-bold uppercase tracking-wider text-center mb-4">Quienes ingresen en esta etapa mantienen este precio mientras su suscripción permanezca activa.</p>
                             <div className="flex justify-between items-end mb-4">
                                 <p className="text-3xl font-black text-white">$29<span className="text-sm text-gray-600 font-bold ml-1">/mes</span></p>
                             </div>
@@ -66,8 +67,9 @@ const NeuralArchitectureSection = () => {
                         <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-brand-gold text-black text-[9px] font-black uppercase tracking-[0.2em] px-4 py-1 rounded-full shadow-lg">
                             Más Elegido
                         </div>
-                        <div className="mb-6">
+                        <div className="flex justify-between items-center mb-6">
                             <span className="bg-brand-gold/10 text-brand-gold text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border border-brand-gold/20">Nivel 7: Sniper</span>
+                            <span className="bg-brand-gold text-black text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded">PRECIO FUNDADORES</span>
                         </div>
                         <h3 className="text-2xl font-black text-white mb-2">Modo Estratega</h3>
                         <p className="text-sm text-gray-400 font-medium mb-8 min-h-[60px]">
@@ -88,6 +90,7 @@ const NeuralArchitectureSection = () => {
                             </li>
                         </ul>
                         <div className="pt-6 border-t border-white/10 mt-auto">
+                             <p className="text-[10px] text-brand-gold/70 font-bold uppercase tracking-wider text-center mb-4">Quienes ingresen en esta etapa mantienen este precio mientras su suscripción permanezca activa.</p>
                             <div className="flex justify-between items-end mb-4">
                                 <p className="text-3xl font-black text-white">$49<span className="text-sm text-gray-600 font-bold ml-1">/mes</span></p>
                             </div>
@@ -99,7 +102,7 @@ const NeuralArchitectureSection = () => {
                     <div className="bg-[#0a0a0a] border border-purple-500/30 rounded-3xl p-8 relative group hover:border-purple-500/60 transition-all duration-300 overflow-hidden flex flex-col">
                         <div className="absolute top-0 right-0 w-32 h-32 bg-purple-600/10 rounded-full blur-2xl group-hover:bg-purple-600/20 transition-all"></div>
                         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-900 to-purple-600"></div>
-                        <div className="mb-6">
+                        <div className="flex justify-between items-center mb-6">
                             <span className="bg-purple-500/10 text-purple-400 text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border border-purple-500/20">Nivel 10: Neuro-Boost</span>
                         </div>
                         <h3 className="text-2xl font-black text-white mb-2">Inyección de Potencia</h3>
@@ -121,6 +124,7 @@ const NeuralArchitectureSection = () => {
                             </li>
                         </ul>
                         <div className="pt-6 border-t border-white/5 mt-auto">
+                            <p className="text-[10px] text-gray-600 font-bold uppercase tracking-wider text-center mb-4">Este es un servicio bajo demanda y no un plan mensual.</p>
                             <div className="flex justify-between items-end mb-4">
                                 <p className="text-3xl font-black text-white">$15<span className="text-sm text-gray-600 font-bold ml-1">/48hs</span></p>
                             </div>
