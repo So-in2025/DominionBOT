@@ -6,6 +6,7 @@ import { logService } from '../services/logService.js';
 import { ConnectionStatus, User, SystemSettings, Message, LeadStatus, Conversation } from '../types.js';
 import { getSessionStatus, processAiResponseForJid } from '../whatsapp/client.js'; // Import processAiResponseForJid
 import { conversationService } from '../services/conversationService.js'; // Import conversationService
+import { v4 as uuidv4 } from 'uuid'; // Need uuid for Boosts
 
 const getAdminUser = (req: any) => ({ id: req.user.id, username: req.user.username });
 
@@ -205,9 +206,6 @@ export const handleUpdateSystemSettings = async (req: any, res: any) => {
     }
 };
 
-/**
- * Inicia una secuencia de mensajes de prueba desde el "bot de pruebas" hacia el bot de un cliente objetivo.
- */
 export const handleStartTestBot = async (req: any, res: any) => {
     const { targetUserId } = req.body;
     const admin = getAdminUser(req);
@@ -222,22 +220,19 @@ export const handleStartTestBot = async (req: any, res: any) => {
             return res.status(404).json({ message: 'Cliente objetivo no encontrado.' });
         }
 
-        // 1. Asegurarse de que el bot del cliente esté activo
         if (!targetUser.settings.isActive) {
             targetUser.settings.isActive = true;
             await db.updateUserSettings(targetUserId, { isActive: true });
             logService.audit(`Bot del cliente ${targetUser.username} activado para prueba.`, admin.id, admin.username, { targetUserId });
         }
-        // 2. Opcional: Resetear el contador de leads calificados para un test limpio
         await db.updateUser(targetUserId, { trial_qualified_leads_count: 0 });
 
-        // 3. FORCE RESET CONVERSATION STATE (CRITICAL FIX)
         const cleanConversation: Conversation = {
             id: ELITE_BOT_JID,
             leadIdentifier: 'Simulador',
             leadName: ELITE_BOT_NAME,
             status: LeadStatus.COLD,
-            messages: [], // Wipe history
+            messages: [], 
             isBotActive: true,
             isMuted: false,
             isTestBotConversation: true,
@@ -247,19 +242,13 @@ export const handleStartTestBot = async (req: any, res: any) => {
             lastActivity: new Date()
         };
         await db.saveUserConversation(targetUserId, cleanConversation);
-        // NEW LOG: Log conversation state after forced reset
-        logService.info(`[ADMIN-TEST-BOT] After forced reset, conversation state in DB for ${targetUserId} and JID ${ELITE_BOT_JID}: ${JSON.stringify(cleanConversation).substring(0, 500)}...`, admin.id);
-
-
-        // Responder al cliente inmediatamente para que el frontend pueda iniciar el polling
+        
         res.status(200).json({ message: 'Secuencia de prueba de bot élite iniciada en background.' });
 
-        // 4. Iniciar la secuencia de mensajes de prueba en segundo plano
         (async () => {
             logService.audit(`Iniciando prueba de bot élite para cliente: ${targetUser.username} en background`, admin.id, admin.username, { targetUserId });
 
             for (const messageText of TEST_SCRIPT) {
-                // Añadir el mensaje del bot élite como si fuera un usuario al chat del cliente
                 const eliteBotMessage: Message = { 
                     id: `elite_bot_msg_${Date.now()}_${Math.random().toString(36).substring(7)}`, 
                     text: messageText, 
@@ -267,11 +256,7 @@ export const handleStartTestBot = async (req: any, res: any) => {
                     timestamp: new Date() 
                 };
                 await conversationService.addMessage(targetUserId, ELITE_BOT_JID, eliteBotMessage, ELITE_BOT_NAME);
-
-                // Trigger el procesamiento de la IA del cliente objetivo inmediatamente (sin debounce)
                 await processAiResponseForJid(targetUserId, ELITE_BOT_JID);
-
-                // Pequeña pausa para simular una conversación
                 await new Promise(resolve => setTimeout(resolve, 3000));
             }
 
@@ -282,17 +267,12 @@ export const handleStartTestBot = async (req: any, res: any) => {
 
     } catch (error: any) {
         logService.error(`Error al iniciar la prueba del bot élite para ${targetUserId}`, error, admin.id, admin.username);
-        // Si el error ocurre antes de enviar la respuesta HTTP, lo manejamos aquí.
-        // Si ya se envió la respuesta, este catch manejará los errores asíncronos en segundo plano.
-        if (!res.headersSent) { // Check if response has already been sent
+        if (!res.headersSent) { 
             res.status(500).json({ message: 'Error interno del servidor al iniciar la prueba.' });
         }
     }
 };
 
-/**
- * Elimina la conversación del "bot de pruebas" para un cliente objetivo.
- */
 export const handleClearTestBotConversation = async (req: any, res: any) => {
     const { targetUserId } = req.body;
     const admin = getAdminUser(req);
@@ -313,17 +293,57 @@ export const handleClearTestBotConversation = async (req: any, res: any) => {
             await db.updateUser(targetUserId, { conversations: user.conversations });
             logService.audit(`Conversación de bot élite eliminada para cliente: ${user.username}`, admin.id, admin.username, { targetUserId });
         } else if (user.conversations && user.conversations[ELITE_BOT_JID]) {
-             // Fallback for old structure
              delete user.conversations[ELITE_BOT_JID];
              await db.updateUser(targetUserId, { conversations: user.conversations });
-        } else {
-            logService.info(`No se encontró conversación de bot élite para eliminar en cliente: ${user.username}`, admin.id, admin.username, { targetUserId });
-        }
+        } 
 
         res.status(200).json({ message: 'Conversación de prueba de bot élite eliminada.' });
 
     } catch (error: any) {
         logService.error(`Error al limpiar la conversación del bot élite para ${targetUserId}`, error, admin.id, admin.username);
         res.status(500).json({ message: 'Error interno del servidor al limpiar la conversación.' });
+    }
+};
+
+// --- NEW: DEPTH ENGINE CONTROLLERS ---
+
+export const handleUpdateDepthLevel = async (req: any, res: any) => {
+    const { userId, depthLevel } = req.body;
+    const admin = getAdminUser(req);
+
+    if (!userId || !depthLevel) return res.status(400).json({ message: 'Datos incompletos' });
+
+    try {
+        await db.updateUser(userId, { depthLevel });
+        logService.audit(`Nivel Base de Profundidad actualizado a ${depthLevel} para ${userId}`, admin.id, admin.username, { targetUserId: userId });
+        res.json({ message: 'Profundidad actualizada.' });
+    } catch (e) {
+        res.status(500).json({ message: 'Error actualizando profundidad.' });
+    }
+};
+
+export const handleApplyDepthBoost = async (req: any, res: any) => {
+    const { userId, depthDelta, durationHours } = req.body;
+    const admin = getAdminUser(req);
+
+    try {
+        const startsAt = new Date();
+        const endsAt = new Date(startsAt.getTime() + durationHours * 60 * 60 * 1000);
+
+        const boost = {
+            id: uuidv4(),
+            userId,
+            depthDelta,
+            reason: 'Admin Boost',
+            startsAt: startsAt.toISOString(),
+            endsAt: endsAt.toISOString(),
+            createdBy: admin.id
+        };
+
+        await db.createDepthBoost(boost);
+        logService.audit(`Boost de Profundidad (+${depthDelta}, ${durationHours}h) aplicado a ${userId}`, admin.id, admin.username, { boost });
+        res.json({ message: 'Boost aplicado correctamente.' });
+    } catch (e) {
+        res.status(500).json({ message: 'Error aplicando boost.' });
     }
 };

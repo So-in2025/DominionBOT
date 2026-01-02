@@ -14,7 +14,7 @@ export enum View {
   SETTINGS = 'CONFIGURACIÓN',
   SANDBOX = 'SIMULADOR',
   CAMPAIGNS = 'CAMPAÑAS',
-  RADAR = 'RADAR', // NEW
+  RADAR = 'RADAR',
   ADMIN_GLOBAL = 'DASHBOARD_GLOBAL', 
   AUDIT_MODE = 'AUDIT_MODE'
 }
@@ -54,8 +54,45 @@ export type PlanType = 'starter' | 'pro';
 export type PlanStatus = 'active' | 'expired' | 'suspended' | 'trial';
 export type LogLevel = 'INFO' | 'WARN' | 'ERROR' | 'AUDIT';
 
-// --- RADAR 4.0 TYPES (PREDICTIVE ENGINE) ---
+// --- DEPTH ENGINE TYPES (NEW) ---
 
+export interface CapabilityContext {
+    depthLevel: number; // The input integer (1-10)
+    
+    // Calculated Capabilities
+    horizonHours: number; // How far back to look in history
+    memoryDepth: number; // Number of previous interactions to retain context
+    inferencePasses: number; // Conceptual complexity of reasoning (1=Linear, 3=Deep)
+    confidenceThreshold: number; // 0-100. Higher depth = stricter filter
+    simulationAggressiveness: number; // 0-100. For stress testing
+    variationDepth: number; // 0-100. Determines Jitter/Humanization variance in Campaigns
+    
+    // Feature Flags (Derived from depth)
+    canPredictTrends: boolean; // Level > 3
+    canAnalyzeHiddenSignals: boolean; // Level > 5
+    canAutoReplyStrategic: boolean; // Level > 7
+}
+
+export interface DepthBoost {
+    id: string;
+    userId: string;
+    depthDelta: number; // e.g., +2
+    reason: string;
+    startsAt: string;
+    endsAt: string;
+    createdBy: string; // Admin ID
+}
+
+export interface DepthLog {
+    timestamp: string;
+    userId: string;
+    eventType: 'DEPTH_USED' | 'BOOST_APPLIED' | 'LIMIT_HIT';
+    details: any;
+}
+
+// -------------------------------
+
+// --- RADAR 4.0 TYPES ---
 export interface MarketContextSnapshot {
     momentum: 'ACCELERATING' | 'STABLE' | 'COOLING';
     sentiment: 'POSITIVE' | 'NEUTRAL' | 'NEGATIVE' | 'TENSE';
@@ -64,7 +101,7 @@ export interface MarketContextSnapshot {
 }
 
 export interface PredictiveWindow {
-    confidenceScore: number; // 0-100 (Probabilidad de que la ventana sea real)
+    confidenceScore: number; // 0-100
     urgencyLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
     delayRisk: 'LOW' | 'MEDIUM' | 'HIGH';
     reasoning: string;
@@ -78,7 +115,7 @@ export interface HiddenSignal {
 
 export interface ActionIntelligence {
     suggestedEntryType: 'DIRECT' | 'CONSULTATIVE' | 'PRIVATE' | 'WAIT';
-    communicationFraming: string; // "Focus on empathy", "Focus on speed"
+    communicationFraming: string;
     spamRiskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
     recommendedWaitTimeSeconds?: number;
 }
@@ -93,29 +130,27 @@ export interface RadarSignal {
     messageContent: string;
     timestamp: string;
     
-    // Core Analysis (v3.0)
     analysis: {
-        score: number; // 0-100
+        score: number;
         category: string; 
         intentType: 'SEARCH' | 'COMPARISON' | 'QUESTION' | 'URGENT';
         reasoning: string;
         suggestedAction: string;
     };
 
-    // Predictive Layer (v4.0)
     marketContext?: MarketContextSnapshot;
     predictedWindow?: PredictiveWindow;
     hiddenSignals?: HiddenSignal[];
     actionIntelligence?: ActionIntelligence;
-    strategicScore?: number; // 0-100 (Weighted Score)
+    strategicScore?: number;
 
     status: 'NEW' | 'ACTED' | 'DISMISSED';
 }
 
 export interface RadarSettings {
     isEnabled: boolean;
-    monitoredGroups: string[]; // List of Group JIDs
-    keywordsInclude: string[]; // Optional pre-filter
+    monitoredGroups: string[];
+    keywordsInclude: string[];
     keywordsExclude: string[];
 }
 
@@ -124,11 +159,10 @@ export interface GroupMarketMemory {
     lastUpdated: string;
     avgResponseTime: number;
     successfulWindows: number;
-    sentimentHistory: string[]; // Last 10 sentiments
+    sentimentHistory: string[];
 }
 // -----------------------
 
-// --- CAMPAIGN MODULE TYPES ---
 export type CampaignStatus = 'DRAFT' | 'ACTIVE' | 'PAUSED' | 'COMPLETED';
 export type ScheduleType = 'ONCE' | 'DAILY' | 'WEEKLY';
 
@@ -137,13 +171,14 @@ export interface Campaign {
     userId: string;
     name: string;
     message: string;
-    groups: string[]; // JIDs of target groups
+    imageUrl?: string; // Base64 or URL
+    groups: string[];
     status: CampaignStatus;
     schedule: {
         type: ScheduleType;
-        startDate: string; // ISO String
-        time: string; // "HH:MM" 24h format
-        daysOfWeek?: number[]; // 0-6 for Weekly
+        startDate: string;
+        time: string;
+        daysOfWeek?: number[];
     };
     config: {
         minDelaySec: number;
@@ -163,15 +198,13 @@ export interface WhatsAppGroup {
     subject: string;
     size?: number;
 }
-// -----------------------------
 
-// --- ELITE++ TRAINING SYSTEM TYPES ---
 export type SimulationScenario = 'STANDARD_FLOW' | 'PRICE_OBJECTION' | 'COMPETITOR_COMPARISON' | 'GHOSTING_RISK' | 'CONFUSED_BUYER';
 
 export interface EvaluationResult {
-    score: number; // 0-100 Robustness Score
+    score: number;
     outcome: 'SUCCESS' | 'FAILURE' | 'NEUTRAL';
-    detectedFailurePattern?: string; // e.g., "Early Pricing Fold", "Looping"
+    detectedFailurePattern?: string;
     insights: string[];
 }
 
@@ -190,9 +223,8 @@ export interface SimulationRun {
 export interface SimulationLab {
     experiments: SimulationRun[];
     aggregatedScore: number;
-    topFailurePatterns: Record<string, number>; // Pattern Name -> Count
+    topFailurePatterns: Record<string, number>;
 }
-// -------------------------------------
 
 export interface Message {
   id: string;
@@ -262,10 +294,12 @@ export interface User {
   billing_start_date: string;
   billing_end_date: string;
   
+  // DEPTH ENGINE
+  depthLevel: number; // Base depth (default: 1)
+
   settings: BotSettings;
   conversations: Record<string, Conversation>;
   
-  // NEW RADAR SETTINGS
   radar?: RadarSettings;
 
   governance: {
@@ -277,7 +311,6 @@ export interface User {
     humanDeviationScore: number;
   };
 
-  // ELITE++ LAB DATA
   simulationLab?: SimulationLab;
   
   trial_qualified_leads_count?: number;
@@ -308,7 +341,6 @@ export interface DashboardMetrics {
   avgEscalationTimeMinutes: number;
   activeSessions: number;
   humanDeviationScore: number;
-  // CAMPAIGN INTEGRATION
   campaignsActive: number;
   campaignMessagesSent: number;
 }

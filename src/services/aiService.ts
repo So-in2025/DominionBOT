@@ -2,21 +2,19 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Message, LeadStatus, User, PromptArchetype } from '../types.js';
 import { planService } from './planService.js';
-import { logService } from './logService.js'; // Import logService
+import { logService } from './logService.js';
+import { capabilityResolver } from './capabilityResolver.js'; // NEW IMPORT
 
 const MODEL_PRIORITY = ["gemini-3-flash-preview", "gemini-flash-lite-latest"];
 
 export const generateBotResponse = async (
   conversationHistory: Message[],
   user: User,
-  isSimulation: boolean = false // NEW PARAM
+  isSimulation: boolean = false
 ): Promise<{ responseText?: string, suggestedReplies?: string[], newStatus: LeadStatus, tags: string[], recommendedAction?: string } | null> => {
   
-  // FIX: If it's a simulation, we bypass the isActive check to ensure the test runs.
-  // Otherwise, strictly enforce isActive and valid plan status.
   if (!isSimulation) {
       if (!user.settings.isActive || (user.plan_status !== 'active' && user.plan_status !== 'trial')) {
-          // If plan is expired or suspended, or bot is off, send a generic polite message or do nothing
           if(user.plan_status === 'expired') {
               return { responseText: "Disculpa la demora, en breve te atenderemos.", newStatus: LeadStatus.COLD, tags: [] };
           }
@@ -24,7 +22,6 @@ export const generateBotResponse = async (
       }
   }
 
-  // CRITICAL: Ensure user has provided their Gemini API Key
   if (!user.settings.geminiApiKey || user.settings.geminiApiKey.trim() === '') {
       logService.error(`[AI-SERVICE] Usuario ${user.username} (ID: ${user.id}) intentó generar respuesta AI sin API Key de Gemini configurada.`, null, user.id, user.username);
       if (isSimulation) {
@@ -33,11 +30,15 @@ export const generateBotResponse = async (
       return null; 
   }
   
+  // 1. RESOLVE CAPABILITIES
+  const capabilities = await capabilityResolver.resolve(user.id);
+
   const features = planService.getClientFeatures(user);
   const settings = user.settings;
 
-  // CRITICAL FIX: Treat 'elite_bot' as 'user' (Cliente) so the AI knows to respond to it.
-  const historyText = conversationHistory.slice(-15).map(m => {
+  // 2. Adjust History Depth based on Capabilities
+  const memoryLimit = capabilities.memoryDepth || 15;
+  const historyText = conversationHistory.slice(-memoryLimit).map(m => {
       let role = 'Dominion_Bot';
       if (m.sender === 'user' || m.sender === 'elite_bot') {
           role = 'Cliente';
@@ -47,21 +48,17 @@ export const generateBotResponse = async (
       return `${role}: ${m.text}`;
   }).join('\n');
 
-  const archetypes = {
-      [PromptArchetype.CONSULTATIVE]: "Estrategia: Consultiva. Escucha activa y calificación.",
-      [PromptArchetype.DIRECT_CLOSER]: "Estrategia: Closer. Enfoque en disponibilidad, precio y cierre.",
-      [PromptArchetype.SUPPORT]: "Estrategia: Soporte. Técnico y resolutivo.",
-      [PromptArchetype.CUSTOM]: `Estrategia Personalizada: ${settings.productDescription}`
-  };
+  const prompt = `## HISTORIAL DE SEÑALES (Profundidad: ${memoryLimit} msgs):\n${historyText}`;
 
-  // FIX: Separated system instruction from the prompt (conversation history) to align with Gemini API best practices.
-  const prompt = `## HISTORIAL DE SEÑALES:\n${historyText}`;
-
-  // Build prompt dynamically based on features
+  // 3. Inject Cognitive Depth Instructions
   let systemInstruction = `
-# CONSTITUCIÓN DOMINION BOT v2.8 (ELITE)
+# CONSTITUCIÓN DOMINION BOT v2.8 (ELITE - Depth Level ${capabilities.depthLevel})
 Eres un Agente Comercial Autónomo operando en Mendoza, Argentina para "${settings.productName}".
 Tu misión: Atender consultas y, si el plan lo permite, calificar la intención de compra.
+
+## PARÁMETROS COGNITIVOS:
+- Profundidad de Razonamiento: ${capabilities.inferencePasses} (1=Rápido, 3=Profundo)
+- ${capabilities.canPredictTrends ? 'Activar análisis de intención latente.' : 'Análisis literal.'}
 
 ## REGLAS DE ORO:
 - Responde en Español Argentino Profesional (Voseo permitido).
@@ -74,7 +71,6 @@ ${settings.productDescription}
 - Link de Cierre: ${settings.ctaLink}.
 `;
 
-  // Add feature-based instructions
   if (features.lead_scoring) {
       systemInstruction += `
 ## PROTOCOLO DE CALIFICACIÓN (PLAN PRO):
@@ -89,7 +85,6 @@ Analiza el historial y determina el estado del lead (Frío, Tibio, Caliente).
 `;
   }
   
-  // Define JSON schema based on features
   const responseSchema: any = {
       type: Type.OBJECT,
       properties: {
@@ -110,7 +105,6 @@ Analiza el historial y determina el estado del lead (Frío, Tibio, Caliente).
 ${JSON.stringify(Object.keys(responseSchema.properties))}
 `;
   
-  // CRITICAL: Use only the user's Gemini API key from settings.
   const ai = new GoogleGenAI({ apiKey: settings.geminiApiKey });
 
   for (const modelName of MODEL_PRIORITY) {
@@ -129,7 +123,6 @@ ${JSON.stringify(Object.keys(responseSchema.properties))}
       if (!jsonText) throw new Error("Respuesta vacía de la IA.");
 
       const result = JSON.parse(jsonText.trim());
-      // Downgrade if feature is not enabled but AI still produced it
       if (!features.lead_scoring) result.newStatus = LeadStatus.WARM;
       if (!features.close_assist) result.suggestedReplies = undefined;
 

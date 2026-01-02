@@ -171,7 +171,7 @@ import {
     handleGetCampaigns, handleCreateCampaign, handleUpdateCampaign, handleDeleteCampaign, handleGetWhatsAppGroups,
     handleGetRadarSignals, handleGetRadarSettings, handleUpdateRadarSettings, handleDismissRadarSignal, handleConvertRadarSignal
 } from './controllers/apiController.js';
-import { handleGetAllClients, handleUpdateClient, handleRenewClient, handleGetLogs, handleGetDashboardMetrics, handleActivateClient, handleGetSystemSettings, handleUpdateSystemSettings, handleDeleteClient, handleStartTestBot, handleClearTestBotConversation } from './controllers/adminController.js';
+import { handleGetAllClients, handleUpdateClient, handleRenewClient, handleGetLogs, handleGetDashboardMetrics, handleActivateClient, handleGetSystemSettings, handleUpdateSystemSettings, handleDeleteClient, handleStartTestBot, handleClearTestBotConversation, handleUpdateDepthLevel, handleApplyDepthBoost } from './controllers/adminController.js';
 
 // Standard Client Routes
 app.get('/api/status', authenticateToken, handleGetStatus); 
@@ -232,6 +232,10 @@ adminRouter.put('/system/settings', handleUpdateSystemSettings);
 // Admin Test Bot Routes
 adminRouter.post('/test-bot/start', handleStartTestBot);
 adminRouter.post('/test-bot/clear', handleClearTestBotConversation);
+
+// DEPTH CONTROL ROUTES (NEW)
+adminRouter.post('/depth/update', handleUpdateDepthLevel);
+adminRouter.post('/depth/boost', handleApplyDepthBoost);
 
 adminRouter.post('/system/reset', async (req: any, res: any) => {
     logService.audit('HARD RESET DEL SISTEMA INICIADO', req.user.id, req.user.username);

@@ -117,6 +117,30 @@ La IA busca patrones subyacentes que un humano podría perder:
 
 ---
 
+## 🧠 CAPABILITY DEPTH ENGINE (ARQUITECTURA DE PROFUNDIDAD COGNITIVA)
+
+Esta capa arquitectónica introduce un sistema de razonamiento paramétrico controlado centralmente. En lugar de activar/desactivar funciones, ajustamos la "profundidad de pensamiento" de la IA.
+
+### 1. Concepto: Depth Level (Nivel de Profundidad)
+Un valor entero (1-10) que determina la complejidad computacional y estratégica asignada a un cliente.
+- **Nivel 1 (Básico):** Respuestas rápidas, memoria corta (10 msgs), análisis literal.
+- **Nivel 5 (Estándar):** Memoria media (20 msgs), detección de tendencias, análisis de sentimiento.
+- **Nivel 10 (Deep Strategic):** Memoria extendida (30+ msgs), múltiples pases de inferencia, predicción de mercado, análisis de señales ocultas.
+
+### 2. Capability Context
+El sistema resuelve dinámicamente un contexto de capacidades para cada interacción:
+`DepthEngine.resolve(level) -> { memoryDepth, inferencePasses, confidenceThreshold, ... }`
+
+Esto permite:
+- **Control de Calidad:** Asegurar que los clientes de alto valor reciban el mejor análisis.
+- **Escalabilidad:** Gestionar la carga computacional y de API.
+- **Monetización Futura:** Vender "Boosts de Inteligencia" temporales para lanzamientos o eventos críticos.
+
+### 3. Depth Boosts
+Capacidad de inyectar temporalmente un aumento de nivel (+N) a una cuenta específica. Útil para demostraciones de poder o gestión de crisis.
+
+---
+
 ## 💰 MODELO SAAS Y ESTRATEGIA COMERCIAL
 
 Este documento detalla el modelo de negocio y la estructura de planes.
@@ -260,6 +284,8 @@ Dominion simplifica la oferta comercial. **Solo existe UN plan comercial complet
 │   ├── conversationService.ts # Orquesta la lógica de las conversaciones
 │   ├── logService.ts     # Sistema centralizado de logging
 │   ├── planService.ts    # Define las funcionalidades por tipo de plan
+│   ├── depthEngine.ts    # Motor de cálculo de profundidad cognitiva
+│   ├── capabilityResolver.ts # Resolución de capacidades por usuario
 │   └── ttsService.ts     # (Backend) Generación de audio con Text-to-Speech
 ├── utils/              # Funciones de ayuda reutilizables
 ├── whatsapp/           # Lógica de conexión con WhatsApp (Baileys)

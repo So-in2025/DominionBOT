@@ -18,6 +18,7 @@ import { useMongoDBAuthState, clearBindedSession } from './mongoAuth.js';
 import { logService } from '../services/logService.js';
 import * as QRCode from 'qrcode';
 import { radarService } from '../services/radarService.js'; // Import Radar Service
+import { Buffer } from 'buffer'; // Needed for media sending
 
 const sessions = new Map<string, WASocket>();
 const qrCache = new Map<string, string>(); 
@@ -293,10 +294,24 @@ export async function disconnectWhatsApp(userId: string) {
     await db.updateUserSettings(userId, { isActive: false });
 }
 
-export async function sendMessage(userId: string, jid: string, text: string) {
+// Updated sendMessage to accept optional imageUrl
+export async function sendMessage(userId: string, jid: string, text: string, imageUrl?: string) {
     const sock = sessions.get(userId);
     if (!sock) throw new Error(`WhatsApp no conectado.`);
-    await sock.sendMessage(jid, { text });
+    
+    if (imageUrl) {
+        try {
+            // Strip data:image/png;base64, prefix if present
+            const base64Data = imageUrl.split(',')[1] || imageUrl;
+            const buffer = Buffer.from(base64Data, 'base64');
+            await sock.sendMessage(jid, { image: buffer, caption: text });
+        } catch (e) {
+            console.error(`Error sending image to ${jid}:`, e);
+            throw new Error("Failed to send image");
+        }
+    } else {
+        await sock.sendMessage(jid, { text });
+    }
 }
 
 // --- NEW FUNCTIONALITY: Fetch Groups ---

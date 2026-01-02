@@ -20,6 +20,7 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
     const [message, setMessage] = useState('');
     const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
     const [scheduleType, setScheduleType] = useState<'ONCE' | 'DAILY'>('ONCE');
+    const [image, setImage] = useState<string | null>(null); // New state for image base64
 
     useEffect(() => {
         fetchCampaigns();
@@ -52,9 +53,24 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
         fetchGroups();
     };
 
+    const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setImage(reader.result as string);
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
+    const handleRemoveImage = () => {
+        setImage(null);
+    };
+
     const handleSave = async () => {
-        if (!name || !message || selectedGroups.length === 0) {
-            showToast('Completa todos los campos obligatorios.', 'error');
+        if (!name || (!message && !image) || selectedGroups.length === 0) {
+            showToast('Debes incluir un nombre, grupos y un mensaje o imagen.', 'error');
             return;
         }
 
@@ -63,6 +79,7 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
             const payload = {
                 name,
                 message,
+                imageUrl: image, // Send base64 image
                 groups: selectedGroups,
                 schedule: { type: scheduleType, startDate: new Date().toISOString() }, // Default run now
                 config: { minDelaySec: 5, maxDelaySec: 20 }
@@ -79,7 +96,7 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
                 setView('LIST');
                 fetchCampaigns();
                 // Reset form
-                setName(''); setMessage(''); setSelectedGroups([]);
+                setName(''); setMessage(''); setSelectedGroups([]); setImage(null);
             } else {
                 showToast('Error al crear campaña.', 'error');
             }
@@ -142,8 +159,31 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
                             </div>
 
                             <div>
-                                <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Mensaje (Rich Text)</label>
+                                <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Mensaje (Caption)</label>
                                 <textarea value={message} onChange={e => setMessage(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm h-32 focus:border-brand-gold outline-none resize-none" placeholder="Hola equipo, les comparto..." />
+                            </div>
+
+                            {/* IMAGE UPLOAD SECTION */}
+                            <div>
+                                <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Imagen Táctica (Opcional)</label>
+                                <div className="flex items-center gap-4">
+                                    <label className="cursor-pointer bg-white/5 hover:bg-white/10 border border-white/10 text-white py-2 px-4 rounded-lg text-xs font-bold transition-all flex items-center gap-2">
+                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                                        Adjuntar Imagen
+                                        <input type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
+                                    </label>
+                                    {image && (
+                                        <div className="relative group">
+                                            <img src={image} alt="Preview" className="h-16 w-16 object-cover rounded-lg border border-brand-gold/30" />
+                                            <button 
+                                                onClick={handleRemoveImage}
+                                                className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold shadow-lg"
+                                            >
+                                                ✕
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
 
                             <div>
@@ -179,7 +219,10 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
                             <div key={c.id} className="bg-brand-surface border border-white/5 rounded-2xl p-6 hover:bg-white/5 transition-all group">
                                 <div className="flex flex-col md:flex-row justify-between md:items-center gap-4 mb-4">
                                     <div>
-                                        <h3 className="text-lg font-black text-white">{c.name}</h3>
+                                        <h3 className="text-lg font-black text-white flex items-center gap-2">
+                                            {c.name}
+                                            {c.imageUrl && <span className="text-[10px] bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded border border-blue-500/30 font-bold uppercase">IMG</span>}
+                                        </h3>
                                         <div className="flex gap-4 mt-2 text-[10px] font-mono text-gray-500">
                                             <span>GRUPOS: {c.groups.length}</span>
                                             <span>ENVIADOS: {c.stats.totalSent}</span>
@@ -198,8 +241,13 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
                                         <button onClick={() => deleteCampaign(c.id)} className="w-8 h-8 flex items-center justify-center bg-red-500/10 text-red-500 rounded-full hover:bg-red-500 hover:text-white transition-all">✕</button>
                                     </div>
                                 </div>
-                                <div className="bg-black/40 p-3 rounded-xl border border-white/5">
-                                    <p className="text-xs text-gray-400 italic line-clamp-2">"{c.message}"</p>
+                                <div className="bg-black/40 p-3 rounded-xl border border-white/5 flex gap-3 items-center">
+                                    {c.imageUrl && (
+                                        <div className="w-10 h-10 rounded-lg bg-white/5 flex-shrink-0 overflow-hidden border border-white/10">
+                                            <img src={c.imageUrl} alt="Campaign" className="w-full h-full object-cover opacity-80" />
+                                        </div>
+                                    )}
+                                    <p className="text-xs text-gray-400 italic line-clamp-2">{c.message || "(Solo Imagen)"}</p>
                                 </div>
                                 {c.stats.nextRunAt && c.status === 'ACTIVE' && (
                                     <p className="text-[9px] text-brand-gold font-bold uppercase tracking-widest mt-3 text-right animate-pulse">

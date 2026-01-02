@@ -4,30 +4,36 @@ import { db } from '../database.js';
 import { RadarSignal, User, MarketContextSnapshot, HiddenSignal } from '../types.js';
 import { logService } from './logService.js';
 import { v4 as uuidv4 } from 'uuid';
+import { capabilityResolver } from './capabilityResolver.js'; // NEW IMPORT
 
 class RadarService {
     
     public async processGroupMessage(userId: string, groupJid: string, groupName: string, senderJid: string, senderName: string | undefined, messageContent: string) {
-        // 1. Check if Radar is enabled and group is monitored
+        // 1. Resolve Capabilities FIRST
+        const capabilities = await capabilityResolver.resolve(userId);
+
+        // 2. Check if Radar is enabled and group is monitored
         const settings = await db.getRadarSettings(userId);
         
         if (!settings.isEnabled) return;
         if (!settings.monitoredGroups.includes(groupJid)) return;
 
-        // 2. Early Filters (Safety Layer)
+        // 3. Early Filters (Safety Layer)
         const user = await db.getUser(userId);
         if (senderJid.includes(user?.whatsapp_number || 'xxxxx')) return; 
 
-        // 3. Keyword Pre-filter (Optional optimization)
+        // 4. Keyword Pre-filter (Optional optimization)
         if (settings.keywordsInclude && settings.keywordsInclude.length > 0) {
             const lowerContent = messageContent.toLowerCase();
             const hasKeyword = settings.keywordsInclude.some(k => lowerContent.includes(k.toLowerCase()));
             if (!hasKeyword) return;
         }
 
-        // 4. RADAR 4.0: Context Injection & Memory Retrieval
-        // Fetch recent signals (Short Term Context)
-        const recentSignals = await db.getRecentGroupSignals(groupJid, 5);
+        // 5. RADAR 4.0: Context Injection using CAPABILITIES
+        // Fetch recent signals based on Memory Depth from capabilities
+        // Default was 5, now dynamic based on depth level
+        const historyLimit = Math.max(3, Math.floor(capabilities.memoryDepth / 2)); // Use half memory depth for group context
+        const recentSignals = await db.getRecentGroupSignals(groupJid, historyLimit);
         const contextHistory = recentSignals.map(s => `[${new Date(s.timestamp).toLocaleTimeString()}] ${s.senderName}: "${s.messageContent}"`).join('\n');
 
         // Fetch Group Memory (Long Term Context)
@@ -43,12 +49,15 @@ class RadarService {
             `.trim();
         }
 
-        // 5. AI Analysis (Predictive Engine)
+        // 6. AI Analysis (Predictive Engine)
         try {
-            const analysisResult = await this.analyzeMessageWithAI(messageContent, groupName, contextHistory, memoryContext, user!);
+            const analysisResult = await this.analyzeMessageWithAI(messageContent, groupName, contextHistory, memoryContext, user!, capabilities);
             
-            // 6. Strategic Qualification (Score > 40 to reduce noise, but store rich data)
-            if (analysisResult && analysisResult.analysis.score >= 40) {
+            // 7. Strategic Qualification using CAPABILITIES
+            // Use dynamic confidence threshold instead of hardcoded 40
+            const threshold = Math.max(40, capabilities.confidenceThreshold); // Minimum 40, scales up with depth
+
+            if (analysisResult && analysisResult.analysis.score >= threshold) {
                 
                 // Calculate Strategic Score (Composite)
                 let strategicScore = analysisResult.analysis.score;
@@ -80,29 +89,37 @@ class RadarService {
 
                 await db.createRadarSignal(signal);
                 
-                // 7. Update Group Memory (Feedback Loop)
+                // 8. Update Group Memory (Feedback Loop)
                 const newSentiment = analysisResult.marketContext?.sentiment || 'NEUTRAL';
                 const currentHistory = groupMemory?.sentimentHistory || [];
-                const newHistory = [...currentHistory, newSentiment].slice(-10); // Keep last 10 sentiments
+                const newHistory = [...currentHistory, newSentiment].slice(-10); 
                 
                 await db.updateGroupMemory(groupJid, {
                     lastUpdated: new Date().toISOString(),
                     sentimentHistory: newHistory
                 });
 
-                logService.info(`[RADAR-4.0] 🔮 Predicción: ${analysisResult.predictedWindow?.confidenceScore}% Confianza | Urgencia: ${analysisResult.predictedWindow?.urgencyLevel}`, userId);
+                logService.info(`[RADAR-4.0] 🔮 Predicción (Depth ${capabilities.depthLevel}): ${analysisResult.predictedWindow?.confidenceScore}% Confianza`, userId);
             }
         } catch (error) {
             console.error(`[RADAR] Error analyzing message:`, error);
         }
     }
 
-    private async analyzeMessageWithAI(message: string, groupName: string, contextHistory: string, memoryContext: string, user: User) {
+    private async analyzeMessageWithAI(message: string, groupName: string, contextHistory: string, memoryContext: string, user: User, capabilities: any) {
         if (!user.settings.geminiApiKey) return null;
+
+        // Inject Capabilities into Prompt
+        const depthInstructions = `
+Nivel de Profundidad Cognitiva: ${capabilities.depthLevel} / 10.
+- Pases de Inferencia: ${capabilities.inferencePasses}
+- Análisis de Tendencias: ${capabilities.canPredictTrends ? 'ACTIVO' : 'INACTIVO'}
+- Señales Ocultas: ${capabilities.canAnalyzeHiddenSignals ? 'ACTIVO' : 'INACTIVO'}
+`;
 
         const prompt = `
 Contexto: Eres "Radar 4.0", un Motor de Ventaja Predictiva para el negocio: "${user.settings.productName}".
-Tu misión: No solo detectar intención explícita, sino PREDECIR ventanas de oportunidad antes que la competencia.
+${depthInstructions}
 
 Negocio del Usuario:
 ${user.settings.productDescription}
@@ -117,11 +134,11 @@ Mensaje ACTUAL a Analizar (del grupo "${groupName}"):
 "${message}"
 
 Instrucciones Tácticas (V4):
-1. Analiza el mensaje actual en relación con el historial. ¿Hay aceleración? ¿Repetición de dolores?
-2. Usa la "Memoria Histórica" para ajustar la urgencia. Si hay muchas ventanas exitosas previas, asume alta competencia.
-3. Detecta "Señales Invisibles": Micro-cambios de lenguaje, tono emocional, urgencia oculta.
-4. Predice la "Ventana de Oportunidad". ¿Cuánto tiempo tiene el usuario antes de que el lead se enfríe?
-5. Genera inteligencia de acción: ¿Debe actuar YA o esperar?
+1. Analiza el mensaje actual.
+2. Usa la "Memoria Histórica" para ajustar la urgencia.
+3. ${capabilities.canAnalyzeHiddenSignals ? 'Detecta "Señales Invisibles": Micro-cambios de lenguaje, tono emocional, urgencia oculta.' : 'Ignora señales sutiles, enfócate en lo explícito.'}
+4. Predice la "Ventana de Oportunidad".
+5. Genera inteligencia de acción.
 
 Responde SOLO en JSON con la estructura definida.
 `;
@@ -129,7 +146,6 @@ Responde SOLO en JSON con la estructura definida.
         const responseSchema: any = {
             type: Type.OBJECT,
             properties: {
-                // V3 Core
                 analysis: {
                     type: Type.OBJECT,
                     properties: {
@@ -141,7 +157,6 @@ Responde SOLO en JSON con la estructura definida.
                     },
                     required: ['score', 'intentType', 'reasoning']
                 },
-                // V4 Market Context
                 marketContext: {
                     type: Type.OBJECT,
                     properties: {
@@ -151,7 +166,6 @@ Responde SOLO en JSON con la estructura definida.
                         noiseLevel: { type: Type.NUMBER }
                     }
                 },
-                // V4 Predictive Window
                 predictedWindow: {
                     type: Type.OBJECT,
                     properties: {
@@ -161,7 +175,6 @@ Responde SOLO en JSON con la estructura definida.
                         reasoning: { type: Type.STRING }
                     }
                 },
-                // V4 Hidden Signals
                 hiddenSignals: {
                     type: Type.ARRAY,
                     items: {
@@ -173,7 +186,6 @@ Responde SOLO en JSON con la estructura definida.
                         }
                     }
                 },
-                // V4 Action Intel
                 actionIntelligence: {
                     type: Type.OBJECT,
                     properties: {

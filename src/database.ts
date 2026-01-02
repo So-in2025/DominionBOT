@@ -1,7 +1,7 @@
 
 import bcrypt from 'bcrypt';
 import mongoose, { Schema, Model } from 'mongoose';
-import { User, BotSettings, PromptArchetype, GlobalMetrics, GlobalTelemetry, Conversation, IntendedUse, LogEntry, Testimonial, SystemSettings, Campaign, RadarSignal, RadarSettings, GroupMarketMemory } from './types.js';
+import { User, BotSettings, PromptArchetype, GlobalMetrics, GlobalTelemetry, Conversation, IntendedUse, LogEntry, Testimonial, SystemSettings, Campaign, RadarSignal, RadarSettings, GroupMarketMemory, DepthBoost, DepthLog } from './types.js';
 import { v4 as uuidv4 } from 'uuid';
 import { MONGO_URI } from './env.js';
 import { clearBindedSession } from './whatsapp/mongoAuth.js'; 
@@ -15,6 +15,24 @@ const LogSchema = new Schema({
     metadata: { type: Object }
 });
 
+// DEPTH ENGINE SCHEMAS
+const DepthBoostSchema = new Schema({
+    id: { type: String, required: true, unique: true },
+    userId: { type: String, required: true, index: true },
+    depthDelta: { type: Number, required: true },
+    reason: { type: String },
+    startsAt: { type: String, required: true },
+    endsAt: { type: String, required: true },
+    createdBy: { type: String }
+});
+
+const DepthLogSchema = new Schema({
+    timestamp: { type: String, required: true },
+    userId: { type: String, index: true },
+    eventType: { type: String, required: true },
+    details: { type: Object }
+}, { expires: 60 * 60 * 24 * 30 }); // Auto-expire after 30 days
+
 const TestimonialSchema = new Schema({
     userId: { type: String, required: true, index: true },
     name: { type: String, required: true },
@@ -27,7 +45,6 @@ const SystemSettingsSchema = new Schema({
     supportWhatsappNumber: { type: String, default: '' } 
 });
 
-// RADAR 4.0 EXTENDED SCHEMA
 const RadarSignalSchema = new Schema({
     id: { type: String, required: true, unique: true },
     userId: { type: String, required: true, index: true },
@@ -62,7 +79,7 @@ const RadarSignalSchema = new Schema({
         reasoning: String
     },
     hiddenSignals: [{
-        type: { type: String }, // Renamed from 'type' to allow Schema definition if needed, but simple obj works here
+        type: { type: String }, 
         description: String,
         intensity: Number
     }],
@@ -76,7 +93,6 @@ const RadarSignalSchema = new Schema({
     status: { type: String, enum: ['NEW', 'ACTED', 'DISMISSED'], default: 'NEW' }
 }, { timestamps: true });
 
-// NEW GROUP MEMORY SCHEMA
 const GroupMarketMemorySchema = new Schema({
     groupJid: { type: String, required: true, unique: true },
     lastUpdated: { type: String },
@@ -90,6 +106,7 @@ const CampaignSchema = new Schema({
     userId: { type: String, required: true, index: true },
     name: { type: String, required: true },
     message: { type: String, required: true },
+    imageUrl: { type: String }, // NEW: Image Support
     groups: { type: [String], default: [] },
     status: { type: String, enum: ['DRAFT', 'ACTIVE', 'PAUSED', 'COMPLETED'], default: 'DRAFT' },
     schedule: {
@@ -125,6 +142,9 @@ const UserSchema = new Schema({
     billing_end_date: { type: String, default: () => new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() },
     trial_qualified_leads_count: { type: Number, default: 0 },
     
+    // NEW: Depth Level
+    depthLevel: { type: Number, default: 1 },
+
     created_at: { type: String, default: () => new Date().toISOString() },
     last_activity_at: { type: String },
     
@@ -143,7 +163,6 @@ const UserSchema = new Schema({
         isWizardCompleted: { type: Boolean, default: false }, 
         ignoredJids: { type: Array, default: [] }
     },
-    // NEW RADAR SETTINGS
     radar: {
         isEnabled: { type: Boolean, default: false },
         monitoredGroups: { type: [String], default: [] },
@@ -173,6 +192,8 @@ const SystemSettingsModel = (mongoose.models.SystemSettings || mongoose.model('S
 const CampaignModel = (mongoose.models.Campaign || mongoose.model('Campaign', CampaignSchema)) as Model<Campaign>;
 const RadarSignalModel = (mongoose.models.RadarSignal || mongoose.model('RadarSignal', RadarSignalSchema)) as Model<RadarSignal>;
 const GroupMemoryModel = (mongoose.models.GroupMemory || mongoose.model('GroupMemory', GroupMarketMemorySchema)) as Model<GroupMarketMemory>;
+const DepthBoostModel = (mongoose.models.DepthBoost || mongoose.model('DepthBoost', DepthBoostSchema)) as Model<DepthBoost>;
+const DepthLogModel = (mongoose.models.DepthLog || mongoose.model('DepthLog', DepthLogSchema)) as Model<DepthLog>;
 
 export const sanitizeKey = (key: string) => key.replace(/\./g, '_');
 
@@ -249,6 +270,7 @@ class Database {
         billing_start_date: new Date().toISOString(),
         billing_end_date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(), 
         trial_qualified_leads_count: 0,
+        depthLevel: 1, // Default depth
         created_at: new Date().toISOString(),
         settings: { 
             productName: businessName,
@@ -418,9 +440,7 @@ class Database {
       return await TestimonialModel.countDocuments({ userId: 'system_seed' });
   }
 
-  // --- FORCE CLEAR METHOD ---
   async clearTestimonials() {
-      // NUCLEAR OPTION: Eliminar TODO para purgar datos viejos sin 'system_seed'
       await TestimonialModel.deleteMany({}); 
   }
 
@@ -442,7 +462,6 @@ class Database {
       return result as unknown as SystemSettings;
   }
 
-  // --- CAMPAIGNS METHODS ---
   async getCampaigns(userId: string): Promise<Campaign[]> {
       return await CampaignModel.find({ userId }).sort({ createdAt: -1 }).lean();
   }
@@ -465,7 +484,6 @@ class Database {
       return result.deletedCount === 1;
   }
 
-  // Scheduler Polling Method
   async getPendingCampaigns(): Promise<Campaign[]> {
       const now = new Date().toISOString();
       return await CampaignModel.find({
@@ -474,7 +492,6 @@ class Database {
       }).lean();
   }
 
-  // --- RADAR METHODS ---
   async getRadarSettings(userId: string): Promise<RadarSettings> {
       const user = await this.getUser(userId);
       return user?.radar || { isEnabled: false, monitoredGroups: [], keywordsInclude: [], keywordsExclude: [] };
@@ -485,7 +502,6 @@ class Database {
       if (!user) return undefined;
       
       const newRadar = { ...user.radar, ...settings };
-      // Sanitize arrays
       if (!newRadar.monitoredGroups) newRadar.monitoredGroups = [];
       
       await UserModel.updateOne({ id: userId }, { $set: { radar: newRadar } });
@@ -498,7 +514,6 @@ class Database {
   }
 
   async getRadarSignals(userId: string, limit = 50): Promise<RadarSignal[]> {
-      // V4: Added strategicScore sort
       return await RadarSignalModel.find({ userId, status: { $ne: 'DISMISSED' } })
           .sort({ strategicScore: -1, 'analysis.score': -1, createdAt: -1 })
           .limit(limit)
@@ -506,7 +521,6 @@ class Database {
   }
 
   async getRecentGroupSignals(groupJid: string, limit = 5): Promise<RadarSignal[]> {
-      // Used for context building in V4
       return await RadarSignalModel.find({ groupJid })
           .sort({ createdAt: -1 })
           .limit(limit)
@@ -517,7 +531,6 @@ class Database {
       await RadarSignalModel.findOneAndUpdate({ id: signalId }, { status });
   }
 
-  // --- GROUP MEMORY METHODS (V4) ---
   async getGroupMemory(groupJid: string): Promise<GroupMarketMemory | null> {
       return await GroupMemoryModel.findOne({ groupJid }).lean();
   }
@@ -528,6 +541,31 @@ class Database {
           { $set: updates }, 
           { upsert: true, new: true }
       );
+  }
+
+  // --- DEPTH ENGINE METHODS ---
+  
+  async createDepthBoost(boost: DepthBoost): Promise<DepthBoost> {
+      const newBoost = await DepthBoostModel.create(boost);
+      return newBoost.toObject();
+  }
+
+  async getActiveDepthBoosts(userId: string): Promise<DepthBoost[]> {
+      const now = new Date().toISOString();
+      return await DepthBoostModel.find({
+          userId,
+          startsAt: { $lte: now },
+          endsAt: { $gte: now }
+      }).lean();
+  }
+
+  async logDepthEvent(userId: string, eventType: string, details: any): Promise<void> {
+      await DepthLogModel.create({
+          timestamp: new Date().toISOString(),
+          userId,
+          eventType,
+          details
+      });
   }
 }
 

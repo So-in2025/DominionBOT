@@ -503,9 +503,9 @@ export const handleCreateCampaign = async (req: any, res: any) => {
     const userId = getUserId(req);
     const data = req.body;
     
-    // Basic validation
-    if (!data.name || !data.message || !data.groups || data.groups.length === 0) {
-        return res.status(400).json({ message: 'Datos incompletos.' });
+    // Basic validation: name, message OR imageUrl, groups are required
+    if (!data.name || (!data.message && !data.imageUrl) || !data.groups || data.groups.length === 0) {
+        return res.status(400).json({ message: 'Faltan datos. Debes incluir mensaje o imagen.' });
     }
 
     try {
@@ -513,7 +513,8 @@ export const handleCreateCampaign = async (req: any, res: any) => {
             id: uuidv4(),
             userId,
             name: data.name,
-            message: data.message,
+            message: data.message || "", // Fallback to empty string if only image
+            imageUrl: data.imageUrl, // Capture Image
             groups: data.groups,
             status: 'DRAFT',
             schedule: data.schedule || { type: 'ONCE' },
@@ -522,10 +523,6 @@ export const handleCreateCampaign = async (req: any, res: any) => {
             createdAt: new Date().toISOString()
         };
 
-        // Determine initial Run Time
-        // For 'ONCE', if status is set to active immediately, we run "now" (or scheduled time)
-        // For MVP, we default to Draft. User activates it later.
-        
         const created = await db.createCampaign(campaign);
         res.status(201).json(created);
     } catch(e) {
