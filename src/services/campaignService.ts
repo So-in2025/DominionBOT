@@ -132,6 +132,24 @@ class CampaignService {
         if (!this.processingCampaignIds.has(campaign.id)) {
              this.processingCampaignIds.add(campaign.id);
         }
+        
+        // --- IDEMPOTENCY LAYER: PREVENT DUPLICATE RUNS ON THE SAME DAY ---
+        if (!force && campaign.stats.lastRunAt) {
+            const lastRunDate = new Date(campaign.stats.lastRunAt).toDateString();
+            const todayDate = new Date().toDateString();
+
+            if (lastRunDate === todayDate && campaign.schedule.type !== 'ONCE') {
+                logService.warn(`[CAMPAIGN-SAFETY-NET] 🛡️ Bloqueada ejecución duplicada de "${campaign.name}". Ya se ejecutó hoy.`, campaign.userId);
+                
+                // Reschedule for next valid day to avoid getting stuck
+                const nextRun = this.calculateNextRun(campaign);
+                await db.updateCampaign(campaign.id, { stats: { ...campaign.stats, nextRunAt: nextRun } });
+
+                this.processingCampaignIds.delete(campaign.id);
+                return; // ABORT EXECUTION
+            }
+        }
+        // --- END IDEMPOTENCY LAYER ---
 
         try {
             const socket = getSocket(campaign.userId);
@@ -233,45 +251,52 @@ class CampaignService {
     }
 
     private calculateNextRun(campaign: Campaign): string {
-        // Calculations relative to ARGENTINA TIME
-        const nowArg = this.getArgentinaDate(); 
+        const nowArg = this.getArgentinaDate();
         const type = campaign.schedule.type;
-        
-        if (type === 'ONCE') return ''; 
 
-        // Set target time based on schedule.time
-        const [targetHour, targetMinute] = (campaign.schedule.time || "09:00").split(':').map(Number);
-        
-        // Base is tomorrow by default (relative to Argentina Time)
-        let nextDateArg = new Date(nowArg);
-        nextDateArg.setHours(targetHour, targetMinute, 0, 0);
-
-        if (type === 'DAILY') {
-            nextDateArg.setDate(nextDateArg.getDate() + 1);
-        } 
-        else if (type === 'WEEKLY' && campaign.schedule.daysOfWeek) {
-            let found = false;
-            for (let i = 1; i <= 7; i++) {
-                const potentialDate = new Date(nowArg);
-                potentialDate.setDate(potentialDate.getDate() + i);
-                const dayIndex = potentialDate.getDay(); // 0-6
-                
-                if (campaign.schedule.daysOfWeek.includes(dayIndex)) {
-                    nextDateArg = potentialDate;
-                    nextDateArg.setHours(targetHour, targetMinute, 0, 0);
-                    found = true;
-                    break;
-                }
-            }
-            if (!found) nextDateArg.setDate(nextDateArg.getDate() + 7);
+        if (type === 'ONCE') {
+            return ''; // An empty nextRunAt for a ONCE campaign effectively stops it.
         }
 
-        const year = nextDateArg.getFullYear();
-        const month = nextDateArg.getMonth();
-        const day = nextDateArg.getDate();
-        const hour = nextDateArg.getHours();
-        const min = nextDateArg.getMinutes();
+        const [targetHour, targetMinute] = (campaign.schedule.time || "09:00").split(':').map(Number);
+
+        let nextDate = new Date(nowArg);
+        nextDate.setHours(targetHour, targetMinute, 0, 0);
+
+        if (type === 'DAILY') {
+            // If the calculated time for today is already in the past, schedule for tomorrow.
+            if (nextDate <= nowArg) {
+                nextDate.setDate(nextDate.getDate() + 1);
+            }
+        } else if (type === 'WEEKLY' && campaign.schedule.daysOfWeek && campaign.schedule.daysOfWeek.length > 0) {
+            let nextRunFound = false;
+            // Loop for up to 7 days to find the next valid day in the future.
+            for (let i = 0; i < 8; i++) {
+                const potentialNextDate = new Date(nowArg);
+                potentialNextDate.setDate(nowArg.getDate() + i);
+                potentialNextDate.setHours(targetHour, targetMinute, 0, 0);
+                
+                // Check if this day is a scheduled day AND if the time is in the future.
+                if (campaign.schedule.daysOfWeek.includes(potentialNextDate.getDay()) && potentialNextDate > nowArg) {
+                    nextDate = potentialNextDate;
+                    nextRunFound = true;
+                    break; // Found the next valid run time.
+                }
+            }
+
+            // Fallback if no date was found (shouldn't happen with correct logic, but safe).
+            if (!nextRunFound) {
+                nextDate.setDate(nextDate.getDate() + 7);
+            }
+        }
+
+        const year = nextDate.getFullYear();
+        const month = nextDate.getMonth();
+        const day = nextDate.getDate();
+        const hour = nextDate.getHours();
+        const min = nextDate.getMinutes();
         
+        // Argentina is UTC-3. We must add 3 hours to the local Argentina time to get the correct UTC time.
         const utcDate = new Date(Date.UTC(year, month, day, hour + 3, min, 0));
         
         return utcDate.toISOString();

@@ -167,7 +167,7 @@ function LandingPage({ onAuth, onRegister, visibleMessages, isSimTyping, simScro
                         Dominion <span className="text-brand-gold">BOT</span>
                     </p>
                     <p className="text-gray-500 text-[10px] font-black uppercase tracking-[0.2em]">
-                        Powered By <a href="https://websoin.netlify.app/" target="_blank" rel="noopener noreferrer" className="text-brand-gold hover:underline">SO->IN</a> Agency
+                        Powered By <a href="https://websoin.netlify.app/" target="_blank" rel="noopener noreferrer" className="text-brand-gold hover:underline">{'SO->IN'}</a> Agency
                     </p>
                     <p className="text-gray-600 text-[10px] uppercase tracking-widest font-medium">Mendoza, Argentina</p>
                 </div>
