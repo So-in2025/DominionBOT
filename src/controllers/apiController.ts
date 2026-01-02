@@ -8,6 +8,7 @@ import { conversationService } from '../services/conversationService.js';
 import { Message, LeadStatus, User, Conversation, SimulationScenario, EvaluationResult, Campaign, RadarSignal } from '../types.js';
 import { db, sanitizeKey } from '../database.js'; // Import sanitizeKey
 import { logService } from '../services/logService.js';
+import { campaignService } from '../services/campaignService.js'; // IMPORT CAMPAIGN SERVICE
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -509,7 +510,6 @@ export const handleCreateCampaign = async (req: any, res: any) => {
     }
 
     try {
-        // FIX: Start Date must be populated in stats for the scheduler to pick it up immediately
         const campaign: Campaign = {
             id: uuidv4(),
             userId,
@@ -531,6 +531,10 @@ export const handleCreateCampaign = async (req: any, res: any) => {
 
         const created = await db.createCampaign(campaign);
         logService.info(`[CAMPAIGN] Nueva campaña creada: ${campaign.name} (Start: ${campaign.stats.nextRunAt})`, userId);
+        
+        // IMMEDIATE TRIGGER: Force check to ensure instant start if time is right
+        campaignService.forceCheck().catch(e => console.error(e));
+
         res.status(201).json(created);
     } catch(e) {
         logService.error('Error creando campaña', e, userId);
@@ -550,28 +554,55 @@ export const handleUpdateCampaign = async (req: any, res: any) => {
         }
 
         // Logic for nextRunAt if Activating or Rescheduling
-        if (updates.status === 'ACTIVE' && campaign.status !== 'ACTIVE') {
+        // UPDATED LOGIC: If rescheduling, ALWAYS update nextRunAt, even if status doesn't change
+        if (updates.schedule?.startDate) {
+            updates.stats = { 
+                ...campaign.stats, 
+                ...(updates.stats || {}),
+                nextRunAt: updates.schedule.startDate 
+            };
+        } 
+        // If just activating and no run time set yet
+        else if (updates.status === 'ACTIVE' && campaign.status !== 'ACTIVE' && !campaign.stats.nextRunAt) {
             const now = new Date();
-            if (updates.schedule?.startDate) {
-                // If rescheduling, use new date
-                updates.stats = { ...campaign.stats, nextRunAt: updates.schedule.startDate };
-            } else if (!campaign.stats.nextRunAt) {
-                // If just activating and no run time, set to now
-                updates.stats = { ...campaign.stats, nextRunAt: now.toISOString() };
-            }
+            updates.stats = { 
+                ...campaign.stats, 
+                ...(updates.stats || {}),
+                nextRunAt: now.toISOString() 
+            };
         }
         
-        // Ensure stats object is merged correctly if passed
-        if (updates.stats) {
+        // Ensure stats object is merged correctly if passed explicitly
+        if (updates.stats && !updates.schedule?.startDate) {
             updates.stats = { ...campaign.stats, ...updates.stats };
         }
 
         const updated = await db.updateCampaign(id, updates);
         logService.info(`[CAMPAIGN] Campaña actualizada: ${id}`, userId);
+        
+        // IMMEDIATE TRIGGER: Force check if active
+        if (updates.status === 'ACTIVE') {
+            campaignService.forceCheck().catch(e => console.error(e));
+        }
+
         res.json(updated);
     } catch(e) {
         logService.error('Error actualizando campaña', e, userId);
         res.status(500).json({ message: 'Error actualizando campaña.' });
+    }
+};
+
+// NEW: Endpoint for forcing immediate execution
+export const handleForceExecuteCampaign = async (req: any, res: any) => {
+    const userId = getUserId(req);
+    const { id } = req.params;
+
+    try {
+        const result = await campaignService.forceExecuteCampaign(id, userId);
+        res.json(result);
+    } catch(e: any) {
+        logService.error('Error forzando ejecución de campaña', e, userId);
+        res.status(500).json({ message: e.message || 'Error forzando ejecución.' });
     }
 };
 

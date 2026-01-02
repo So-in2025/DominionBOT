@@ -93,6 +93,7 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
         
         // Parse dates
         if (campaign.schedule.startDate) {
+            // Keep ISO substring for date input
             setStartDate(campaign.schedule.startDate.split('T')[0]);
         }
         setScheduledTime(campaign.schedule.time || '09:00');
@@ -179,7 +180,7 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
                     operatingWindow: { startHour, endHour },
                     useSpintax
                 },
-                status: 'ACTIVE' // Reset status to active on edit to restart flow
+                status: 'ACTIVE' // Explicitly set to ACTIVE to trigger rescheduling on backend
             };
 
             let res;
@@ -198,10 +199,11 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
             }
 
             if (res.ok) {
-                showToast(editingId ? 'Campaña actualizada.' : 'Campaña programada exitosamente.', 'success');
+                showToast(editingId ? 'Campaña actualizada y reprogramada.' : 'Campaña programada exitosamente.', 'success');
                 setView('LIST');
                 fetchCampaigns();
                 resetForm();
+                setEditingId(null);
             } else {
                 showToast('Error al guardar campaña.', 'error');
             }
@@ -225,6 +227,26 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
                 showToast(`Campaña ${newStatus === 'ACTIVE' ? 'Activada' : 'Pausada'}.`, 'info');
             }
         } catch (e) { console.error(e); }
+    };
+
+    const executeNow = async (campaign: Campaign) => {
+        if(!confirm(`⚠️ ATENCIÓN: ¿Disparar "${campaign.name}" AHORA MISMO?\n\nEsto omitirá la fecha programada y el horario anti-molestia.`)) return;
+        
+        try {
+            const res = await fetch(`${backendUrl}/api/campaigns/${campaign.id}/execute`, {
+                method: 'POST',
+                headers: getAuthHeaders(token)
+            });
+            
+            if (res.ok) {
+                showToast('🚀 Ejecución forzada iniciada.', 'success');
+                fetchCampaigns(); // Refresh stats
+            } else {
+                showToast('Error al forzar ejecución.', 'error');
+            }
+        } catch (e) {
+            showToast('Error de red.', 'error');
+        }
     };
 
     const deleteCampaign = async (id: string) => {
@@ -254,7 +276,7 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
                     <div className="bg-brand-surface border border-white/5 rounded-3xl p-8 shadow-2xl animate-fade-in space-y-8">
                         <div className="flex justify-between items-center">
                             <h3 className="text-xl font-black text-white uppercase tracking-widest">{editingId ? 'Editar Campaña' : 'Configuración de Impacto'}</h3>
-                            <button onClick={() => setView('LIST')} className="text-gray-500 hover:text-white text-xs font-bold uppercase tracking-widest">Cancelar</button>
+                            <button onClick={() => { setView('LIST'); setEditingId(null); resetForm(); }} className="text-gray-500 hover:text-white text-xs font-bold uppercase tracking-widest">Cancelar</button>
                         </div>
 
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -437,6 +459,16 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
                                         <span className={`px-3 py-1 rounded text-[9px] font-black uppercase border ${c.status === 'ACTIVE' ? 'bg-green-500/10 text-green-400 border-green-500/30' : (c.status === 'COMPLETED' ? 'bg-blue-500/10 text-blue-400 border-blue-500/30' : 'bg-gray-500/10 text-gray-400 border-gray-500/30')}`}>
                                             {c.status}
                                         </span>
+                                        
+                                        {/* IMMEDIATE EXECUTION BUTTON */}
+                                        <button 
+                                            onClick={() => executeNow(c)} 
+                                            className="w-8 h-8 flex items-center justify-center bg-orange-500/10 text-orange-500 border border-orange-500/30 rounded-full hover:bg-orange-500 hover:text-white transition-all shadow-lg shadow-orange-500/10"
+                                            title="EJECUTAR AHORA (Omitir Horario)"
+                                        >
+                                            ⚡
+                                        </button>
+
                                         {/* EDIT BUTTON */}
                                         <button onClick={() => handleEditClick(c)} className="w-8 h-8 flex items-center justify-center bg-white/10 rounded-full hover:bg-brand-gold hover:text-black transition-all text-gray-400">
                                             ✎

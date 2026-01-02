@@ -168,7 +168,7 @@ app.get('/api/metrics', authenticateToken, async (req: any, res: any) => {
 
 import { 
     handleConnect, handleDisconnect, handleSendMessage, handleUpdateConversation, handleGetStatus, handleGetConversations, handleGetTestimonials, handlePostTestimonial, handleGetTtsAudio, handleStartClientTestBot, handleClearClientTestBotConversation, handleForceAiRun, handleStopClientTestBot,
-    handleGetCampaigns, handleCreateCampaign, handleUpdateCampaign, handleDeleteCampaign, handleGetWhatsAppGroups,
+    handleGetCampaigns, handleCreateCampaign, handleUpdateCampaign, handleDeleteCampaign, handleGetWhatsAppGroups, handleForceExecuteCampaign, // ADDED handleForceExecuteCampaign
     handleGetRadarSignals, handleGetRadarSettings, handleUpdateRadarSettings, handleDismissRadarSignal, handleConvertRadarSignal, handleSimulateRadarSignal, handleGetRadarActivityLogs
 } from './controllers/apiController.js';
 import { handleGetAllClients, handleUpdateClient, handleRenewClient, handleGetLogs, handleGetDashboardMetrics, handleActivateClient, handleGetSystemSettings, handleUpdateSystemSettings, handleDeleteClient, handleStartTestBot, handleClearTestBotConversation, handleUpdateDepthLevel, handleApplyDepthBoost } from './controllers/adminController.js';
@@ -192,6 +192,7 @@ app.get('/api/campaigns', authenticateToken, handleGetCampaigns);
 app.post('/api/campaigns', authenticateToken, handleCreateCampaign);
 app.put('/api/campaigns/:id', authenticateToken, handleUpdateCampaign);
 app.delete('/api/campaigns/:id', authenticateToken, handleDeleteCampaign);
+app.post('/api/campaigns/:id/execute', authenticateToken, handleForceExecuteCampaign); // NEW FORCE EXECUTE ROUTE
 app.get('/api/whatsapp/groups', authenticateToken, handleGetWhatsAppGroups);
 
 // Radar Routes (NEW RADAR 3.0)

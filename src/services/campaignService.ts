@@ -17,17 +17,36 @@ class CampaignService {
         if (this.isRunning) return;
         this.isRunning = true;
         
-        console.log('🚀 [CAMPAIGN-SCHEDULER] Motor de Campañas Iniciado (Sincronizado GMT-3).');
+        console.log('🚀 [CAMPAIGN-SCHEDULER] Motor de Campañas Iniciado (Frecuencia: 10s).');
         
-        // Heartbeat: Check every 60 seconds
-        this.checkInterval = setInterval(() => this.processPendingCampaigns(), 60000);
+        // Heartbeat: Check every 10 seconds (High Frequency)
+        this.checkInterval = setInterval(() => this.processPendingCampaigns(), 10000);
     }
 
-    // Helper: Obtener la hora "real" de Argentina, sin importar dónde esté el servidor (USA, Europa, etc)
+    // Public method to trigger immediate check from Controller
+    public async forceCheck() {
+        // Use logService so user sees it in dashboard logs
+        logService.info('⚡ [CAMPAIGN] Ejecución forzada manual solicitada.', 'SYSTEM');
+        await this.processPendingCampaigns();
+    }
+
+    // NEW: Force execute specific campaign ignoring schedule/window
+    public async forceExecuteCampaign(campaignId: string, userId: string) {
+        const campaign = await db.getCampaign(campaignId);
+        if (!campaign) throw new Error("Campaña no encontrada");
+        if (campaign.userId !== userId) throw new Error("Acceso denegado");
+
+        logService.warn(`[CAMPAIGN] ⚡ EJECUCIÓN FORZADA MANUAL INICIADA para: ${campaign.name}`, userId);
+        
+        // Execute immediately with force=true
+        this.executeCampaignBatch(campaign, true).catch(e => console.error(e));
+        
+        return { message: "Campaña disparada manualmente." };
+    }
+
+    // Helper: Obtener la hora "real" de Argentina
     private getArgentinaDate(): Date {
         const now = new Date();
-        // Truco: Convertir a string en zona horaria específica y volver a parsear
-        // Esto crea un objeto Date donde .getHours() devuelve la hora de Argentina
         const argString = now.toLocaleString("en-US", {timeZone: "America/Argentina/Buenos_Aires"});
         return new Date(argString);
     }
@@ -35,23 +54,23 @@ class CampaignService {
     private async processPendingCampaigns() {
         try {
             const pendingCampaigns = await db.getPendingCampaigns();
+            
             if (pendingCampaigns.length > 0) {
-                // Log discreto para no llenar la consola
-                // console.log(`[CAMPAIGN] Procesando ${pendingCampaigns.length} campañas...`);
+                console.log(`[CAMPAIGN-HEARTBEAT] ${new Date().toLocaleTimeString()} | Pendientes: ${pendingCampaigns.length}`);
             }
 
             for (const campaign of pendingCampaigns) {
-                console.log(`[CAMPAIGN-DEBUG] Evaluando campaña "${campaign.name}" (ID: ${campaign.id})`);
+                console.log(`[CAMPAIGN-DEBUG] Evaluando campaña "${campaign.name}" (Programada: ${campaign.stats.nextRunAt})`);
                 
                 // 1. Check Operating Window (Hours)
                 if (!this.isInOperatingWindow(campaign)) {
-                    console.log(`[CAMPAIGN-DEBUG] Pausada por horario (Ventana cerrada en ARG).`);
-                    // Solo loguear esto una vez cada tanto o si es crítico, para no spamear
-                    // logService.warn(`[CAMPAIGN] Pausando "${campaign.name}" por horario (Ventana cerrada en ARG).`, campaign.userId);
+                    // Only log to console to avoid spamming DB logs every 10s
+                    console.log(`[CAMPAIGN-DEBUG] ⏸️ Pausada por horario (Ventana cerrada en ARG).`);
                     continue; 
                 }
                 
-                this.executeCampaignBatch(campaign);
+                // Ejecutar sin await para no bloquear el loop (Normal execution, force=false)
+                this.executeCampaignBatch(campaign, false).catch(e => console.error(e));
             }
         } catch (error) {
             console.error('[CAMPAIGN-SCHEDULER] Error en ciclo de reloj:', error);
@@ -85,16 +104,15 @@ class CampaignService {
         });
     }
 
-    private async executeCampaignBatch(campaign: Campaign) {
+    private async executeCampaignBatch(campaign: Campaign, force: boolean = false) {
         const socket = getSocket(campaign.userId);
         
         if (!socket?.user) {
-            console.log(`[CAMPAIGN-DEBUG] Omitiendo. Socket no encontrado para usuario ${campaign.userId}.`);
-            logService.warn(`[CAMPAIGN] Omitiendo ejecución para ${campaign.name}. Usuario ${campaign.userId} desconectado.`, campaign.userId);
+            logService.warn(`[CAMPAIGN] Omitiendo ejecución para ${campaign.name}. Usuario desconectado.`, campaign.userId);
             return;
         }
 
-        logService.info(`[CAMPAIGN] Ejecutando campaña: ${campaign.name}`, campaign.userId);
+        logService.info(`[CAMPAIGN] 🚀 EJECUTANDO CAMPAÑA ${force ? '(FORZADA)' : ''}: ${campaign.name}`, campaign.userId);
 
         // 1. Resolve Capabilities for Advanced Jitter
         const capabilities = await capabilityResolver.resolve(campaign.userId);
@@ -112,10 +130,10 @@ class CampaignService {
         let sentCount = 0;
         let failedCount = 0;
 
-        (async () => {
+        try {
             for (const groupId of groups) {
-                // Double check window inside loop for long batches
-                if (!this.isInOperatingWindow(campaign)) {
+                // Double check window inside loop for long batches, UNLESS FORCED
+                if (!force && !this.isInOperatingWindow(campaign)) {
                     logService.info(`[CAMPAIGN] Pausando batch de ${campaign.name} por cierre de ventana operativa (ARG).`, campaign.userId);
                     break; 
                 }
@@ -123,7 +141,11 @@ class CampaignService {
                 try {
                     // 2. Anti-Ban Jitter Logic (Depth Augmented)
                     // Base random delay
-                    const baseDelay = Math.floor(Math.random() * (campaign.config.maxDelaySec - campaign.config.minDelaySec + 1) + campaign.config.minDelaySec) * 1000;
+                    // If forced, reduce delay significantly to speed up testing but keep minimal safety
+                    const minDelay = force ? 1 : campaign.config.minDelaySec;
+                    const maxDelay = force ? 3 : campaign.config.maxDelaySec;
+
+                    const baseDelay = Math.floor(Math.random() * (maxDelay - minDelay + 1) + minDelay) * 1000;
                     
                     // Humanization Variance
                     const variance = Math.random() * (2000 * jitterFactor); 
@@ -171,11 +193,11 @@ class CampaignService {
             };
 
             await db.updateCampaign(campaign.id, updates);
-            logService.info(`[CAMPAIGN] Campaña ${campaign.name} finalizada. Prox ejecución: ${nextRun || 'N/A'}`, campaign.userId);
+            logService.info(`[CAMPAIGN] ✅ Campaña ${campaign.name} finalizada. Enviados: ${sentCount}. Prox: ${nextRun || 'Fin'}`, campaign.userId);
 
-        })().catch(err => {
+        } catch(err) {
             logService.error(`[CAMPAIGN] Error crítico ejecutando batch de ${campaign.name}`, err, campaign.userId);
-        });
+        }
     }
 
     private calculateNextRun(campaign: Campaign): string {
@@ -212,25 +234,12 @@ class CampaignService {
             if (!found) nextDateArg.setDate(nextDateArg.getDate() + 7);
         }
 
-        // IMPORTANT: Convert Argentina Date back to ISO UTC string for DB storage
-        // Since getArgentinaDate() returns a Date object where .getHours() is local ARG time but .toISOString() would shift it again based on Server Locale,
-        // we need to be careful.
-        // The safest way for the scheduler (which compares against ISO) is to construct the ISO string manually or adjust offset reverse.
-        // Assuming we store nextRunAt as ISO.
-        
-        // If we have "2023-10-28 09:00" in Argentina (-3), that is "2023-10-28 12:00 Z".
-        // We need to store "2023-10-28T12:00:00.000Z".
-        
-        // Reconstruct UTC timestamp from Argentina components
         const year = nextDateArg.getFullYear();
         const month = nextDateArg.getMonth();
         const day = nextDateArg.getDate();
         const hour = nextDateArg.getHours();
         const min = nextDateArg.getMinutes();
         
-        // Create UTC date by adding 3 hours to the components (ARG is UTC-3, so UTC is ARG+3)
-        // Note: This is a simplification. For production with DST, utilize a library. 
-        // Argentina currently does not observe DST, so GMT-3 is stable.
         const utcDate = new Date(Date.UTC(year, month, day, hour + 3, min, 0));
         
         return utcDate.toISOString();
