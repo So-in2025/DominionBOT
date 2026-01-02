@@ -1,5 +1,4 @@
-
-import { Request as ExpressRequest, Response as ExpressResponse } from 'express';
+import { Request, Response } from 'express';
 import { db, sanitizeKey } from '../database.js'; // Import sanitizeKey
 import { logService } from '../services/logService.js';
 // FIX: Import ConnectionStatus enum for type-safe comparisons.
@@ -8,11 +7,11 @@ import { getSessionStatus, processAiResponseForJid, ELITE_BOT_JID, ELITE_BOT_NAM
 import { conversationService } from '../services/conversationService.js'; // Import conversationService
 import { v4 as uuidv4 } from 'uuid'; // Need uuid for Boosts
 
-// Define a custom Request type to include the 'user' property added by authentication middleware
-// FIX: Changed to interface extension for proper generic compatibility with ExpressRequest
-interface AuthenticatedRequest<P = any, ResBody = any, ReqBody = any, ReqQuery = any> extends ExpressRequest<P, ResBody, ReqBody, ReqQuery> {
+// Define a custom Request interface to include the 'user' property added by authentication middleware
+// FIX: Changed to type intersection for proper generic compatibility with Express Request
+type AuthenticatedRequest<P = any, ResBody = any, ReqBody = any, ReqQuery = any> = Request<P, ResBody, ReqBody, ReqQuery> & {
     user: { id: string; username: string; role: string; };
-}
+};
 
 const getAdminUser = (req: AuthenticatedRequest) => ({ id: req.user.id, username: req.user.username });
 

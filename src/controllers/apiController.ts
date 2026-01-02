@@ -1,4 +1,3 @@
-
 import { Buffer } from 'buffer';
 // FIX: Import connectToWhatsApp, disconnectWhatsApp, sendMessage as they are now exported.
 import { connectToWhatsApp, disconnectWhatsApp, sendMessage, getSessionStatus, processAiResponseForJid, fetchUserGroups, ELITE_BOT_JID, ELITE_BOT_NAME, DOMINION_NETWORK_JID } from '../whatsapp/client.js'; // Import fetchUserGroups, ELITE_BOT_NAME, and DOMINION_NETWORK_JID
@@ -15,8 +14,8 @@ import { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
 // FIX: Import radarService for use in handleSimulateRadarSignal.
 import { radarService } from '../services/radarService.js';
-// FIX: Import Request and Response from express directly and alias them to avoid conflicts with global DOM types.
-import { Request as ExpressRequest, Response as ExpressResponse } from 'express';
+// FIX: Import Request and Response from express directly
+import { Request, Response } from 'express';
 import { createHash } from 'crypto'; // For hashing JIDs
 
 
@@ -25,11 +24,11 @@ import { createHash } from 'crypto'; // For hashing JIDs
 // const ELITE_BOT_NAME = 'Simulador Neural';
 // const DOMINION_NETWORK_JID = '5491110000000@s.whatsapp.net';
 
-// Define a custom Request type to include the 'user' property added by authentication middleware
-// FIX: Changed to interface extension for proper generic compatibility with ExpressRequest
-interface AuthenticatedRequest<P = any, ResBody = any, ReqBody = any, ReqQuery = any> extends ExpressRequest<P, ResBody, ReqBody, ReqQuery> {
+// Define a custom Request interface to include the 'user' property added by authentication middleware
+// FIX: Changed to type intersection for proper generic compatibility with Express Request
+type AuthenticatedRequest<P = any, ResBody = any, ReqBody = any, ReqQuery = any> = Request<P, ResBody, ReqBody, ReqQuery> & {
     user: { id: string; username: string; role: string; };
-}
+};
 
 // Shared utility to get user from request
 // FIX: Explicitly cast Request to include 'user' property.
