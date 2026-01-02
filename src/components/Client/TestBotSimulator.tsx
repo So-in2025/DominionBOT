@@ -253,7 +253,7 @@ const TestBotSimulator: React.FC<TestBotSimulatorProps> = ({ token, backendUrl, 
         </div>
 
         {activeTab === 'VAULT' ? renderVault() : (
-            // FIX: Set fixed height to enforce internal scrolling
+            // FIX: Set fixed height AND relative positioning context
             <div className="grid grid-cols-1 lg:grid-cols-2 h-[600px] relative z-10">
                 {/* Controls Overlay (Mobile optimized) */}
                 <div className="lg:hidden p-4 border-b border-white/5 bg-black/40">
@@ -273,7 +273,8 @@ const TestBotSimulator: React.FC<TestBotSimulatorProps> = ({ token, backendUrl, 
                 </div>
 
                 {/* LEFT: Chat Interface */}
-                <div className="bg-[#050505] border-r border-white/5 p-6 flex flex-col relative h-full">
+                {/* FIX: added min-h-0 to allow flex child scrolling */}
+                <div className="bg-[#050505] border-r border-white/5 p-6 flex flex-col relative h-full min-h-0">
                     <div className="absolute top-0 left-0 right-0 h-16 bg-gradient-to-b from-[#050505] to-transparent z-10 pointer-events-none"></div>
                     
                     {/* Desktop Controls embedded in chat header area */}
@@ -302,7 +303,8 @@ const TestBotSimulator: React.FC<TestBotSimulatorProps> = ({ token, backendUrl, 
                          </div>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto custom-scrollbar space-y-4 pt-4 pb-20" ref={scrollRef}>
+                    {/* FIX: added min-h-0 to allow scrolling inside flex container */}
+                    <div className="flex-1 overflow-y-auto custom-scrollbar space-y-4 pt-4 pb-20 min-h-0" ref={scrollRef}>
                         {messages.length === 0 ? (
                             <div className="h-full flex flex-col items-center justify-center opacity-30 gap-4">
                                 <svg className="w-16 h-16 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86 3.86l-.477 2.387c-.037.184.011.373.13.514l1.392 1.624a1 1 0 00.707.362h2.242a2 2 0 001.022-.547l1.022-1.022a2 2 0 00.547-1.022l.477-2.387c.037-.184-.011-.373-.13-.514l-1.392-1.624a1 1 0 00-.707-.362z" /></svg>
@@ -323,7 +325,8 @@ const TestBotSimulator: React.FC<TestBotSimulatorProps> = ({ token, backendUrl, 
                 </div>
 
                 {/* RIGHT: Neural Telemetry & Evaluation */}
-                <div className="bg-[#0a0a0a] p-6 flex flex-col h-full">
+                {/* FIX: added min-h-0 */}
+                <div className="bg-[#0a0a0a] p-6 flex flex-col h-full min-h-0">
                     <div className="flex justify-between items-center mb-6 border-b border-white/5 pb-2 flex-shrink-0">
                         <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500">Telemetría en Vivo</h4>
                         <div className="flex items-center gap-2">
@@ -357,8 +360,10 @@ const TestBotSimulator: React.FC<TestBotSimulatorProps> = ({ token, backendUrl, 
                     </div>
 
                     {/* Live Log */}
-                    <div className="flex-1 bg-black/60 rounded-2xl border border-white/5 p-4 overflow-hidden flex flex-col mb-4">
-                        <div className="overflow-y-auto custom-scrollbar space-y-3 pr-2" ref={logScrollRef}>
+                    {/* FIX: added min-h-0 to flex child */}
+                    <div className="flex-1 bg-black/60 rounded-2xl border border-white/5 p-4 overflow-hidden flex flex-col mb-4 min-h-0">
+                        {/* FIX: added flex-1 and min-h-0 to scroll container */}
+                        <div className="flex-1 overflow-y-auto custom-scrollbar space-y-3 pr-2 min-h-0" ref={logScrollRef}>
                             {messages.map((msg, i) => (
                                 <div key={i} className="animate-fade-in">
                                     {msg.sender === 'user' ? (

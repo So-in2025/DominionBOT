@@ -153,6 +153,10 @@ app.get('/api/metrics', authenticateToken, async (req: any, res: any) => {
     const activeCampaigns = campaigns.filter(c => c.status === 'ACTIVE').length;
     const totalCampaignMessages = campaigns.reduce((acc, curr) => acc + (curr.stats?.totalSent || 0), 0);
 
+    // Calculate dynamic revenue based on user settings
+    const ticketValue = user.settings?.ticketValue || 0;
+    const revenueEstimated = hot * ticketValue;
+
     res.json({
         totalLeads: convs.length,
         hotLeads: hot,
@@ -160,7 +164,7 @@ app.get('/api/metrics', authenticateToken, async (req: any, res: any) => {
         coldLeads: convs.filter((c: any) => c.status === 'Frío').length,
         totalMessages: 0, // Placeholder for inbound messages count if tracked later
         conversionRate: convs.length > 0 ? Math.round((hot / convs.length) * 100) : 0,
-        revenueEstimated: hot * 150,
+        revenueEstimated,
         avgEscalationTimeMinutes: 0,
         activeSessions: 1,
         humanDeviationScore: user.governance.humanDeviationScore || 0,

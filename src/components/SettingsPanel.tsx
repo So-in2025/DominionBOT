@@ -508,7 +508,7 @@ ${wizardState.rules}
 
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
-                                        <label className="text-[10px] font-black text-brand-gold uppercase tracking-widest block mb-2">Precio / Anchor</label>
+                                        <label className="text-[10px] font-black text-brand-gold uppercase tracking-widest block mb-2">Precio (Texto)</label>
                                         <input 
                                             type="text" value={current.priceText} onChange={e => handleUpdate('priceText', e.target.value)}
                                             className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white text-sm focus:border-brand-gold outline-none"
@@ -516,13 +516,23 @@ ${wizardState.rules}
                                         />
                                     </div>
                                     <div>
-                                        <label className="text-[10px] font-black text-brand-gold uppercase tracking-widest block mb-2">Link de Cierre</label>
+                                        <label className="text-[10px] font-black text-brand-gold uppercase tracking-widest block mb-2">Valor Promedio (Métricas)</label>
                                         <input 
-                                            type="text" value={current.ctaLink} onChange={e => handleUpdate('ctaLink', e.target.value)}
+                                            type="number" value={current.ticketValue || ''} onChange={e => handleUpdate('ticketValue', parseFloat(e.target.value))}
                                             className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white text-sm focus:border-brand-gold outline-none"
-                                            placeholder="https://calendly.com/..."
+                                            placeholder="Ej: 150 (en USD)"
                                         />
+                                        <span className="text-[9px] text-gray-500">Usado para calcular el ROIE real.</span>
                                     </div>
+                                </div>
+                                
+                                <div>
+                                    <label className="text-[10px] font-black text-brand-gold uppercase tracking-widest block mb-2">Link de Cierre</label>
+                                    <input 
+                                        type="text" value={current.ctaLink} onChange={e => handleUpdate('ctaLink', e.target.value)}
+                                        className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white text-sm focus:border-brand-gold outline-none"
+                                        placeholder="https://calendly.com/..."
+                                    />
                                 </div>
                             </div>
                         )}

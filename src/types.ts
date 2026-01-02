@@ -323,6 +323,7 @@ export interface BotSettings {
   productName: string;
   productDescription: string;
   priceText: string;
+  ticketValue: number; // NEW: Real Ticket Value for metrics
   freeTrialDays: number;
   ctaLink: string;
   proxyUrl?: string;

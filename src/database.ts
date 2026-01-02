@@ -199,6 +199,7 @@ const UserSchema = new Schema({
         productName: { type: String, default: 'Mi Producto' },
         productDescription: { type: String, default: 'Breve descripción...' },
         priceText: { type: String, default: 'Consultar' },
+        ticketValue: { type: Number, default: 0 }, // NEW: Default ticket value
         ctaLink: { type: String, default: '#' },
         isActive: { type: Boolean, default: true },
         proxyUrl: { type: String, default: '' },
@@ -335,6 +336,7 @@ class Database {
             productName: businessName,
             productDescription: '',
             priceText: 'A convenir',
+            ticketValue: 0, // NEW: Default ticket value
             ctaLink: '',
             isActive: true, 
             proxyUrl: '',

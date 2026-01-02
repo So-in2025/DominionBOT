@@ -241,7 +241,8 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
                 isRisk={isRisk}
                 icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>} 
                 trend={!isRisk ? "+14% Sem" : undefined}
-                tooltip="Proyección de ingresos basada en un valor promedio de mercado de $150 USD por cada Lead calificado como 'Caliente' (Listo para comprar)."
+                // Updated Tooltip for clarity
+                tooltip="Proyección de ingresos REAL basada en tu 'Valor Promedio por Lead' (Configurable en Ajustes) multiplicado por tus Leads Calientes actuales."
             />
             <KpiCard 
                 label="Tasa Conversión" 
@@ -282,10 +283,17 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 pb-20">
             <div className="lg:col-span-2 bg-brand-surface border border-white/5 rounded-[32px] p-10 shadow-2xl space-y-10 relative overflow-hidden">
-                <div className="flex justify-between items-center">
+                <div className="flex justify-between items-center relative group/funnel-header">
                     <div>
-                        <h3 className="text-xl font-black text-white uppercase tracking-widest">Ciclo de Venta</h3>
+                        <h3 className="text-xl font-black text-white uppercase tracking-widest flex items-center gap-2">
+                            Ciclo de Venta
+                            <div className="w-4 h-4 rounded-full border border-white/10 bg-white/5 flex items-center justify-center text-[8px] text-gray-400 cursor-help hover:text-white hover:border-brand-gold transition-colors ml-2">?</div>
+                        </h3>
                         <p className="text-[9px] text-gray-500 font-black uppercase tracking-[0.3em] mt-1">Embudo Neural de Inferencia</p>
+                    </div>
+                    {/* Tooltip for Section */}
+                    <div className="absolute top-8 left-0 w-64 p-3 bg-black border border-white/10 rounded-xl shadow-2xl opacity-0 invisible group-hover/funnel-header:opacity-100 group-hover/funnel-header:visible transition-all duration-200 z-50 pointer-events-none">
+                        <p className="text-[10px] text-gray-300 font-medium">Visualización del estado de madurez de tus leads. La IA mueve automáticamente a los clientes entre estas fases según su intención de compra.</p>
                     </div>
                 </div>
                 <div className="space-y-8">
@@ -297,9 +305,16 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
 
             <div className="lg:col-span-1 space-y-8">
                  <div className="bg-brand-surface border border-white/5 rounded-[32px] p-8 shadow-2xl flex flex-col justify-between h-full">
-                    <div>
-                        <h3 className="text-xl font-black text-white uppercase tracking-widest">Salud del Nodo</h3>
+                    <div className="relative group/health-header">
+                        <h3 className="text-xl font-black text-white uppercase tracking-widest flex items-center gap-2">
+                            Salud del Nodo
+                            <div className="w-4 h-4 rounded-full border border-white/10 bg-white/5 flex items-center justify-center text-[8px] text-gray-400 cursor-help hover:text-white hover:border-brand-gold transition-colors ml-2">?</div>
+                        </h3>
                         <p className="text-[9px] text-gray-500 font-black uppercase tracking-[0.3em] mt-1">Conexión y Gobernanza</p>
+                        {/* Tooltip for Section */}
+                        <div className="absolute top-8 right-0 w-64 p-3 bg-black border border-white/10 rounded-xl shadow-2xl opacity-0 invisible group-hover/health-header:opacity-100 group-hover/health-header:visible transition-all duration-200 z-50 pointer-events-none">
+                            <p className="text-[10px] text-gray-300 font-medium">Estado técnico de tu conexión con WhatsApp y la capacidad de procesamiento cognitivo asignada a tu cuenta.</p>
+                        </div>
                     </div>
                     
                     <div className="flex-1 flex flex-col justify-center py-6 gap-6">
