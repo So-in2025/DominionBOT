@@ -3,15 +3,16 @@ import React, { useEffect, useState } from 'react';
 import { BotSettings, DashboardMetrics, User } from '../types.js';
 import { getAuthHeaders } from '../config';
 import { GoogleGenAI } from '@google/genai';
-import TestBotSimulator from './Client/TestBotSimulator.js'; // Import the new component
+import TestBotSimulator from './Client/TestBotSimulator.js'; 
+import { openSupportWhatsApp } from '../utils/textUtils';
 
 interface AgencyDashboardProps {
   token: string;
   backendUrl: string;
   settings: BotSettings;
   onUpdateSettings: (newSettings: BotSettings) => void | Promise<void>;
-  currentUser: User | null; // Pass currentUser to get ID for test bot
-  showToast: (message: string, type: 'success' | 'error' | 'info') => void; // Pass showToast
+  currentUser: User | null; 
+  showToast: (message: string, type: 'success' | 'error' | 'info') => void;
 }
 
 const KpiCard: React.FC<{ 
@@ -61,6 +62,52 @@ const FunnelStep: React.FC<{ label: string; value: number; total: number; color:
                 >
                     <span className="text-[10px] font-black text-black/80">{Math.round(width)}%</span>
                 </div>
+            </div>
+        </div>
+    );
+};
+
+const NeuralEngineStatus: React.FC<{ depthLevel: number; userId: string; username: string }> = ({ depthLevel, userId, username }) => {
+    let mode = 'STANDARD';
+    let color = 'text-gray-400';
+    let borderColor = 'border-white/10';
+    let bg = 'bg-white/5';
+    let label = 'Nivel 3';
+
+    if (depthLevel >= 10) {
+        mode = 'NEURO-BOOST';
+        color = 'text-purple-400';
+        borderColor = 'border-purple-500/30';
+        bg = 'bg-purple-900/10';
+        label = 'Nivel 10 (MAX)';
+    } else if (depthLevel >= 7) {
+        mode = 'SNIPER';
+        color = 'text-brand-gold';
+        borderColor = 'border-brand-gold/30';
+        bg = 'bg-brand-gold/10';
+        label = 'Nivel 7';
+    } else {
+        label = `Nivel ${depthLevel}`;
+    }
+
+    const handleUpgradeRequest = () => {
+        const message = `Hola, soy ${username} (ID: ${userId}).\n\nActualmente estoy en *Nivel ${depthLevel}*. Quisiera solicitar un *Aumento de Potencia* para mi Motor Neural.`;
+        openSupportWhatsApp(message);
+    };
+
+    return (
+        <div className={`p-4 rounded-xl border ${borderColor} ${bg} flex items-center justify-between`}>
+            <div>
+                <p className="text-[9px] font-black uppercase tracking-widest text-gray-500 mb-1">Motor Cognitivo</p>
+                <h4 className={`text-lg font-black tracking-tight ${color}`}>{mode}</h4>
+            </div>
+            <div className="text-right">
+                <span className={`text-[10px] font-black uppercase px-2 py-1 rounded border ${borderColor} ${color} mb-1 block`}>
+                    {label}
+                </span>
+                <button onClick={handleUpgradeRequest} className="text-[9px] font-bold text-gray-400 hover:text-white underline">
+                    Solicitar Upgrade
+                </button>
             </div>
         </div>
     );
@@ -192,6 +239,10 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
                     </div>
                     
                     <div className="flex-1 flex flex-col justify-center py-6 gap-6">
+                        
+                        {/* NEW: NEURAL ENGINE STATUS */}
+                        {currentUser && <NeuralEngineStatus depthLevel={currentUser.depthLevel || 1} userId={currentUser.id} username={currentUser.business_name || currentUser.username} />}
+
                         <div className="flex items-center justify-between p-4 bg-black/40 rounded-2xl border border-white/5">
                             <span className="text-[10px] font-black text-gray-300 uppercase tracking-widest">Estado API Gemini</span>
                             <span className={`font-black text-[10px] uppercase tracking-widest px-3 py-1 rounded-full border ${

@@ -1,4 +1,6 @@
 
+import { BACKEND_URL } from '../config.js';
+
 export const formatPhoneNumber = (input: string | undefined): string => {
     if (!input) return 'Desconocido';
     
@@ -32,4 +34,34 @@ export const getInitials = (name: string): string => {
         .slice(0, 2)
         .join('')
         .toUpperCase();
+};
+
+export const openSupportWhatsApp = async (message: string) => {
+    let supportNumber = '5492615920000'; // Default fallback number
+    
+    try {
+        // Use fetch only if available (mostly for client-side)
+        if (typeof fetch !== 'undefined') {
+            const res = await fetch(`${BACKEND_URL}/api/system/settings`);
+            if (res.ok) {
+                // Fix TS2339: Cast response to any to access properties safely
+                const data = await res.json() as any;
+                if (data && data.supportWhatsappNumber && data.supportWhatsappNumber.length > 8) {
+                    supportNumber = data.supportWhatsappNumber;
+                }
+            }
+        }
+    } catch (e) {
+        console.warn("Failed to fetch support number dynamically, using fallback.");
+    }
+
+    const url = `https://wa.me/${supportNumber}?text=${encodeURIComponent(message)}`;
+    
+    // Fix TS2304: Use globalThis to access window safely in Node environments
+    const globalScope = globalThis as any;
+    if (globalScope.window) {
+        globalScope.window.open(url, '_blank');
+    } else {
+        console.log(`[SERVER-SIDE] Would open URL: ${url}`);
+    }
 };

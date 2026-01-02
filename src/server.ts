@@ -202,7 +202,8 @@ app.post('/api/radar/signals/:id/dismiss', authenticateToken, handleDismissRadar
 app.post('/api/radar/signals/:id/convert', authenticateToken, handleConvertRadarSignal); // BRIDGE TO LEAD
 
 // Public/Shared Routes
-app.get('/api/system/settings', authenticateToken, handleGetSystemSettings); // Clients need this for support number
+// MODIFIED: Make system settings public so Landing Page can get Support Number
+app.get('/api/system/settings', handleGetSystemSettings); 
 
 // Testimonial Routes
 app.get('/api/testimonials', handleGetTestimonials);
@@ -237,11 +238,13 @@ adminRouter.post('/test-bot/clear', handleClearTestBotConversation);
 adminRouter.post('/depth/update', handleUpdateDepthLevel);
 adminRouter.post('/depth/boost', handleApplyDepthBoost);
 
-adminRouter.post('/system/reset', async (req: any, res: any) => {
-    logService.audit('HARD RESET DEL SISTEMA INICIADO', req.user.id, req.user.username);
-    const success = await db.dangerouslyResetDatabase();
-    if (success) res.json({ message: 'Sistema reseteado.' });
-    else res.status(500).json({ message: 'Error al resetear.' });
+adminRouter.post('/system/reset', async (req: any, res, next) => {
+    try {
+        logService.audit('HARD RESET DEL SISTEMA INICIADO', req.user.id, req.user.username);
+        const success = await db.dangerouslyResetDatabase();
+        if (success) res.json({ message: 'Sistema reseteado.' });
+        else res.status(500).json({ message: 'Error al resetear.' });
+    } catch (e) { next(e); }
 });
 
 app.use('/api/admin', adminRouter);

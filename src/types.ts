@@ -190,6 +190,12 @@ export interface Campaign {
     config: {
         minDelaySec: number;
         maxDelaySec: number;
+        // NEW CONFIGS
+        operatingWindow?: {
+            startHour: number; // 0-23
+            endHour: number;   // 0-23
+        };
+        useSpintax: boolean; // Enables {Hello|Hi} rotation
     };
     stats: {
         totalSent: number;

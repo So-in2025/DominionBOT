@@ -9,6 +9,8 @@ interface CampaignsPanelProps {
     showToast: (message: string, type: 'success' | 'error' | 'info') => void;
 }
 
+const DAYS_OF_WEEK = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
+
 const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, showToast }) => {
     const [campaigns, setCampaigns] = useState<Campaign[]>([]);
     const [groups, setGroups] = useState<WhatsAppGroup[]>([]);
@@ -19,8 +21,18 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
     const [name, setName] = useState('');
     const [message, setMessage] = useState('');
     const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
-    const [scheduleType, setScheduleType] = useState<'ONCE' | 'DAILY'>('ONCE');
-    const [image, setImage] = useState<string | null>(null); // New state for image base64
+    const [scheduleType, setScheduleType] = useState<'ONCE' | 'DAILY' | 'WEEKLY'>('ONCE');
+    const [image, setImage] = useState<string | null>(null);
+    
+    // Scheduling Configs
+    const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]); // YYYY-MM-DD
+    const [scheduledTime, setScheduledTime] = useState('09:00'); // HH:MM
+    const [selectedDays, setSelectedDays] = useState<number[]>([]); // 0-6
+
+    // Anti-Ban Configs
+    const [startHour, setStartHour] = useState(9);
+    const [endHour, setEndHour] = useState(20);
+    const [useSpintax, setUseSpintax] = useState(true);
 
     useEffect(() => {
         fetchCampaigns();
@@ -68,21 +80,47 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
         setImage(null);
     };
 
+    const toggleDay = (dayIndex: number) => {
+        if (selectedDays.includes(dayIndex)) {
+            setSelectedDays(prev => prev.filter(d => d !== dayIndex));
+        } else {
+            setSelectedDays(prev => [...prev, dayIndex].sort());
+        }
+    };
+
     const handleSave = async () => {
         if (!name || (!message && !image) || selectedGroups.length === 0) {
             showToast('Debes incluir un nombre, grupos y un mensaje o imagen.', 'error');
             return;
         }
 
+        if (scheduleType === 'WEEKLY' && selectedDays.length === 0) {
+            showToast('Selecciona al menos un día de la semana para la campaña semanal.', 'error');
+            return;
+        }
+
         setLoading(true);
         try {
+            // Construct ISO date from date + time components
+            const combinedStart = new Date(`${startDate}T${scheduledTime}:00`).toISOString();
+
             const payload = {
                 name,
                 message,
-                imageUrl: image, // Send base64 image
+                imageUrl: image,
                 groups: selectedGroups,
-                schedule: { type: scheduleType, startDate: new Date().toISOString() }, // Default run now
-                config: { minDelaySec: 5, maxDelaySec: 20 }
+                schedule: { 
+                    type: scheduleType, 
+                    startDate: combinedStart,
+                    time: scheduledTime,
+                    daysOfWeek: scheduleType === 'WEEKLY' ? selectedDays : undefined
+                },
+                config: { 
+                    minDelaySec: 5, 
+                    maxDelaySec: 25,
+                    operatingWindow: { startHour, endHour },
+                    useSpintax
+                }
             };
 
             const res = await fetch(`${backendUrl}/api/campaigns`, {
@@ -92,11 +130,11 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
             });
 
             if (res.ok) {
-                showToast('Campaña creada (Borrador).', 'success');
+                showToast('Campaña programada exitosamente.', 'success');
                 setView('LIST');
                 fetchCampaigns();
                 // Reset form
-                setName(''); setMessage(''); setSelectedGroups([]); setImage(null);
+                setName(''); setMessage(''); setSelectedGroups([]); setImage(null); setSelectedDays([]);
             } else {
                 showToast('Error al crear campaña.', 'error');
             }
@@ -152,60 +190,133 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
                             <button onClick={() => setView('LIST')} className="text-gray-500 hover:text-white text-xs font-bold uppercase tracking-widest">Cancelar</button>
                         </div>
 
-                        <div className="space-y-6">
-                            <div>
-                                <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Nombre de la Campaña</label>
-                                <input value={name} onChange={e => setName(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm focus:border-brand-gold outline-none" placeholder="Ej: Promo Verano - Grupos VIP" />
-                            </div>
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                            <div className="space-y-6">
+                                <div>
+                                    <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Nombre de la Campaña</label>
+                                    <input value={name} onChange={e => setName(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm focus:border-brand-gold outline-none" placeholder="Ej: Promo Verano - Grupos VIP" />
+                                </div>
 
-                            <div>
-                                <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Mensaje (Caption)</label>
-                                <textarea value={message} onChange={e => setMessage(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm h-32 focus:border-brand-gold outline-none resize-none" placeholder="Hola equipo, les comparto..." />
-                            </div>
-
-                            {/* IMAGE UPLOAD SECTION */}
-                            <div>
-                                <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Imagen Táctica (Opcional)</label>
-                                <div className="flex items-center gap-4">
-                                    <label className="cursor-pointer bg-white/5 hover:bg-white/10 border border-white/10 text-white py-2 px-4 rounded-lg text-xs font-bold transition-all flex items-center gap-2">
-                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                                        Adjuntar Imagen
-                                        <input type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
-                                    </label>
-                                    {image && (
-                                        <div className="relative group">
-                                            <img src={image} alt="Preview" className="h-16 w-16 object-cover rounded-lg border border-brand-gold/30" />
-                                            <button 
-                                                onClick={handleRemoveImage}
-                                                className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold shadow-lg"
-                                            >
-                                                ✕
-                                            </button>
+                                <div>
+                                    <div className="flex justify-between items-center mb-2">
+                                        <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest">Mensaje (Caption)</label>
+                                        <div className="flex items-center gap-2">
+                                            <input type="checkbox" checked={useSpintax} onChange={e => setUseSpintax(e.target.checked)} className="w-3 h-3 rounded bg-black border-white/20 accent-brand-gold" />
+                                            <span className="text-[9px] text-gray-400 font-bold uppercase">Spintax (Variaciones)</span>
                                         </div>
+                                    </div>
+                                    <textarea value={message} onChange={e => setMessage(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm h-40 focus:border-brand-gold outline-none resize-none" placeholder={useSpintax ? "{Hola|Buen día|Saludos}, les comparto esta {oferta|oportunidad}..." : "Escribe tu mensaje..."} />
+                                    {useSpintax && (
+                                        <p className="text-[9px] text-gray-500 mt-2 italic">
+                                            Tip: Usa <strong>{'{Hola|Buenas}'}</strong> para rotar palabras. Usa <strong>{'{group_name}'}</strong> para insertar el nombre del grupo.
+                                        </p>
                                     )}
                                 </div>
-                            </div>
 
-                            <div>
-                                <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Grupos Objetivo ({selectedGroups.length})</label>
-                                <div className="bg-black/50 border border-white/10 rounded-xl p-4 max-h-60 overflow-y-auto custom-scrollbar grid grid-cols-1 md:grid-cols-2 gap-2">
-                                    {groups.length === 0 ? <p className="text-xs text-gray-500 col-span-2 text-center">Cargando grupos o no hay grupos disponibles...</p> : groups.map(g => (
-                                        <div key={g.id} onClick={() => {
-                                            if (selectedGroups.includes(g.id)) setSelectedGroups(prev => prev.filter(id => id !== g.id));
-                                            else setSelectedGroups(prev => [...prev, g.id]);
-                                        }} className={`p-3 rounded-lg border cursor-pointer transition-all flex justify-between items-center ${selectedGroups.includes(g.id) ? 'bg-brand-gold/20 border-brand-gold text-white' : 'bg-white/5 border-transparent text-gray-400 hover:bg-white/10'}`}>
-                                            <span className="text-xs font-bold truncate pr-2">{g.subject}</span>
-                                            <span className="text-[9px] bg-black/40 px-2 py-0.5 rounded text-gray-500">{g.size || '?'}</span>
-                                        </div>
-                                    ))}
+                                {/* IMAGE UPLOAD */}
+                                <div>
+                                    <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Imagen Táctica (Opcional)</label>
+                                    <div className="flex items-center gap-4">
+                                        <label className="cursor-pointer bg-white/5 hover:bg-white/10 border border-white/10 text-white py-2 px-4 rounded-lg text-xs font-bold transition-all flex items-center gap-2">
+                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                                            Adjuntar Imagen
+                                            <input type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
+                                        </label>
+                                        {image && (
+                                            <div className="relative group">
+                                                <img src={image} alt="Preview" className="h-16 w-16 object-cover rounded-lg border border-brand-gold/30" />
+                                                <button onClick={handleRemoveImage} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold shadow-lg">✕</button>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
 
-                            <div className="pt-4 border-t border-white/5">
-                                <button onClick={handleSave} disabled={loading} className="w-full py-4 bg-white/10 text-white rounded-xl font-black text-xs uppercase tracking-[0.2em] hover:bg-brand-gold hover:text-black transition-all disabled:opacity-50">
-                                    {loading ? 'Creando...' : 'Guardar Borrador'}
-                                </button>
+                            <div className="space-y-6">
+                                {/* SCHEDULING SECTION */}
+                                <div className="bg-black/20 p-6 rounded-2xl border border-white/5 space-y-6">
+                                    <div>
+                                        <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-3">Programación de Disparo</label>
+                                        <div className="flex gap-2 mb-4">
+                                            {(['ONCE', 'DAILY', 'WEEKLY'] as const).map(type => (
+                                                <button 
+                                                    key={type}
+                                                    onClick={() => setScheduleType(type)}
+                                                    className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${scheduleType === type ? 'bg-brand-gold text-black' : 'bg-black/40 text-gray-500 border border-white/5 hover:text-white'}`}
+                                                >
+                                                    {type === 'ONCE' ? 'Una Vez' : (type === 'DAILY' ? 'Diario' : 'Semanal')}
+                                                </button>
+                                            ))}
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <span className="text-[9px] text-gray-500 font-bold block mb-1">Fecha de Inicio</span>
+                                                <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-lg p-2 text-white text-sm" />
+                                            </div>
+                                            <div>
+                                                <span className="text-[9px] text-gray-500 font-bold block mb-1">Hora de Ejecución</span>
+                                                <input type="time" value={scheduledTime} onChange={e => setScheduledTime(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-lg p-2 text-white text-sm" />
+                                            </div>
+                                        </div>
+
+                                        {scheduleType === 'WEEKLY' && (
+                                            <div className="mt-4">
+                                                <span className="text-[9px] text-gray-500 font-bold block mb-2">Días de Ejecución</span>
+                                                <div className="flex justify-between gap-1">
+                                                    {DAYS_OF_WEEK.map((day, idx) => (
+                                                        <button 
+                                                            key={idx}
+                                                            onClick={() => toggleDay(idx)}
+                                                            className={`w-10 h-10 rounded-lg flex items-center justify-center text-[10px] font-black transition-all ${selectedDays.includes(idx) ? 'bg-brand-gold text-black shadow-lg shadow-brand-gold/20' : 'bg-black/40 text-gray-500 border border-white/5 hover:border-white/20'}`}
+                                                        >
+                                                            {day}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* OPERATING WINDOW */}
+                                    <div className="border-t border-white/5 pt-4">
+                                        <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-4">Ventana Operativa (Anti-Molestia)</label>
+                                        <div className="flex items-center gap-4">
+                                            <div className="flex-1">
+                                                <span className="text-[9px] text-gray-500 font-bold block mb-1">Hora Inicio</span>
+                                                <input type="number" min="0" max="23" value={startHour} onChange={e => setStartHour(parseInt(e.target.value))} className="w-full bg-black/50 border border-white/10 rounded-lg p-2 text-white text-center font-mono" />
+                                            </div>
+                                            <span className="text-gray-600 font-black">➔</span>
+                                            <div className="flex-1">
+                                                <span className="text-[9px] text-gray-500 font-bold block mb-1">Hora Fin</span>
+                                                <input type="number" min="0" max="23" value={endHour} onChange={e => setEndHour(parseInt(e.target.value))} className="w-full bg-black/50 border border-white/10 rounded-lg p-2 text-white text-center font-mono" />
+                                            </div>
+                                        </div>
+                                        <p className="text-[9px] text-gray-600 mt-2 italic">Si la campaña arranca fuera de este horario, se pausará hasta que la ventana se abra.</p>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2">Grupos Objetivo ({selectedGroups.length})</label>
+                                    <div className="bg-black/50 border border-white/10 rounded-xl p-4 max-h-48 overflow-y-auto custom-scrollbar grid grid-cols-1 gap-2">
+                                        {groups.length === 0 ? <p className="text-xs text-gray-500 text-center">Cargando grupos...</p> : groups.map(g => (
+                                            <div key={g.id} onClick={() => {
+                                                if (selectedGroups.includes(g.id)) setSelectedGroups(prev => prev.filter(id => id !== g.id));
+                                                else setSelectedGroups(prev => [...prev, g.id]);
+                                            }} className={`p-3 rounded-lg border cursor-pointer transition-all flex justify-between items-center ${selectedGroups.includes(g.id) ? 'bg-brand-gold/20 border-brand-gold text-white' : 'bg-white/5 border-transparent text-gray-400 hover:bg-white/10'}`}>
+                                                <span className="text-xs font-bold truncate pr-2">{g.subject}</span>
+                                                <span className="text-[9px] bg-black/40 px-2 py-0.5 rounded text-gray-500">{g.size || '?'}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
                             </div>
+                        </div>
+
+                        <div className="pt-4 border-t border-white/5">
+                            <button onClick={handleSave} disabled={loading} className="w-full py-4 bg-white/10 text-white rounded-xl font-black text-xs uppercase tracking-[0.2em] hover:bg-brand-gold hover:text-black transition-all disabled:opacity-50">
+                                {loading ? 'Creando...' : 'Programar Campaña'}
+                            </button>
                         </div>
                     </div>
                 ) : (
@@ -222,11 +333,15 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
                                         <h3 className="text-lg font-black text-white flex items-center gap-2">
                                             {c.name}
                                             {c.imageUrl && <span className="text-[10px] bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded border border-blue-500/30 font-bold uppercase">IMG</span>}
+                                            {c.config.useSpintax && <span className="text-[10px] bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded border border-purple-500/30 font-bold uppercase">SPINTAX</span>}
                                         </h3>
                                         <div className="flex gap-4 mt-2 text-[10px] font-mono text-gray-500">
+                                            <span className="text-brand-gold">{c.schedule.type}</span>
+                                            <span>
+                                                {c.schedule.time} {c.schedule.type === 'WEEKLY' && c.schedule.daysOfWeek && `[${c.schedule.daysOfWeek.map(d => DAYS_OF_WEEK[d]).join(',')}]`}
+                                            </span>
                                             <span>GRUPOS: {c.groups.length}</span>
                                             <span>ENVIADOS: {c.stats.totalSent}</span>
-                                            <span className="text-red-400">FALLOS: {c.stats.totalFailed}</span>
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-3">
@@ -249,11 +364,6 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
                                     )}
                                     <p className="text-xs text-gray-400 italic line-clamp-2">{c.message || "(Solo Imagen)"}</p>
                                 </div>
-                                {c.stats.nextRunAt && c.status === 'ACTIVE' && (
-                                    <p className="text-[9px] text-brand-gold font-bold uppercase tracking-widest mt-3 text-right animate-pulse">
-                                        Próxima ejecución: {new Date(c.stats.nextRunAt).toLocaleTimeString()}
-                                    </p>
-                                )}
                             </div>
                         ))}
                     </div>

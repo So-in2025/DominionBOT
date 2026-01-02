@@ -70,7 +70,9 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
         }
 
         let endpoint = '';
-        let payload: any = { username: whatsappNumber };
+        // AUTOMÁTICAMENTE AGREGAR EL PREFIJO 549 AL ENVIAR
+        // Si el usuario escribe "261...", se envía "549261..."
+        let payload: any = { username: `549${whatsappNumber}` };
 
         if (mode === 'login') {
             endpoint = '/api/login';
@@ -82,6 +84,8 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
             payload.intendedUse = intendedUse;
         } else if (mode === 'recovery') {
             endpoint = '/api/auth/reset';
+            // Para recuperación, si el usuario ingresa su ID, también necesita prefijo si es celular
+            payload.username = `549${whatsappNumber}`; // Recovery needs username usually
             payload.recoveryKey = recoveryKey;
             payload.newPassword = newPassword;
         }
@@ -117,17 +121,27 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
             }
         } catch (err: any) {
             console.error("Auth Fail", err);
-            // Differentiate network errors from other fetch errors
             if (err.name === 'AbortError') {
                 setError('La operación de autenticación ha tardado demasiado. Intente nuevamente.');
             } else if (err.name === 'TypeError' && err.message === 'Failed to fetch') {
-                setError(`Error de red: No se pudo conectar con el backend en ${BACKEND_URL}. Verifique su conexión a internet y que el servidor backend esté activo y accesible (Ej: Ngrok funcionando).`);
+                setError(`Error de red: No se pudo conectar con el backend en ${BACKEND_URL}. Verifique su conexión.`);
             } else {
-                setError('Fallo de conexión. ¿Backend Activo y Ngrok funcionando? Si no estás en desarrollo, la variable VITE_BACKEND_URL no está configurada correctamente en Vercel.');
+                setError('Fallo de conexión. Verifique que el Backend esté activo.');
             }
         } finally {
             setLoading(false);
         }
+    };
+
+    const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        let val = e.target.value.replace(/[^0-9]/g, '');
+        
+        // SMART PASTE: Si el usuario pega un número completo que empieza con 549, lo removemos para no duplicar
+        if (val.startsWith('549') && val.length > 7) {
+            val = val.substring(3);
+        }
+        
+        setWhatsappNumber(val);
     };
 
     const isSubmitDisabled = loading || (mode === 'register' && (!agreedPrivacy || !agreedTerms || !agreedManifesto));
@@ -177,7 +191,20 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
                             <form onSubmit={handleSubmit} className="space-y-5 md:space-y-6">
                                 <div className="space-y-1.5">
                                     <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">{mode === 'login' ? 'Número de WhatsApp' : 'Tu Número de WhatsApp'}</label>
-                                    <input type="text" value={whatsappNumber} onChange={(e) => setWhatsappNumber(e.target.value.replace(/[^0-9]/g, ''))} className="w-full px-5 py-3 md:py-4 bg-black/40 border border-white/5 rounded-xl text-white focus:border-brand-gold outline-none transition-all placeholder-gray-800 font-mono" placeholder="549261..." required />
+                                    <div className="relative group">
+                                        <div className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none z-10">
+                                            <span className="text-brand-gold font-mono font-bold text-sm tracking-tight border-r border-white/10 pr-3 mr-1 select-none">54 9</span>
+                                        </div>
+                                        <input 
+                                            type="tel" 
+                                            value={whatsappNumber} 
+                                            onChange={handlePhoneChange}
+                                            className="w-full pl-[4.5rem] pr-5 py-3 md:py-4 bg-black/40 border border-white/5 rounded-xl text-white focus:border-brand-gold outline-none transition-all placeholder-gray-700 font-mono text-sm group-hover:border-white/10" 
+                                            placeholder="261..." 
+                                            required 
+                                        />
+                                    </div>
+                                    <p className="text-[9px] text-gray-600 pl-1">No hace falta escribir el 549, ya está incluido.</p>
                                 </div>
 
                                 {mode === 'register' && (

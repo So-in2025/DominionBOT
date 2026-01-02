@@ -6,17 +6,18 @@ import ConversationList from './components/ConversationList';
 import ChatWindow from './components/ChatWindow';
 import SettingsPanel from './components/SettingsPanel';
 import ConnectionPanel from './components/ConnectionPanel';
-import BlacklistPanel from './components/BlacklistPanel'; // Importación recuperada
+import BlacklistPanel from './components/BlacklistPanel'; 
 import AdminDashboard from './components/Admin/AdminDashboard';
 import AuditView from './components/Admin/AuditView';
 import AuthModal from './components/AuthModal';
 import LegalModal from './components/LegalModal'; 
 import AgencyDashboard from './components/AgencyDashboard';
 import CampaignsPanel from './components/CampaignsPanel'; 
-import RadarPanel from './components/RadarPanel'; // NEW IMPORT
+import RadarPanel from './components/RadarPanel'; 
 import Toast, { ToastData } from './components/Toast';
 import HowItWorksArt from './components/HowItWorksArt';
 import HowItWorksSection from './components/HowItWorksSection';
+import NeuralArchitectureSection from './components/NeuralArchitectureSection'; 
 import { BACKEND_URL, API_HEADERS, getAuthHeaders } from './config';
 import { audioService } from './services/audioService';
 
@@ -162,7 +163,7 @@ const TestimonialsSection = ({ isLoggedIn, token, showToast }: { isLoggedIn: boo
                 <h3 className="text-center font-bold text-brand-gold mb-4 uppercase text-xs tracking-widest">Comparte tu experiencia</h3>
                 <div className="relative">
                     <textarea value={newTestimonialText} onChange={(e) => setNewTestimonialText(e.target.value)} placeholder="Escribe tu reseña aquí..." className="w-full bg-brand-black border border-white/20 rounded-2xl py-4 px-6 text-white h-28 resize-none focus:border-brand-gold focus:ring-brand-gold/50 outline-none transition" maxLength={250} />
-                    <p className="absolute bottom-3 right-4 text-[10px] text-gray-500 font-mono">{newTestimonialText.length} / 250{'}'}</p>
+                    <p className="absolute bottom-3 right-4 text-[10px] text-gray-500 font-mono">{newTestimonialText.length} / 250</p>
                 </div>
                 <button type="submit" disabled={isSubmitting || !newTestimonialText.trim()} className="w-full mt-4 py-4 bg-brand-gold text-black rounded-xl font-black text-xs uppercase tracking-[0.2em] shadow-lg shadow-brand-gold/20 hover:scale-[1.02] transition-transform disabled:opacity-50 disabled:cursor-not-allowed">
                     {isSubmitting ? 'Publicando...' : 'Publicar Reseña'}
@@ -238,7 +239,7 @@ const TestimonialsSection = ({ isLoggedIn, token, showToast }: { isLoggedIn: boo
 const FaqSection = () => {
     const [openFaq, setOpenFaq] = useState<number | null>(0);
     const faqs = [
-        { q: "¿En qué se diferencia de otros bots de WhatsApp?", a: "Dominion no es un bot de flujos; es una infraestructura de calificación. Usamos IA avanzada (Google Gemini) para entender la intención real de compra, no solo para seguir un script predefinido." },
+        { q: "¿En qué se diferencia de otros bots de WhatsApp?", a: "Dominion no es un bot común; es una infraestructura de calificación. Usamos IA avanzada (Google Gemini) para entender la intención real de compra, no solo para seguir un script predefinido." },
         { q: "¿Es seguro para mi número? ¿Hay riesgo de bloqueo?", a: "Nuestra arquitectura está diseñada para mitigar activamente los riesgos emulando un comportamiento humano y profesional. No permitimos envíos masivos (spam), que es la principal causa de bloqueo. Si bien ningún sistema no oficial puede eliminar el riesgo al 100%, Dominion está construido para un uso seguro en ventas consultivas." },
         { q: "¿Necesito conocimientos técnicos para usarlo?", a: "No. La configuración inicial es un proceso guiado paso a paso. Una vez que el 'Cerebro Neural' está configurado y el nodo está conectado, el sistema funciona de forma 100% autónoma." },
         { q: "¿Qué significa 'BYOK' (Bring Your Own Key)?", a: "Significa que tú tienes el control total. Conectas tu propia clave de la API de Google Gemini, lo que asegura que tus datos, tus conversaciones y tus costos de IA son tuyos y de nadie más. Soberanía total." },
@@ -281,8 +282,7 @@ function LandingPage({ onAuth, onRegister, visibleMessages, isSimTyping, simScro
         <div className="w-full min-h-screen bg-brand-black font-sans relative overflow-x-hidden">
             <div className="absolute inset-0 neural-grid opacity-40 z-0 pointer-events-none"></div>
             
-            {/* HERO SECTION - INTOCABLE */}
-            <section className="relative z-20 flex flex-col items-center justify-center p-6 md:p-12 pt-24 pb-32">
+            <div className="relative z-20 flex flex-col items-center justify-center p-6 md:p-12 pt-24 pb-32">
                 <div className="max-w-7xl w-full grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-24 items-center">
                     <div className="space-y-10 text-center lg:text-left">
                         <div className={`inline-flex items-center gap-3 px-4 py-1.5 border rounded-full text-[11px] font-black uppercase tracking-[0.3em] backdrop-blur-xl transition-all ${isServerReady ? 'border-green-500/30 bg-green-500/10 text-green-400 shadow-[0_0_20px_rgba(34,197,94,0.2)]' : 'border-red-500/30 bg-red-500/10 text-red-400'}`}>
@@ -343,10 +343,11 @@ function LandingPage({ onAuth, onRegister, visibleMessages, isSimTyping, simScro
                          </div>
                     </div>
                 </div>
-            </section>
+            </div>
             
             <HowItWorksArt />
             <HowItWorksSection />
+            <NeuralArchitectureSection />
             <TestimonialsSection isLoggedIn={isLoggedIn} token={token} showToast={showToast} />
             <FaqSection />
 
@@ -357,10 +358,10 @@ function LandingPage({ onAuth, onRegister, visibleMessages, isSimTyping, simScro
                             Powered By <a href="https://websoin.netlify.app" target="_blank" rel="noopener noreferrer" className="text-brand-gold hover:text-brand-gold-light transition-colors">SO-&gt;IN</a>
                         </p>
                         <div className="flex items-center gap-4 border-l border-white/10 pl-4 justify-center md:justify-start">
-                            <a href="#" className="text-gray-500 hover:text-brand-gold transition-colors">
+                            <a href="https://www.facebook.com/SolucionesSOIN" target="_blank" rel="noopener noreferrer" className="text-gray-500 hover:text-brand-gold transition-colors">
                                 <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
                             </a>
-                            <a href="#" className="text-gray-500 hover:text-brand-gold transition-colors">
+                            <a href="https://www.instagram.com/so.in_mendoza/" target="_blank" rel="noopener noreferrer" className="text-gray-500 hover:text-brand-gold transition-colors">
                                 <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>
                             </a>
                         </div>
@@ -378,8 +379,6 @@ function LandingPage({ onAuth, onRegister, visibleMessages, isSimTyping, simScro
         </div>
     );
 }
-
-// --- END: Landing Page Strategic Sections ---
 
 export default function App() {
   const [token, setToken] = useState<string | null>(localStorage.getItem('saas_token'));
@@ -401,27 +400,23 @@ export default function App() {
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(ConnectionStatus.DISCONNECTED);
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [pairingCode, setPairingCode] = useState<string | null>(null);
-  const [backendError, setBackendError] = useState<string | null>(null); // Keep for general backend errors
+  const [backendError, setBackendError] = useState<string | null>(null); 
   const [isTyping, setIsTyping] = useState(false);
   const [isLoadingSettings, setIsLoadingSettings] = useState(false);
   const [toast, setToast] = useState<ToastData | null>(null);
 
-  // Polling interval refs
   const statusPollingIntervalRef = useRef<number | null>(null);
   const convoPollingIntervalRef = useRef<number | null>(null);
 
-  // Simulación de Landing
   const [visibleMessages, setVisibleMessages] = useState<any[]>([]);
   const [isSimTyping, setIsSimTyping] = useState(false);
   const simScrollRef = useRef<HTMLDivElement>(null);
   
-  // Efecto para inicializar el AudioContext y reproducir el sonido de intro en la primera interacción.
   useEffect(() => {
       const initAudioAndPlayIntro = () => {
           console.log("[AudioService] User interaction detected, initializing AudioContext.");
           audioService.initContext();
           
-          // Si estamos en la landing page, reproducir el sonido de intro en la primera interacción.
           const isLanding = !localStorage.getItem('saas_token');
           if (isLanding && !sessionStorage.getItem('landing_intro_played')) {
               audioService.play('landing_intro');
@@ -429,7 +424,6 @@ export default function App() {
           }
       };
       
-      // Estos listeners se activan una vez en la primera interacción y luego se eliminan.
       document.addEventListener('click', initAudioAndPlayIntro, { once: true, capture: true });
       document.addEventListener('keydown', initAudioAndPlayIntro, { once: true, capture: true });
       document.addEventListener('touchstart', initAudioAndPlayIntro, { once: true, capture: true });
@@ -439,7 +433,7 @@ export default function App() {
           document.removeEventListener('keydown', initAudioAndPlayIntro, true);
           document.removeEventListener('touchstart', initAudioAndPlayIntro, true);
       };
-  }, []); // El array vacío asegura que este efecto se ejecute solo una vez.
+  }, []);
 
   const showToast = (message: string, type: 'success' | 'error' | 'info') => {
     if (type === 'error') audioService.play('alert_error_generic');
@@ -467,7 +461,6 @@ export default function App() {
       setCurrentView(View.CHATS);
       setAuditTarget(null);
       
-      // Clear polling intervals on logout
       if (statusPollingIntervalRef.current) {
           clearInterval(statusPollingIntervalRef.current);
           statusPollingIntervalRef.current = null;
@@ -476,7 +469,7 @@ export default function App() {
           clearInterval(convoPollingIntervalRef.current);
           convoPollingIntervalRef.current = null;
       }
-      setBackendError(null); // Clear any backend error
+      setBackendError(null); 
   };
 
   useEffect(() => {
@@ -485,7 +478,6 @@ export default function App() {
     }
   }, [currentView, userRole]);
 
-  // Polling for connection status and conversations
   useEffect(() => {
     if (!token || userRole === 'super_admin') {
         setCurrentUser(null);
@@ -493,7 +485,7 @@ export default function App() {
         if (convoPollingIntervalRef.current) clearInterval(convoPollingIntervalRef.current);
         statusPollingIntervalRef.current = null;
         convoPollingIntervalRef.current = null;
-        setBackendError(null); // Clear any backend error
+        setBackendError(null); 
         return;
     }
 
@@ -505,7 +497,6 @@ export default function App() {
                 setConnectionStatus(statusData.status);
                 setQrCode(statusData.qr || null);
                 setPairingCode(statusData.pairingCode || null);
-                // Clear backend error if status fetch is successful
                 if (backendError) setBackendError(null);
             } else {
                 const errorText = await res.text();
@@ -533,7 +524,6 @@ export default function App() {
                     const dateB = new Date(b.lastActivity || b.firstMessageAt || 0);
                     return dateB.getTime() - dateA.getTime();
                 }));
-                // Clear backend error if conversation fetch is successful
                 if (backendError) setBackendError(null);
             } else {
                 const errorText = await res.text();
@@ -551,24 +541,21 @@ export default function App() {
         }
     };
 
-    // Fetch immediately on mount/token change
     fetchStatus();
     fetchConversations();
 
-    // Set up polling intervals
-    statusPollingIntervalRef.current = window.setInterval(fetchStatus, 5000); // Poll status every 5 seconds
-    convoPollingIntervalRef.current = window.setInterval(fetchConversations, 3000); // Poll conversations every 3 seconds
+    statusPollingIntervalRef.current = window.setInterval(fetchStatus, 5000); 
+    convoPollingIntervalRef.current = window.setInterval(fetchConversations, 3000); 
 
     return () => {
         if (statusPollingIntervalRef.current) clearInterval(statusPollingIntervalRef.current);
         if (convoPollingIntervalRef.current) clearInterval(convoPollingIntervalRef.current);
         statusPollingIntervalRef.current = null;
         convoPollingIntervalRef.current = null;
-        setBackendError(null); // Clear error on cleanup
+        setBackendError(null); 
     };
-  }, [token, userRole]); // Dependencies: token and userRole
+  }, [token, userRole]); 
 
-  // Initial user data load (now integrated with polling logic for status/conversations)
   useEffect(() => {
     if (!token) {
         setCurrentUser(null);
@@ -578,7 +565,6 @@ export default function App() {
     const loadInitialUserData = async () => {
         setIsLoadingSettings(true);
         try {
-            // Fetch initial user and settings data once
             const [userRes, sRes] = await Promise.all([
                 fetch(`${BACKEND_URL}/api/user/me`, { headers: getAuthHeaders(token) }),
                 fetch(`${BACKEND_URL}/api/settings`, { headers: getAuthHeaders(token) })
@@ -607,7 +593,7 @@ export default function App() {
     };
     loadInitialUserData();
     
-  }, [token]); // Only depends on token, polling handles continuous updates
+  }, [token]);
   
   useEffect(() => {
     if (token) return; 
@@ -650,7 +636,7 @@ export default function App() {
       if (!token) return;
       setQrCode(null);
       setPairingCode(null);
-      setConnectionStatus(ConnectionStatus.GENERATING_QR); // Set status immediately
+      setConnectionStatus(ConnectionStatus.GENERATING_QR); 
       
       try {
           await fetch(`${BACKEND_URL}/api/connect`, {
@@ -658,7 +644,6 @@ export default function App() {
               headers: getAuthHeaders(token),
               body: JSON.stringify({ phoneNumber }) 
           });
-          // Polling will update connectionStatus from here
       } catch (e: any) { 
           if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
               setBackendError("Alerta: Error de red al iniciar conexión. Verifique su conexión a internet y que el servidor backend esté activo y accesible (Ej: Ngrok funcionando).");
@@ -666,7 +651,7 @@ export default function App() {
               setBackendError("Fallo al iniciar conexión.");
           }
           audioService.play('alert_error_connection');
-          setConnectionStatus(ConnectionStatus.DISCONNECTED); // Revert status on error
+          setConnectionStatus(ConnectionStatus.DISCONNECTED); 
       }
   };
 
@@ -722,10 +707,9 @@ export default function App() {
         if (!token) return;
         try {
             await fetch(`${BACKEND_URL}/api/disconnect`, { headers: getAuthHeaders(token!) });
-            setConnectionStatus(ConnectionStatus.DISCONNECTED); // Optimistic update
+            setConnectionStatus(ConnectionStatus.DISCONNECTED); 
             setQrCode(null);
             setPairingCode(null);
-            // Polling will confirm the status change
         } catch(e: any) {
             if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
                 showToast('Error de red al intentar desconectar. Verifique su conexión a internet y el backend.', 'error');
@@ -737,22 +721,21 @@ export default function App() {
 
     const handleWipeConnection = async () => {
         if (!token) return;
-        setConnectionStatus(ConnectionStatus.RESETTING); // Optimistic update
+        setConnectionStatus(ConnectionStatus.RESETTING); 
         try {
-            await new Promise(resolve => setTimeout(resolve, 1500)); // Visual feedback
+            await new Promise(resolve => setTimeout(resolve, 1500)); 
             await fetch(`${BACKEND_URL}/api/disconnect`, { headers: getAuthHeaders(token!) });
             setQrCode(null);
             setPairingCode(null);
-            setConnectionStatus(ConnectionStatus.DISCONNECTED); // Optimistic update
+            setConnectionStatus(ConnectionStatus.DISCONNECTED); 
             showToast('La sesión anterior fue purgada.', 'success');
-            // Polling will confirm the status change
         } catch(e: any) {
             if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
                 showToast('Error de red al purgar la sesión. Verifique su conexión a internet y el backend.', 'error');
             } else {
                 showToast('Error al purgar la sesión.', 'error');
             }
-            setConnectionStatus(ConnectionStatus.DISCONNECTED); // Revert status on error
+            setConnectionStatus(ConnectionStatus.DISCONNECTED); 
         }
     };
 
@@ -761,7 +744,7 @@ export default function App() {
             return <AgencyDashboard token={token!} backendUrl={BACKEND_URL} settings={settings!} onUpdateSettings={handleUpdateSettings} currentUser={currentUser} showToast={showToast} />;
         case View.CAMPAIGNS: 
             return <CampaignsPanel token={token!} backendUrl={BACKEND_URL} showToast={showToast} />;
-        case View.RADAR: // NEW VIEW
+        case View.RADAR: 
             return <RadarPanel token={token!} backendUrl={BACKEND_URL} showToast={showToast} />;
         case View.SETTINGS:
             return <SettingsPanel settings={settings} isLoading={isLoadingSettings} onUpdateSettings={isFunctionalityDisabled ? ()=>{} : handleUpdateSettings} onOpenLegal={setLegalModalType} />;
