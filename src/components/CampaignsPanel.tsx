@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Campaign, WhatsAppGroup } from '../types';
 import { getAuthHeaders } from '../config';
 
@@ -33,6 +33,21 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
     const [startHour, setStartHour] = useState(9);
     const [endHour, setEndHour] = useState(20);
     const [useSpintax, setUseSpintax] = useState(true);
+
+    // Conflict Detection Logic (Client Side - Uses Local Time, assuming user is in ARG or compatible)
+    const timeConflict = useMemo(() => {
+        if (!scheduledTime) return null;
+        const hour = parseInt(scheduledTime.split(':')[0]);
+        
+        let isOutside = false;
+        if (startHour <= endHour) {
+            isOutside = hour < startHour || hour >= endHour;
+        } else {
+            isOutside = hour < startHour && hour >= endHour;
+        }
+
+        return isOutside ? { hour, start: startHour, end: endHour } : null;
+    }, [scheduledTime, startHour, endHour]);
 
     useEffect(() => {
         fetchCampaigns();
@@ -99,9 +114,20 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
             return;
         }
 
+        if (timeConflict) {
+            if(!confirm("⚠️ ADVERTENCIA: La hora programada está fuera de la ventana operativa. La campaña NO arrancará hasta que abras el horario. ¿Deseas continuar igual?")) {
+                return;
+            }
+        }
+
         setLoading(true);
         try {
-            // Construct ISO date from date + time components
+            // Important: We construct the ISO string, but the backend will interpret the scheduledTime relative to Argentina.
+            // We just send the raw time string mostly for the backend to handle logic, 
+            // but for 'startDate', we send ISO.
+            // Let's create a date that corresponds to the user's selected time in UTC, but really we rely on 'scheduledTime' (HH:MM) field.
+            
+            // Just for the initial 'nextRunAt' calculation if needed immediately.
             const combinedStart = new Date(`${startDate}T${scheduledTime}:00`).toISOString();
 
             const payload = {
@@ -236,7 +262,10 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
                                 {/* SCHEDULING SECTION */}
                                 <div className="bg-black/20 p-6 rounded-2xl border border-white/5 space-y-6">
                                     <div>
-                                        <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-3">Programación de Disparo</label>
+                                        <div className="flex justify-between items-center mb-3">
+                                            <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest">Programación de Disparo</label>
+                                            <span className="text-[9px] text-gray-500 font-bold bg-white/5 px-2 py-0.5 rounded border border-white/10">Zona: GMT-3 (ARG)</span>
+                                        </div>
                                         <div className="flex gap-2 mb-4">
                                             {(['ONCE', 'DAILY', 'WEEKLY'] as const).map(type => (
                                                 <button 
@@ -280,7 +309,15 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
 
                                     {/* OPERATING WINDOW */}
                                     <div className="border-t border-white/5 pt-4">
-                                        <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-4">Ventana Operativa (Anti-Molestia)</label>
+                                        <div className="flex justify-between items-center mb-4">
+                                            <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest">Ventana Operativa (Anti-Molestia)</label>
+                                            {timeConflict && (
+                                                <div className="flex items-center gap-2 bg-red-900/30 border border-red-500/30 px-3 py-1.5 rounded-lg animate-pulse">
+                                                    <span className="text-[10px] text-red-400 font-bold uppercase">⚠️ Conflicto Horario</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                        
                                         <div className="flex items-center gap-4">
                                             <div className="flex-1">
                                                 <span className="text-[9px] text-gray-500 font-bold block mb-1">Hora Inicio</span>
@@ -292,7 +329,18 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
                                                 <input type="number" min="0" max="23" value={endHour} onChange={e => setEndHour(parseInt(e.target.value))} className="w-full bg-black/50 border border-white/10 rounded-lg p-2 text-white text-center font-mono" />
                                             </div>
                                         </div>
-                                        <p className="text-[9px] text-gray-600 mt-2 italic">Si la campaña arranca fuera de este horario, se pausará hasta que la ventana se abra.</p>
+                                        
+                                        {timeConflict ? (
+                                            <div className="mt-3 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+                                                <p className="text-[10px] text-red-300 leading-relaxed font-medium">
+                                                    <strong>Error:</strong> Has programado el envío a las <strong className="text-white">{timeConflict.hour}:00</strong>, pero la ventana operativa solo permite envíos entre las <strong className="text-white">{timeConflict.start}:00</strong> y las <strong className="text-white">{timeConflict.end}:00</strong>.
+                                                    <br/>
+                                                    <span className="text-[9px] opacity-80 mt-1 block">>> Ajusta el horario o amplia la ventana.</span>
+                                                </p>
+                                            </div>
+                                        ) : (
+                                            <p className="text-[9px] text-gray-600 mt-2 italic">El sistema verificará la hora Argentina antes de enviar.</p>
+                                        )}
                                     </div>
                                 </div>
 

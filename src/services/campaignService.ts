@@ -17,23 +17,35 @@ class CampaignService {
         if (this.isRunning) return;
         this.isRunning = true;
         
-        console.log('🚀 [CAMPAIGN-SCHEDULER] Motor de Campañas Iniciado.');
+        console.log('🚀 [CAMPAIGN-SCHEDULER] Motor de Campañas Iniciado (Sincronizado GMT-3).');
         
         // Heartbeat: Check every 60 seconds
         this.checkInterval = setInterval(() => this.processPendingCampaigns(), 60000);
+    }
+
+    // Helper: Obtener la hora "real" de Argentina, sin importar dónde esté el servidor (USA, Europa, etc)
+    private getArgentinaDate(): Date {
+        const now = new Date();
+        // Truco: Convertir a string en zona horaria específica y volver a parsear
+        // Esto crea un objeto Date donde .getHours() devuelve la hora de Argentina
+        const argString = now.toLocaleString("en-US", {timeZone: "America/Argentina/Buenos_Aires"});
+        return new Date(argString);
     }
 
     private async processPendingCampaigns() {
         try {
             const pendingCampaigns = await db.getPendingCampaigns();
             if (pendingCampaigns.length > 0) {
-                console.log(`[CAMPAIGN-SCHEDULER] Encontradas ${pendingCampaigns.length} campañas para ejecutar.`);
+                // Log discreto para no llenar la consola
+                // console.log(`[CAMPAIGN] Procesando ${pendingCampaigns.length} campañas...`);
             }
 
             for (const campaign of pendingCampaigns) {
                 // 1. Check Operating Window (Hours)
                 if (!this.isInOperatingWindow(campaign)) {
-                    // console.log(`[CAMPAIGN] Pausando ${campaign.name} fuera de ventana operativa.`);
+                    // Log warning to help users debug why their campaign isn't running
+                    // Solo loguear esto una vez cada tanto o si es crítico, para no spamear
+                    // logService.warn(`[CAMPAIGN] Pausando "${campaign.name}" por horario (Ventana cerrada en ARG).`, campaign.userId);
                     continue; 
                 }
                 
@@ -47,8 +59,9 @@ class CampaignService {
     private isInOperatingWindow(campaign: Campaign): boolean {
         if (!campaign.config.operatingWindow) return true; // Always valid if no window defined
         
-        const now = new Date();
-        const currentHour = now.getHours();
+        // USAR HORA ARGENTINA
+        const nowArg = this.getArgentinaDate();
+        const currentHour = nowArg.getHours();
         const { startHour, endHour } = campaign.config.operatingWindow;
 
         // Simple check for same-day window (e.g., 09:00 to 18:00)
@@ -78,7 +91,7 @@ class CampaignService {
             return;
         }
 
-        logService.info(`[CAMPAIGN] Iniciando ejecución de campaña: ${campaign.name}`, campaign.userId);
+        logService.info(`[CAMPAIGN] Ejecutando campaña: ${campaign.name}`, campaign.userId);
 
         // 1. Resolve Capabilities for Advanced Jitter
         const capabilities = await capabilityResolver.resolve(campaign.userId);
@@ -98,7 +111,7 @@ class CampaignService {
             for (const groupId of groups) {
                 // Double check window inside loop for long batches
                 if (!this.isInOperatingWindow(campaign)) {
-                    logService.info(`[CAMPAIGN] Pausando batch de ${campaign.name} por cierre de ventana operativa.`, campaign.userId);
+                    logService.info(`[CAMPAIGN] Pausando batch de ${campaign.name} por cierre de ventana operativa (ARG).`, campaign.userId);
                     break; 
                 }
 
@@ -161,7 +174,8 @@ class CampaignService {
     }
 
     private calculateNextRun(campaign: Campaign): string {
-        const now = new Date();
+        // Calculations relative to ARGENTINA TIME
+        const nowArg = this.getArgentinaDate(); 
         const type = campaign.schedule.type;
         
         if (type === 'ONCE') return ''; 
@@ -169,34 +183,52 @@ class CampaignService {
         // Set target time based on schedule.time
         const [targetHour, targetMinute] = (campaign.schedule.time || "09:00").split(':').map(Number);
         
-        // Base is tomorrow by default
-        let nextDate = new Date(now);
-        nextDate.setHours(targetHour, targetMinute, 0, 0);
+        // Base is tomorrow by default (relative to Argentina Time)
+        let nextDateArg = new Date(nowArg);
+        nextDateArg.setHours(targetHour, targetMinute, 0, 0);
 
         if (type === 'DAILY') {
-            nextDate.setDate(nextDate.getDate() + 1);
+            nextDateArg.setDate(nextDateArg.getDate() + 1);
         } 
         else if (type === 'WEEKLY' && campaign.schedule.daysOfWeek) {
-            // Find the closest next scheduled day
             let found = false;
-            // Look ahead up to 7 days
             for (let i = 1; i <= 7; i++) {
-                const potentialDate = new Date(now);
+                const potentialDate = new Date(nowArg);
                 potentialDate.setDate(potentialDate.getDate() + i);
                 const dayIndex = potentialDate.getDay(); // 0-6
                 
                 if (campaign.schedule.daysOfWeek.includes(dayIndex)) {
-                    nextDate = potentialDate;
-                    nextDate.setHours(targetHour, targetMinute, 0, 0);
+                    nextDateArg = potentialDate;
+                    nextDateArg.setHours(targetHour, targetMinute, 0, 0);
                     found = true;
                     break;
                 }
             }
-            // Fallback if somehow nothing found (shouldn't happen if daysOfWeek not empty)
-            if (!found) nextDate.setDate(nextDate.getDate() + 7);
+            if (!found) nextDateArg.setDate(nextDateArg.getDate() + 7);
         }
 
-        return nextDate.toISOString();
+        // IMPORTANT: Convert Argentina Date back to ISO UTC string for DB storage
+        // Since getArgentinaDate() returns a Date object where .getHours() is local ARG time but .toISOString() would shift it again based on Server Locale,
+        // we need to be careful.
+        // The safest way for the scheduler (which compares against ISO) is to construct the ISO string manually or adjust offset reverse.
+        // Assuming we store nextRunAt as ISO.
+        
+        // If we have "2023-10-28 09:00" in Argentina (-3), that is "2023-10-28 12:00 Z".
+        // We need to store "2023-10-28T12:00:00.000Z".
+        
+        // Reconstruct UTC timestamp from Argentina components
+        const year = nextDateArg.getFullYear();
+        const month = nextDateArg.getMonth();
+        const day = nextDateArg.getDate();
+        const hour = nextDateArg.getHours();
+        const min = nextDateArg.getMinutes();
+        
+        // Create UTC date by adding 3 hours to the components (ARG is UTC-3, so UTC is ARG+3)
+        // Note: This is a simplification. For production with DST, utilize a library. 
+        // Argentina currently does not observe DST, so GMT-3 is stable.
+        const utcDate = new Date(Date.UTC(year, month, day, hour + 3, min, 0));
+        
+        return utcDate.toISOString();
     }
 }
 
