@@ -1,4 +1,5 @@
 
+
 import { Conversation, LeadStatus, Message } from '../types.js';
 import { db, sanitizeKey } from '../database.js';
 import { logService } from './logService.js';
@@ -47,7 +48,8 @@ class ConversationService {
         internalNotes: [],
         isAiSignalsEnabled: true,
         isTestBotConversation: isEliteBotJid, 
-        lastActivity: new Date(message.timestamp)
+        // FIX: Explicitly pass Date.now() to the Date constructor to avoid potential TypeScript errors in strict environments.
+        lastActivity: new Date(Date.now())
       };
     } else {
         // Enforce Test Bot Rules on existing conversation

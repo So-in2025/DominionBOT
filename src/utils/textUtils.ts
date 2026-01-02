@@ -1,7 +1,7 @@
 
-
 import { BACKEND_URL } from '../config.js';
 import { hexToRgb, interpolateColor } from './colorUtils.js'; // Import new color utilities
+import { SystemSettings } from '../types.js'; // Import SystemSettings type
 
 export const formatPhoneNumber = (input: string | undefined): string => {
     if (!input) return 'Desconocido';
@@ -38,8 +38,6 @@ export const getInitials = (name: string): string => {
         .toUpperCase();
 };
 
-// FIX: Added a default message parameter to allow the function to be called with zero arguments if needed,
-// addressing the "Expected 1 arguments, but got 0" error in App.tsx.
 export const openSupportWhatsApp = async (message: string = 'Hola, necesito ayuda con Dominion Bot.') => {
     let supportNumber = '5492617145654'; // Default fallback number
     
@@ -48,8 +46,7 @@ export const openSupportWhatsApp = async (message: string = 'Hola, necesito ayud
         if (typeof fetch !== 'undefined') {
             const res = await fetch(`${BACKEND_URL}/api/system/settings`);
             if (res.ok) {
-                // Fix TS2339: Cast response to any to access properties safely
-                const data = await res.json() as any;
+                const data: SystemSettings = await res.json();
                 if (data && data.supportWhatsappNumber && data.supportWhatsappNumber.length > 8) {
                     supportNumber = data.supportWhatsappNumber;
                 }
@@ -61,7 +58,6 @@ export const openSupportWhatsApp = async (message: string = 'Hola, necesito ayud
 
     const url = `https://wa.me/${supportNumber}?text=${encodeURIComponent(message)}`;
     
-    // Fix TS2304: Use globalThis to access window safely in Node environments
     const globalScope = globalThis as any;
     if (globalScope.window) {
         globalScope.window.open(url, '_blank');

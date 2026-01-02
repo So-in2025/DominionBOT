@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { IntendedUse } from '../types';
 import { BACKEND_URL, API_HEADERS } from '../config';
@@ -7,11 +8,11 @@ interface AuthModalProps {
     isOpen: boolean;
     initialMode: 'login' | 'register' | 'recovery';
     onClose: () => void;
-    onSuccess: (token: string, role: string) => void;
+    onSuccess: (token: string, role: string, rememberMe: boolean) => void;
     onOpenLegal: (type: 'privacy' | 'terms' | 'manifesto') => void;
 }
 
-const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onSuccess, onOpenLegal }) => {
+export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onSuccess, onOpenLegal }) => {
     const [mode, setMode] = useState<'login' | 'register' | 'recovery' | 'registered_success'>(initialMode as any);
     const [whatsappNumber, setWhatsappNumber] = useState('');
     const [businessName, setBusinessName] = useState('');
@@ -21,10 +22,10 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
     const [newPassword, setNewPassword] = useState('');
     const [generatedKey, setGeneratedKey] = useState('');
     
-    // Estados Legales
-    const [agreedPrivacy, setAgreedPrivacy] = useState(false);
-    const [agreedTerms, setAgreedTerms] = useState(false);
-    const [agreedManifesto, setAgreedManifesto] = useState(false);
+    // Estados Legales (Consolidado a un solo checkbox)
+    const [agreedLegal, setAgreedLegal] = useState(false);
+    // NEW: Remember Me state, default to true for convenience
+    const [rememberMe, setRememberMe] = useState(true);
 
     const [error, setError] = useState('');
     const [successMsg, setSuccessMsg] = useState('');
@@ -42,9 +43,8 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
             setRecoveryKey('');
             setNewPassword('');
             setGeneratedKey('');
-            setAgreedPrivacy(false);
-            setAgreedTerms(false);
-            setAgreedManifesto(false);
+            setAgreedLegal(false); // Reset single legal agreement
+            setRememberMe(true); // Reset rememberMe to default true
             setTimeout(() => setAnimateIn(true), 10);
             
             // CRÍTICO: Log del valor real de BACKEND_URL cuando el modal se abre.
@@ -62,8 +62,8 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
         setError('');
 
         if (mode === 'register') {
-            if (!agreedPrivacy || !agreedTerms || !agreedManifesto) {
-                setError('Debes aceptar todos los términos y políticas para continuar.');
+            if (!agreedLegal) { // Check single legal agreement
+                setError('Debes aceptar los términos y políticas para continuar.');
                 setLoading(false);
                 return;
             }
@@ -106,14 +106,14 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
 
             if (res.ok) {
                 if (mode === 'register') {
-                    onSuccess(data.token, data.role); // Iniciar sesión inmediatamente
+                    onSuccess(data.token, data.role, true); // Iniciar sesión inmediatamente, siempre recordar en registro
                     setGeneratedKey(data.recoveryKey);
                     setMode('registered_success');
                 } else if (mode === 'recovery') {
                     setSuccessMsg('Contraseña reseteada. Ya puedes ingresar.');
                     setMode('login');
                 } else {
-                    onSuccess(data.token, data.role);
+                    onSuccess(data.token, data.role, rememberMe);
                     onClose();
                 }
             } else {
@@ -146,12 +146,12 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
         setWhatsappNumber(val);
     };
 
-    const isSubmitDisabled = loading || (mode === 'register' && (!agreedPrivacy || !agreedTerms || !agreedManifesto));
+    const isSubmitDisabled = loading || (mode === 'register' && !agreedLegal); // Use single legal agreement
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] flex items-start justify-center p-4 pt-32"> {/* Adjusted to items-start and pt-32 (128px) */}
             <div className={`absolute inset-0 bg-brand-black/90 backdrop-blur-md transition-opacity duration-300 ${animateIn ? 'opacity-100' : 'opacity-0'}`} onClick={onClose}></div>
-            <div className={`relative w-full max-w-md max-h-[90vh] overflow-y-auto bg-brand-surface border border-white/10 rounded-2xl shadow-2xl transition-all duration-300 transform custom-scrollbar ${animateIn ? 'scale-100 opacity-100 translate-y-0' : 'scale-95 opacity-0 translate-y-8'}`}>
+            <div className={`relative w-full max-w-md max-h-[calc(100vh-180px)] bg-brand-surface border border-white/10 rounded-2xl shadow-2xl transition-all duration-300 transform custom-scrollbar ${animateIn ? 'scale-100 opacity-100 translate-y-0' : 'scale-95 opacity-0 translate-y-8'}`}>
                 <div className="h-1.5 w-full bg-gradient-to-r from-brand-gold-dark via-brand-gold to-brand-gold-dark flex-shrink-0"></div>
                 
                 {mode !== 'registered_success' && (
@@ -160,7 +160,8 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
                     </button>
                 )}
 
-                <div className="p-6 md:p-10">
+                {/* Main Content Area - Now uses flex-col, reduced padding */}
+                <div className="p-4 md:p-6 flex flex-col flex-1 min-h-0"> 
                     {mode === 'registered_success' ? (
                         <div className="text-center space-y-8 animate-fade-in">
                             <div className="w-20 h-20 bg-green-500/10 text-green-500 rounded-full flex items-center justify-center mx-auto border border-green-500/20 shadow-[0_0_30px_rgba(34,197,94,0.2)]">
@@ -178,112 +179,123 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
                             <button onClick={onClose} className="w-full py-5 bg-brand-gold text-black rounded-xl font-black text-xs uppercase tracking-[0.2em] shadow-[0_10px_40px_rgba(212,175,55,0.3)] hover:scale-105 transition-all">He asegurado mi llave</button>
                         </div>
                     ) : (
-                        <>
-                            <div className="text-center mb-8 md:mb-10">
-                                <h2 className="text-2xl md:text-3xl font-black text-white tracking-tighter mb-2">
+                        <> {/* FIX: Wrapped multiple elements in a fragment */}
+                            <div className="text-center mb-6 md:mb-8 flex-shrink-0"> {/* Reduced mb */}
+                                <h2 className="text-xl md:text-2xl font-black text-white tracking-tighter mb-1"> {/* Adjusted font size */}
                                     {mode === 'login' ? 'Bienvenido' : (mode === 'register' ? 'Nuevo Nodo' : 'Recuperación')}
                                 </h2>
-                                <p className="text-[10px] text-brand-gold uppercase tracking-[0.4em] font-black opacity-80">Infrastructure v3.0.0 Elite</p>
+                                <p className="text-[9px] text-brand-gold uppercase tracking-[0.4em] font-black opacity-80">Infrastructure v3.0.0 Elite</p> {/* Adjusted font size */}
                             </div>
 
-                            {successMsg && (
-                                <div className="mb-6 p-4 bg-green-500/10 border border-green-500/20 rounded-xl text-green-400 text-xs text-center font-bold animate-fade-in">{successMsg}</div>
-                            )}
-
-                            <form onSubmit={handleSubmit} className="space-y-5 md:space-y-6">
-                                <div className="space-y-1.5">
-                                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">{mode === 'login' ? 'Número de WhatsApp' : 'Tu Número de WhatsApp'}</label>
-                                    <div className="relative group">
-                                        <div className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none z-10">
-                                            <span className="text-brand-gold font-mono font-bold text-sm tracking-tight border-r border-white/10 pr-3 mr-1 select-none">54 9</span>
-                                        </div>
-                                        <input 
-                                            type="tel" 
-                                            value={whatsappNumber} 
-                                            onChange={handlePhoneChange}
-                                            className="w-full pl-[4.5rem] pr-5 py-3 md:py-4 bg-black/40 border border-white/5 rounded-xl text-white focus:border-brand-gold outline-none transition-all placeholder-gray-700 font-mono text-sm group-hover:border-white/10" 
-                                            placeholder="261..." 
-                                            required 
-                                        />
-                                    </div>
-                                    <p className="text-[9px] text-gray-600 pl-1">No hace falta escribir el 549, ya está incluido.</p>
-                                </div>
-
-                                {mode === 'register' && (
-                                     <div className="space-y-1.5 animate-fade-in">
-                                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Tu Nombre o Nombre del Negocio</label>
-                                        <input type="text" value={businessName} onChange={(e) => setBusinessName(e.target.value)} className="w-full px-5 py-3 md:py-4 bg-black/40 border border-white/5 rounded-xl text-white focus:border-brand-gold outline-none transition-all placeholder-gray-800" placeholder="Ej: Agencia Dominion" required />
-                                    </div>
+                            {/* Scrollable Form Content */}
+                            <div className="flex-1 overflow-y-auto custom-scrollbar -mx-4 px-4 min-h-0">
+                                {successMsg && (
+                                    <div className="mb-6 p-4 bg-green-500/10 border border-green-500/20 rounded-xl text-green-400 text-xs text-center font-bold animate-fade-in">{successMsg}</div>
                                 )}
 
-                                {mode === 'recovery' ? (
-                                    <>
-                                        <div className="space-y-1.5 animate-fade-in">
-                                            <label className="text-[10px] font-black text-brand-gold uppercase tracking-widest ml-1">Master Recovery Key</label>
-                                            <input type="text" value={recoveryKey} onChange={(e) => setRecoveryKey(e.target.value)} className="w-full px-5 py-3 md:py-4 bg-black/40 border border-brand-gold/30 rounded-xl text-white focus:border-brand-gold outline-none font-mono placeholder-gray-800" placeholder="X8Y2-Z9Q1-..." required />
-                                        </div>
-                                        <div className="space-y-1.5 animate-fade-in">
-                                            <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Nueva Contraseña</label>
-                                            <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full px-5 py-3 md:py-4 bg-black/40 border border-white/5 rounded-xl text-white focus:border-brand-gold outline-none placeholder-gray-800" placeholder="••••••••" required />
-                                        </div>
-                                    </>
-                                ) : (
+                                <form onSubmit={handleSubmit} className="space-y-4 md:space-y-5 pt-1"> {/* Reduced space-y */}
                                     <div className="space-y-1.5">
-                                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Contraseña</label>
-                                        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full px-5 py-3 md:py-4 bg-black/40 border border-white/5 rounded-xl text-white focus:border-brand-gold outline-none placeholder-gray-800" placeholder="••••••••" required />
+                                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">{mode === 'login' ? 'Número de WhatsApp' : 'Tu Número de WhatsApp'}</label>
+                                        <div className="relative group">
+                                            <div className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none z-10">
+                                                <span className="text-brand-gold font-mono font-bold text-sm tracking-tight border-r border-white/10 pr-3 mr-1 select-none">54 9</span>
+                                            </div>
+                                            <input 
+                                                type="tel" 
+                                                value={whatsappNumber} 
+                                                onChange={handlePhoneChange}
+                                                className="w-full pl-[4.5rem] pr-5 py-3 md:py-3.5 bg-black/40 border border-white/5 rounded-xl text-white focus:border-brand-gold outline-none transition-all placeholder-gray-700 font-mono text-sm group-hover:border-white/10" 
+                                                placeholder="261..." 
+                                                required 
+                                            />
+                                        </div>
                                     </div>
-                                )}
 
-                                {mode === 'register' && (
-                                    <>
-                                        <div className="bg-black/20 rounded-2xl p-4 md:p-5 space-y-4 border border-white/5 animate-fade-in">
-                                            <label className="flex items-start gap-4 cursor-pointer group">
-                                                <input type="checkbox" checked={agreedTerms} onChange={(e) => setAgreedTerms(e.target.checked)} className="mt-1 w-4 h-4 rounded border-white/10 bg-black checked:bg-brand-gold flex-shrink-0" />
-                                                <span className="text-[10px] text-gray-400 group-hover:text-gray-300">Acepto los <button type="button" onClick={() => onOpenLegal('terms')} className="text-brand-gold font-bold">Términos de Servicio</button>.</span>
-                                            </label>
-                                            <label className="flex items-start gap-4 cursor-pointer group">
-                                                <input type="checkbox" checked={agreedPrivacy} onChange={(e) => setAgreedPrivacy(e.target.checked)} className="mt-1 w-4 h-4 rounded border-white/10 bg-black checked:bg-brand-gold flex-shrink-0" />
-                                                <span className="text-[10px] text-gray-400 group-hover:text-gray-300">Entiendo la <button type="button" onClick={() => onOpenLegal('privacy')} className="text-brand-gold font-bold">Privacidad BYOK</button>.</span>
-                                            </label>
-                                            <label className="flex items-start gap-4 cursor-pointer group">
-                                                <input type="checkbox" checked={agreedManifesto} onChange={(e) => setAgreedManifesto(e.target.checked)} className="mt-1 w-4 h-4 rounded border-white/10 bg-black checked:bg-brand-gold flex-shrink-0" />
-                                                <span className="text-[10px] text-gray-400 group-hover:text-gray-300">He leído el <button type="button" onClick={() => onOpenLegal('manifesto')} className="text-brand-gold font-bold">Manifiesto Dominion</button>.</span>
-                                            </label>
+                                    {mode === 'register' && (
+                                         <div className="space-y-1.5 animate-fade-in">
+                                            <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Tu Nombre o Nombre del Negocio</label>
+                                            <input type="text" value={businessName} onChange={(e) => setBusinessName(e.target.value)} className="w-full px-5 py-3 md:py-3.5 bg-black/40 border border-white/5 rounded-xl text-white focus:border-brand-gold outline-none placeholder-gray-800" placeholder="Ej: Agencia Dominion" required />
                                         </div>
-                                        <div className="text-center text-xs text-brand-gold bg-brand-gold/10 p-3 rounded-lg border border-brand-gold/20 animate-fade-in">
-                                            Estás accediendo al <strong>Precio Fundadores</strong>. Se mantendrá para vos mientras no canceles tu suscripción.
-                                        </div>
-                                    </>
-                                )}
-
-                                {error && <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-[10px] text-center font-black uppercase tracking-widest animate-shake">{error}</div>}
-                                
-                                <button 
-                                    type="submit" 
-                                    disabled={isSubmitDisabled} 
-                                    className={`w-full py-4 md:py-5 rounded-xl font-black text-xs uppercase tracking-[0.2em] transition-all duration-500 ${isSubmitDisabled ? 'bg-white/5 text-gray-700 cursor-not-allowed opacity-50' : 'bg-brand-gold text-black shadow-[0_10px_30px_rgba(212,175,55,0.2)] hover:scale-[1.02] hover:shadow-[0_10px_40px_rgba(212,175,55,0.4)]'}`}
-                                >
-                                    {loading ? (
-                                        <div className="flex items-center justify-center gap-2">
-                                            <div className="w-3 h-3 border-2 border-black/30 border-t-black rounded-full animate-spin"></div>
-                                            Procesando...
-                                        </div>
-                                    ) : (
-                                        mode === 'login' ? 'Entrar al Núcleo' : (mode === 'register' ? 'Inicializar Nodo' : 'Confirmar Cambio')
                                     )}
-                                </button>
-                            </form>
+                                    {mode !== 'recovery' && (
+                                        <div className="space-y-1.5">
+                                            <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Clave de Acceso</label>
+                                            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full px-5 py-3 md:py-3.5 bg-black/40 border border-white/5 rounded-xl text-white focus:border-brand-gold outline-none placeholder-gray-800" placeholder="••••••••" required />
+                                        </div>
+                                    )}
 
-                            <div className="mt-6 md:mt-8 flex flex-col items-center gap-4 md:gap-5 pb-4">
+                                    {mode === 'register' && (
+                                        <div className="space-y-1.5 animate-fade-in">
+                                            <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">¿Para qué lo usarás?</label>
+                                            <select value={intendedUse} onChange={(e) => setIntendedUse(e.target.value as IntendedUse)} className="w-full bg-black/40 border border-white/5 rounded-xl p-4 text-white text-sm focus:border-brand-gold outline-none">
+                                                <option value="HIGH_TICKET_AGENCY">Agencia (High-Ticket)</option>
+                                                <option value="REAL_ESTATE">Inmobiliaria</option>
+                                                <option value="ECOMMERCE_SUPPORT">E-commerce / Soporte</option>
+                                                <option value="PROFESSIONAL_SERVICES">Servicios Profesionales</option>
+                                                <option value="OTHER">Otro</option>
+                                            </select>
+                                        </div>
+                                    )}
+
+                                    {mode === 'recovery' && (
+                                        <div className="space-y-4 animate-fade-in">
+                                            <div className="space-y-1.5">
+                                                <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Master Recovery Key</label>
+                                                <input type="text" value={recoveryKey} onChange={(e) => setRecoveryKey(e.target.value)} className="w-full px-5 py-3 md:py-3.5 bg-black/40 border border-white/5 rounded-xl text-white focus:border-brand-gold outline-none placeholder-gray-800 font-mono" placeholder="ABCD-EFGH-IJKL..." required />
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Nueva Clave</label>
+                                                <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full px-5 py-3 md:py-3.5 bg-black/40 border border-white/5 rounded-xl text-white focus:border-brand-gold outline-none placeholder-gray-800" placeholder="••••••••" required />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {error && (
+                                        <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-xs text-center font-bold animate-fade-in">{error}</div>
+                                    )}
+
+                                    {mode === 'login' && (
+                                        <div className="flex items-center justify-between animate-fade-in pt-2">
+                                            <div className="flex items-center">
+                                                <input id="remember-me" name="remember-me" type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} className="h-3 w-3 text-brand-gold border-gray-600 rounded focus:ring-brand-gold bg-black/40" />
+                                                <label htmlFor="remember-me" className="ml-2 block text-[10px] text-gray-500 uppercase font-black tracking-widest">Recordarme</label>
+                                            </div>
+                                            <button type="button" onClick={() => setMode('recovery')} className="text-[10px] text-gray-500 hover:text-brand-gold uppercase font-black tracking-widest">¿Olvidaste tu clave?</button>
+                                        </div>
+                                    )}
+                                    {mode === 'register' && (
+                                        <div className="flex items-start mt-4 animate-fade-in">
+                                            <input id="legal-agree" name="legal-agree" type="checkbox" checked={agreedLegal} onChange={(e) => setAgreedLegal(e.target.checked)} className="h-3 w-3 text-brand-gold border-gray-600 rounded focus:ring-brand-gold bg-black/40 mt-1" />
+                                            <label htmlFor="legal-agree" className="ml-2 block text-[10px] text-gray-500 uppercase font-black tracking-widest leading-relaxed">
+                                                Acepto la <button type="button" onClick={() => onOpenLegal('privacy')} className="text-brand-gold hover:underline">Política de Privacidad</button> y los <button type="button" onClick={() => onOpenLegal('terms')} className="text-brand-gold hover:underline">Términos y Condiciones</button>.
+                                            </label>
+                                        </div>
+                                    )}
+                                    {mode === 'recovery' && (
+                                        <div className="text-center pt-2">
+                                            <button type="button" onClick={() => setMode('login')} className="text-[10px] text-gray-500 hover:text-brand-gold uppercase font-black tracking-widest">&larr; Volver a Ingresar</button>
+                                        </div>
+                                    )}
+                                </form>
+                            </div>
+                            
+                            <div className="flex-shrink-0 pt-6 border-t border-white/5 mt-auto">
+                                <button
+                                    type="submit"
+                                    disabled={isSubmitDisabled}
+                                    className={`w-full py-5 rounded-xl font-black text-xs uppercase tracking-[0.2em] transition-all duration-300 shadow-lg ${
+                                        isSubmitDisabled
+                                            ? 'bg-white/5 text-gray-700 cursor-not-allowed'
+                                            : 'bg-brand-gold text-black hover:scale-105 active:scale-95 shadow-brand-gold/20'
+                                    }`}
+                                >
+                                    {loading ? 'Procesando Solicitud...' : (mode === 'login' ? 'Acceder' : (mode === 'register' ? 'Crear Nuevo Nodo' : 'Resetear Clave'))}
+                                </button>
                                 {mode === 'login' && (
-                                    <button onClick={() => setMode('recovery')} className="text-[10px] text-gray-600 hover:text-brand-gold uppercase font-black tracking-widest transition-colors">¿Olvidaste tu contraseña?</button>
+                                    <p className="mt-4 text-center text-[10px] font-bold uppercase tracking-widest text-gray-500">
+                                        ¿Sin acceso? <button type="button" onClick={() => setMode('register')} className="text-brand-gold hover:underline">Solicitar Acceso</button>
+                                    </p>
                                 )}
-                                <div className="text-[10px] text-gray-700 font-black uppercase tracking-[0.2em]">
-                                    {mode === 'login' ? '¿Sin acceso?' : '¿Ya tienes un nodo?'}
-                                    <button onClick={() => setMode(mode === 'login' ? 'register' : 'login')} className="ml-3 text-brand-gold hover:underline decoration-brand-gold/30 underline-offset-4">
-                                        {mode === 'login' ? 'Solicitar Nodo' : 'Ingresar'}
-                                    </button>
-                                </div>
                             </div>
                         </>
                     )}
@@ -292,5 +304,3 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClose, onS
         </div>
     );
 };
-
-export default AuthModal;

@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { View, ConnectionStatus } from '../types';
 
@@ -12,6 +13,7 @@ interface HeaderProps {
   currentView: View;
   onNavigate: (view: View) => void;
   connectionStatus: ConnectionStatus;
+  isMobile: boolean; // NEW: Added isMobile prop
 }
 
 const Header: React.FC<HeaderProps> = ({ 
@@ -24,7 +26,8 @@ const Header: React.FC<HeaderProps> = ({
     onToggleBot, 
     currentView, 
     onNavigate, 
-    connectionStatus 
+    connectionStatus,
+    isMobile // NEW: Destructured isMobile
 }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const isSuperAdmin = userRole === 'super_admin';
@@ -127,7 +130,9 @@ const Header: React.FC<HeaderProps> = ({
             ) : (
                 <div className="flex items-center gap-2 sm:gap-4">
                     <button onClick={onLoginClick} className="px-3 py-2 md:px-4 md:py-3 rounded-lg text-[10px] font-black uppercase tracking-widest text-gray-400 hover:text-white hover:bg-white/5 transition-all border border-white/5 md:border-transparent">Acceder</button>
-                    <button onClick={onRegisterClick} className="bg-brand-gold text-black px-3 py-2 md:px-5 md:py-3 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-brand-gold/20 active:scale-95 transition-transform hover:scale-105 whitespace-nowrap">Solicitar Acceso</button>
+                    <button onClick={onRegisterClick} className="bg-brand-gold text-black px-3 py-2 md:px-5 md:py-3 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-brand-gold/20 active:scale-95 transition-transform hover:scale-105 whitespace-nowrap">
+                        {isMobile ? 'Registrar' : 'Solicitar Acceso'}
+                    </button>
                 </div>
             )}
         </div>

@@ -1,5 +1,5 @@
 
-import { Request, Response } from 'express';
+import { Request as ExpressRequest, Response as ExpressResponse } from 'express';
 import { db, sanitizeKey } from '../database.js'; // Import sanitizeKey
 import { logService } from '../services/logService.js';
 // FIX: Import ConnectionStatus enum for type-safe comparisons.
@@ -8,11 +8,7 @@ import { getSessionStatus, processAiResponseForJid } from '../whatsapp/client.js
 import { conversationService } from '../services/conversationService.js'; // Import conversationService
 import { v4 as uuidv4 } from 'uuid'; // Need uuid for Boosts
 
-const getAdminUser = (req: any) => ({ id: req.user.id, username: req.user.username });
-
-// --- Test Bot Specifics ---
-const ELITE_BOT_JID = '5491112345678@s.whatsapp.net'; // Consistent JID for the elite test bot
-const ELITE_BOT_NAME = 'Dominion Elite Test Bot';
+const getAdminUser = (req: ExpressRequest) => ({ id: (req as any).user.id, username: (req as any).user.username });
 
 const TEST_SCRIPT = [
     "Hola, estoy interesado en tus servicios. ¿Cómo funciona?",
@@ -22,7 +18,7 @@ const TEST_SCRIPT = [
     "Suena interesante. Creo que estoy listo para ver una demo o empezar. ¿Qué debo hacer ahora?",
 ];
 
-export const handleGetDashboardMetrics = async (req: any, res: any) => {
+export const handleGetDashboardMetrics = async (req: ExpressRequest, res: ExpressResponse) => {
     try {
         const clients = await db.getAllClients();
         
@@ -38,12 +34,12 @@ export const handleGetDashboardMetrics = async (req: any, res: any) => {
 
         const planDistribution = clients.reduce((acc, client) => {
             if (client.plan_status === 'active') {
-                acc[client.plan_type]++;
+                (acc as any)[client.plan_type]++; // Explicit cast for acc
             }
             return acc;
         }, { pro: 0, starter: 0 });
 
-        const sevenDaysFromNow = new Date();
+        const sevenDaysFromNow = new Date(Date.now());
         sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
         const expiringSoon = clients.filter(c => c.plan_status === 'active' && new Date(c.billing_end_date) <= sevenDaysFromNow);
         
@@ -70,7 +66,7 @@ export const handleGetDashboardMetrics = async (req: any, res: any) => {
     }
 };
 
-export const handleGetAllClients = async (req: any, res: any) => {
+export const handleGetAllClients = async (req: ExpressRequest, res: ExpressResponse) => {
     try {
         const clients = await db.getAllClients();
         res.json(clients);
@@ -80,7 +76,7 @@ export const handleGetAllClients = async (req: any, res: any) => {
     }
 };
 
-export const handleUpdateClient = async (req: any, res: any) => {
+export const handleUpdateClient = async (req: ExpressRequest<any, any, Partial<User>>, res: ExpressResponse) => {
     const { id } = req.params;
     const updates: Partial<User> = req.body;
     const admin = getAdminUser(req);
@@ -98,7 +94,7 @@ export const handleUpdateClient = async (req: any, res: any) => {
     }
 };
 
-export const handleDeleteClient = async (req: any, res: any) => {
+export const handleDeleteClient = async (req: ExpressRequest<{ id: string }>, res: ExpressResponse) => {
     const { id } = req.params;
     const admin = getAdminUser(req);
 
@@ -119,7 +115,7 @@ export const handleDeleteClient = async (req: any, res: any) => {
     }
 };
 
-export const handleActivateClient = async (req: any, res: any) => {
+export const handleActivateClient = async (req: ExpressRequest<{ id: string }>, res: ExpressResponse) => {
     const { id } = req.params;
     const admin = getAdminUser(req);
     try {
@@ -128,8 +124,9 @@ export const handleActivateClient = async (req: any, res: any) => {
             return res.status(404).json({ message: 'Cliente no encontrado.' });
         }
         
-        const newStartDate = new Date();
-        const newEndDate = new Date();
+        // FIX: Explicitly pass Date.now() to the Date constructor to avoid potential TypeScript errors in strict environments.
+        const newStartDate = new Date(Date.now());
+        const newEndDate = new Date(Date.now());
         newEndDate.setDate(newEndDate.getDate() + 30);
 
         const updates: Partial<User> = {
@@ -147,7 +144,7 @@ export const handleActivateClient = async (req: any, res: any) => {
     }
 };
 
-export const handleRenewClient = async (req: any, res: any) => {
+export const handleRenewClient = async (req: ExpressRequest<{ id: string }>, res: ExpressResponse) => {
     const { id } = req.params;
     const admin = getAdminUser(req);
     try {
@@ -156,7 +153,8 @@ export const handleRenewClient = async (req: any, res: any) => {
             return res.status(404).json({ message: 'Cliente no encontrado.' });
         }
         
-        const newEndDate = new Date();
+        // FIX: Explicitly pass Date.now() to the Date constructor to avoid potential TypeScript errors in strict environments.
+        const newEndDate = new Date(Date.now());
         newEndDate.setDate(newEndDate.getDate() + 30);
 
         const updates: Partial<User> = {
@@ -173,7 +171,7 @@ export const handleRenewClient = async (req: any, res: any) => {
     }
 };
 
-export const handleGetLogs = async (req: any, res: any) => {
+export const handleGetLogs = async (req: ExpressRequest, res: ExpressResponse) => {
     try {
         const logs = await db.getLogs(200); // Get last 200 logs
         res.json(logs);
@@ -183,7 +181,7 @@ export const handleGetLogs = async (req: any, res: any) => {
     }
 };
 
-export const handleGetSystemSettings = async (req: any, res: any) => {
+export const handleGetSystemSettings = async (req: ExpressRequest, res: ExpressResponse) => {
     try {
         const settings = await db.getSystemSettings();
         res.json(settings);
@@ -193,7 +191,7 @@ export const handleGetSystemSettings = async (req: any, res: any) => {
     }
 };
 
-export const handleUpdateSystemSettings = async (req: any, res: any) => {
+export const handleUpdateSystemSettings = async (req: ExpressRequest<any, any, Partial<SystemSettings>>, res: ExpressResponse) => {
     try {
         const admin = getAdminUser(req);
         const updates: Partial<SystemSettings> = req.body;
@@ -206,7 +204,7 @@ export const handleUpdateSystemSettings = async (req: any, res: any) => {
     }
 };
 
-export const handleStartTestBot = async (req: any, res: any) => {
+export const handleStartTestBot = async (req: ExpressRequest<any, any, { targetUserId: string }>, res: ExpressResponse) => {
     const { targetUserId } = req.body;
     const admin = getAdminUser(req);
 
@@ -239,7 +237,8 @@ export const handleStartTestBot = async (req: any, res: any) => {
             tags: [],
             internalNotes: [],
             isAiSignalsEnabled: true,
-            lastActivity: new Date()
+            // FIX: Explicitly pass Date.now() to the Date constructor to avoid potential TypeScript errors in strict environments.
+            lastActivity: new Date(Date.now())
         };
         await db.saveUserConversation(targetUserId, cleanConversation);
         
@@ -253,7 +252,7 @@ export const handleStartTestBot = async (req: any, res: any) => {
                     id: `elite_bot_msg_${Date.now()}_${Math.random().toString(36).substring(7)}`, 
                     text: messageText, 
                     sender: 'elite_bot', 
-                    timestamp: new Date() 
+                    timestamp: new Date(Date.now())
                 };
                 await conversationService.addMessage(targetUserId, ELITE_BOT_JID, eliteBotMessage, ELITE_BOT_NAME);
                 await processAiResponseForJid(targetUserId, ELITE_BOT_JID);
@@ -273,7 +272,7 @@ export const handleStartTestBot = async (req: any, res: any) => {
     }
 };
 
-export const handleClearTestBotConversation = async (req: any, res: any) => {
+export const handleClearTestBotConversation = async (req: ExpressRequest<any, any, { targetUserId: string }>, res: ExpressResponse) => {
     const { targetUserId } = req.body;
     const admin = getAdminUser(req);
 
@@ -307,7 +306,7 @@ export const handleClearTestBotConversation = async (req: any, res: any) => {
 
 // --- NEW: DEPTH ENGINE CONTROLLERS ---
 
-export const handleUpdateDepthLevel = async (req: any, res: any) => {
+export const handleUpdateDepthLevel = async (req: ExpressRequest<any, any, { userId: string, depthLevel: number }>, res: ExpressResponse) => {
     const { userId, depthLevel } = req.body;
     const admin = getAdminUser(req);
 
@@ -322,12 +321,12 @@ export const handleUpdateDepthLevel = async (req: any, res: any) => {
     }
 };
 
-export const handleApplyDepthBoost = async (req: any, res: any) => {
+export const handleApplyDepthBoost = async (req: ExpressRequest<any, any, { userId: string, depthDelta: number, durationHours: number }>, res: ExpressResponse) => {
     const { userId, depthDelta, durationHours } = req.body;
     const admin = getAdminUser(req);
 
     try {
-        const startsAt = new Date();
+        const startsAt = new Date(Date.now());
         const endsAt = new Date(startsAt.getTime() + durationHours * 60 * 60 * 1000);
 
         const boost = {

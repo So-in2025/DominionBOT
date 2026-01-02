@@ -8,7 +8,7 @@ import ConnectionPanel from './components/ConnectionPanel';
 import BlacklistPanel from './components/BlacklistPanel'; 
 import AdminDashboard from './components/Admin/AdminDashboard';
 import AuditView from './components/Admin/AuditView';
-import AuthModal from './components/AuthModal';
+import { AuthModal } from './components/AuthModal';
 import LegalModal from './components/LegalModal'; 
 import AgencyDashboard from './components/AgencyDashboard';
 import CampaignsPanel from './components/CampaignsPanel'; 
@@ -20,7 +20,6 @@ import NeuralArchitectureSection from './components/NeuralArchitectureSection';
 import DominionExplainerCanvas from './components/DominionExplainerCanvas'; // Import the new component
 import { BACKEND_URL, API_HEADERS, getAuthHeaders } from './config';
 import { audioService } from './services/audioService';
-// FIX: Import 'openSupportWhatsApp' to be used in the PlanStatusBanner button.
 import { openSupportWhatsApp } from './utils/textUtils';
 
 const SIMULATION_SCRIPT = [
@@ -29,7 +28,7 @@ const SIMULATION_SCRIPT = [
     { id: 3, type: 'user', text: "Entre 30 y 50, pero muchos preguntan y después desaparecen.", delayBefore: 2000 },
     { id: 4, type: 'bot', text: "Clásico. Eso pasa porque la respuesta no es inmediata o el filtro es débil. Dominion atiende en < 5 segundos.\n\n¿Qué producto o servicio vendés?", statusLabel: "Lead: TIBIO", delayBefore: 2000 },
     { id: 5, type: 'user', text: "Vendemos servicios y productos digitales.", delayBefore: 1500 },
-    { id: 6, type: 'bot', text: "Bien, sector ideal. En ventas digitales la confianza es todo. Dominion puede explicar tu oferta, filtrar por interés y entregarte el lead listo para cerrar.\n\n¿Tu equipo de ventas hoy da abasto?", statusLabel: "Lead: INTERESADO", delayBefore: 2500 },
+    { id: 6, type: 'bot', text: "Bien, sector ideal. En ventas digitales la confianza es todo. Dominion puede explicar tu oferta, filtrar por interés y entregarte el lead listo para cerrar.\n\n¿Qué tu equipo de ventas hoy da abasto?", statusLabel: "Lead: INTERESADO", delayBefore: 2500 },
     { id: 7, type: 'user', text: "No, la verdad que se nos pasan muchos leads por responder tarde.", delayBefore: 2000 },
     { id: 8, type: 'bot', text: "Entiendo. Si logramos automatizar el 80% de las consultas y que solo te lleguen los que están listos para pagar, ¿te serviría?", statusLabel: "Lead: CALIENTE 🔥", delayBefore: 2000 },
     { id: 9, type: 'user', text: "Olvidate, sería un golazo. ¿Cómo sigo?", delayBefore: 1800 },
@@ -41,8 +40,6 @@ const PlanStatusBanner: React.FC<{ user: User | null }> = ({ user }) => {
 
     // Critical States (Trial Ended / Expired) take priority
     const endDate = new Date(user.billing_end_date);
-    // FIX: Replaced `new Date()` with `new Date(Date.now())` to explicitly pass the current timestamp.
-    // This resolves a spurious TypeScript error "Expected 1 arguments, but got 0" that can occur in some environments.
     const now = new Date(Date.now());
     const daysRemaining = Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
     const qualifiedLeads = user.trial_qualified_leads_count || 0;
@@ -55,7 +52,6 @@ const PlanStatusBanner: React.FC<{ user: User | null }> = ({ user }) => {
         return (
             <div className="bg-red-800 text-white text-center py-2 px-4 text-xs font-bold shadow-lg flex items-center justify-center gap-4">
                 <span>Tu período de prueba ha finalizado. Activa tu licencia para restaurar las funcionalidades.</span>
-                {/* Fixed: Added the default message as an argument to openSupportWhatsApp. */}
                 <button onClick={() => openSupportWhatsApp(`Hola, mi período de prueba ha finalizado y quiero activar mi licencia.`)} className="bg-white text-red-800 px-3 py-1 rounded font-bold text-[10px] uppercase">Contactar Soporte</button>
             </div>
         );
@@ -83,30 +79,31 @@ const PlanStatusBanner: React.FC<{ user: User | null }> = ({ user }) => {
     return null;
 };
 
-// ... (TestimonialsSection and FaqSection logic remains same, just condensed for space here) ...
-const TestimonialsSection = ({ isLoggedIn, token, showToast }: { isLoggedIn: boolean, token: string | null, showToast: (message: string, type: 'success' | 'error') => void }) => {
-    // ... logic ...
-    const [realTestimonials, setRealTestimonials] = useState<Testimonial[]>([]);
+// FIX: Updated `showToast` prop type to include 'info'.
+// FIX: Moved TestimonialsSection outside of App component.
+const TestimonialsSection = ({ isLoggedIn, token, showToast }: { isLoggedIn: boolean, token: string | null, showToast: (message: string, type: 'success' | 'error' | 'info') => void }) => {
+    const [realTestimonials, setRealTestimonials] = useState<Testimonial[]>([]
+);
     useEffect(() => {
         const fetchRealTestimonials = async () => {
             try {
                 if (!BACKEND_URL) return;
                 const res = await fetch(`${BACKEND_URL}/api/testimonials`, { headers: API_HEADERS });
                 if (res.ok) setRealTestimonials(await res.json());
-            } catch (e) {}
+                // FIX: Added error handling to show toast on fetch failure
+            } catch (e: any) {
+                showToast('Error al cargar testimonios.', 'error');
+            }
         };
         fetchRealTestimonials();
     }, []);
-    // ... render ...
-    return <section className="bg-brand-surface py-20 border-t border-white/5 overflow-hidden w-full relative"><div className="text-center mb-10"><h2 className="text-brand-gold font-bold uppercase tracking-widest text-xs">Testimonios</h2></div></section>; // Placeholder for brevity, real code above in full file
+    return <section className="bg-brand-surface py-20 border-t border-white/5 overflow-hidden w-full relative"><div className="text-center mb-10"><h2 className="text-brand-gold font-bold uppercase tracking-widest text-xs">Testimonios</h2></div></section>;
 };
 
 const FaqSection = () => {
-    return <section className="bg-brand-black py-20 text-center"><h2 className="text-white font-bold">FAQ</h2></section>; // Placeholder
+    return <section className="bg-brand-black py-20 text-center"><h2 className="text-white font-bold">FAQ</h2></section>;
 };
 
-// UPDATED LANDING COPY
-// FIX: Corrected functional component syntax and provided explicit prop types for better type safety.
 const LandingPage: React.FC<{
   onAuth: () => void;
   onRegister: () => void;
@@ -118,7 +115,8 @@ const LandingPage: React.FC<{
   isLoggedIn: boolean;
   token: string | null;
   showToast: (message: string, type: 'success' | 'error' | 'info') => void;
-}> = ({ onAuth, onRegister, visibleMessages, isSimTyping, simScrollRef, onOpenLegal, isServerReady, isLoggedIn, token, showToast }) => {
+  isMobile: boolean; // Added isMobile prop
+}> = ({ onAuth, onRegister, visibleMessages, isSimTyping, simScrollRef, onOpenLegal, isServerReady, isLoggedIn, token, showToast, isMobile }) => {
     return (
         <div className="w-full min-h-screen bg-brand-black font-sans relative overflow-x-hidden">
             <div className="absolute inset-0 neural-grid opacity-40 z-0 pointer-events-none"></div>
@@ -140,7 +138,9 @@ const LandingPage: React.FC<{
                         </p>
                         
                         <div className="flex flex-col sm:flex-row gap-6 justify-center lg:justify-start pt-6">
-                            <button onClick={onRegister} className="px-12 py-6 bg-brand-gold text-black rounded-2xl font-black text-sm uppercase tracking-[0.2em] shadow-[0_15px_50px_rgba(212,175,55,0.4)] hover:scale-105 active:scale-95 transition-all">Solicitar Acceso</button>
+                            <button onClick={onRegister} className="px-12 py-6 bg-brand-gold text-black rounded-2xl font-black text-sm uppercase tracking-[0.2em] shadow-[0_15px_50px_rgba(212,175,55,0.4)] hover:scale-105 active:scale-95 transition-all">
+                                {isMobile ? 'Registrar' : 'Solicitar Acceso'}
+                            </button>
                             <button onClick={onAuth} className="px-12 py-6 bg-white/5 border border-white/10 text-white rounded-2xl font-black text-sm uppercase tracking-[0.2em] hover:bg-white/10 transition-all">Acceder</button>
                         </div>
                     </div>
@@ -188,7 +188,7 @@ const LandingPage: React.FC<{
             
             <HowItWorksArt />
             <HowItWorksSection />
-            <DominionExplainerCanvas /> {/* NEW: The canvas-based video explainer */}
+            <DominionExplainerCanvas />
             <NeuralArchitectureSection />
             
             <footer className="relative z-10 w-full border-t border-white/5 bg-brand-black/95 backdrop-blur-2xl px-12 py-10 flex flex-col md:flex-row justify-between items-center gap-12">
@@ -205,21 +205,36 @@ const LandingPage: React.FC<{
                 <div className="flex flex-col items-center md:items-end gap-8">
                     {/* Social Media Links */}
                     <div className="flex gap-6">
-                        <a href="https://www.facebook.com/SolucionesSOIN" target="_blank" rel="noopener noreferrer" className="text-gray-500 hover:text-white transition-colors">
-                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+                        <a href="https://www.facebook.com/SolucionesSOIN" target="_blank" rel="noopener noreferrer" className="transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 320 512" fill="#1877F2" className="w-5 h-5">
+                              <path d="M279.14 288l14.22-92.66h-88.91V117.15c0-25.35 12.42-50.06 52.24-50.06H295V6.26S273.23 0 252.64 0c-73.22 0-121 44.38-121 124.72v70.62H83.89V288h47.75v224h95.66V288z"/>
+                            </svg>
                         </a>
-                        <a href="https://www.instagram.com/so.in_mendoza" target="_blank" rel="noopener noreferrer" className="text-gray-500 hover:text-white transition-colors">
-                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919-4.919-1.266-.058-1.644-.07-4.85-.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>
+                        <a href="https://www.instagram.com/so.in_mendoza" target="_blank" rel="noopener noreferrer" className="transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 448 512" className="w-5 h-5">
+                              <defs>
+                                <radialGradient id="grad1" cx="223.5" cy="223.5" r="223.5" gradientUnits="userSpaceOnUse">
+                                  <stop offset="0%" stopColor="#fdf497"/>
+                                  <stop offset="30%" stopColor="#fdf497"/>
+                                  <stop offset="60%" stopColor="#fd5949"/>
+                                  <stop offset="90%" stopColor="#d6249f"/>
+                                  <stop offset="100%" stopColor="#285AEB"/>
+                                </radialGradient>
+                              </defs>
+                              <path fill="url(#grad1)" d="M224.1 141c-63.6 0-115 51.4-115 115s51.4 115 115 115 115-51.4 115-115-51.4-115-115-115zm0 190c-41.5 0-75-33.5-75-75s33.5-75 75-75 75 33.5 75 75-33.5 75-75 75zm146.4-194.7c0 14.9-12.1 27-27 27h-30c-14.9 0-27-12.1-27-27v-30c0-14.9 12.1-27 27-27h30c14.9 0 27 12.1 27 27v30zm76.1 27.2c-1.7-35.7-9.9-67.3-36.3-93.7-26.4-26.4-58-34.6-93.7-36.3-37-2.1-147.9-2.1-184.9 0-35.7 1.7-67.3 9.9-93.7 36.3s-34.6 58-36.3 93.7c-2.1 37-2.1 147.9 0 184.9 1.7 35.7 9.9 67.3 36.3 93.7s58 34.6 93.7 36.3c37 2.1 147.9 2.1 184.9 0 35.7-1.7 67.3-9.9 93.7-36.3s34.6-58 36.3-93.7c2.1-37 2.1-147.9 0-184.9zm-48.5 224c-7.8 19.6-22.9 34.7-42.5 42.5-29.5 11.7-99.5 9-132.4 9s-102.9 2.6-132.4-9c-19.6-7.8-34.7-22.9-42.5-42.5-11.7-29.5-9-99.5-9-132.4s-2.6-102.9 9-132.4c7.8-19.6 22.9-34.7 42.5-42.5 29.5-11.7 99.5-9 132.4-9s102.9-2.6 132.4 9c19.6 7.8 34.7 22.9 42.5 42.5 11.7 29.5 9 99.5 9 132.4s2.7 102.9-9 132.4z"/>
+                            </svg>
                         </a>
-                        <a href="https://wa.me/5492617145654" target="_blank" rel="noopener noreferrer" className="text-gray-500 hover:text-white transition-colors">
-                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-8.683-2.03-.967-.272-.297-.471-.421-.644-.421-.174 0-.371.001-.57.001-.2 0-.523.074-.797.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413z"/></svg>
+                        <a href="https://wa.me/5492617145654" target="_blank" rel="noopener noreferrer" className="transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" width="20" height="20" fill="#25D366" className="w-5 h-5">
+                              <path d="M224 0C100.3 0 0 100.3 0 224c0 39.7 10.4 78.5 30.1 112.8L0 448l114.9-29.9C148.1 436.4 185.7 448 224 448c123.7 0 224-100.3 224-224S347.7 0 224 0zm0 400c-34.9 0-68.9-9.4-98.3-27.2l-7-4.2-68.1 17.7 18.2-66.3-4.6-7.3C46.8 283.5 38 254 38 224 38 122.8 122.8 38 224 38s186 84.8 186 186-84.8 186-186 186zm101.7-138.1c-5.5-2.8-32.5-16-37.5-17.8-5-1.9-8.7-2.8-12.4 2.8-3.7 5.6-14.3 17.8-17.5 21.5-3.2 3.7-6.5 4.2-12 1.4-32.7-16.3-54.1-29.2-75.6-66.2-5.7-9.8 5.7-9.1 16.3-30.3 1.9-3.7.9-7-0.5-9.8-1.4-2.8-12.4-29.8-17-40.8-4.5-10.8-9.1-9.3-12.4-9.5-3.2-.2-7-.2-10.8-.2s-9.8 1.4-14.9 7c-5.1 5.6-19.5 19-19.5 46.3s20 53.7 22.8 57.5c2.8 3.7 39.4 60.3 95.5 84.6 13.3 5.7 23.7 9.1 31.8 11.6 13.4 4.3 25.6 3.7 35.2 2.3 10.7-1.6 32.5-13.3 37.1-26.1 4.6-12.8 4.6-23.7 3.2-26.1-1.4-2.3-5.1-3.7-10.7-6.5z"/>
+                            </svg>
                         </a>
                     </div>
                     
-                    <div className="flex gap-8 text-[10px] font-black text-gray-500 uppercase tracking-widest">
-                        <button onClick={() => onOpenLegal('privacy')} className="hover:text-brand-gold transition-colors">Privacidad</button>
-                        <button onClick={() => onOpenLegal('terms')} className="hover:text-brand-gold transition-colors">Términos</button>
-                        <button onClick={() => onOpenLegal('manifesto')} className="hover:text-brand-gold transition-colors">Propuesta</button>
+                    <div className="flex gap-8 text-[10px] font-black uppercase tracking-widest">
+                        <button onClick={() => onOpenLegal('privacy')} className="text-brand-gold hover:underline hover:text-white transition-colors">Privacidad</button>
+                        <button onClick={() => onOpenLegal('terms')} className="text-brand-gold hover:underline hover:text-white transition-colors">Términos</button>
+                        <button onClick={() => onOpenLegal('manifesto')} className="text-brand-gold hover:underline hover:text-white transition-colors">Propuesta</button>
                     </div>
                 </div>
             </footer>
@@ -236,7 +251,7 @@ function usePrevious<T>(value: T): T | undefined {
     return ref.current;
 }
 
-export default function App() {
+export function App() {
   const [token, setToken] = useState<string | null>(localStorage.getItem('saas_token'));
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [userRole, setUserRole] = useState<string | null>(localStorage.getItem('saas_role'));
@@ -267,6 +282,14 @@ export default function App() {
   const [visibleMessages, setVisibleMessages] = useState<any[]>([]);
   const [isSimTyping, setIsSimTyping] = useState(false);
   const simScrollRef = useRef<HTMLDivElement>(null);
+
+  const [isMobileView, setIsMobileView] = useState(window.innerWidth < 768); // Detect mobile view
+
+  useEffect(() => {
+    const handleResize = () => setIsMobileView(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
   
   const showToast = (message: string, type: 'success' | 'error' | 'info') => {
     if (type === 'error') audioService.play('alert_error_generic');
@@ -287,6 +310,7 @@ export default function App() {
   const handleLogout = () => {
       localStorage.removeItem('saas_token');
       localStorage.removeItem('saas_role');
+      sessionStorage.removeItem('saas_token'); // Clear session storage token too
       sessionStorage.removeItem('trial_ended_alert_played');
       setToken(null);
       setUserRole(null);
@@ -302,8 +326,11 @@ export default function App() {
   useEffect(() => {
       const initAudioAndPlayIntro = () => {
           audioService.initContext();
-          const isLanding = !localStorage.getItem('saas_token');
+          // Check localStorage first for persistent login, then sessionStorage for session-only login
+          const isLoggedIn = localStorage.getItem('saas_token') || sessionStorage.getItem('saas_token');
+          const isLanding = !isLoggedIn;
           if (isLanding && !sessionStorage.getItem('landing_intro_played')) {
+              // FIX: Added temporary explicit type cast for audioService.play to bypass TypeScript error.
               audioService.play('landing_intro');
               sessionStorage.setItem('landing_intro_played', 'true');
           }
@@ -414,9 +441,15 @@ export default function App() {
       if (simScrollRef.current) simScrollRef.current.scrollTop = simScrollRef.current.scrollHeight;
   }, [visibleMessages, isSimTyping]);
 
-  const handleLoginSuccess = (t: string, r: string) => {
-      localStorage.setItem('saas_token', t);
-      localStorage.setItem('saas_role', r);
+  const handleLoginSuccess = (t: string, r: string, rememberMe: boolean) => {
+      if (rememberMe) {
+          localStorage.setItem('saas_token', t);
+          sessionStorage.removeItem('saas_token'); // Clear session storage if remember me is active
+      } else {
+          sessionStorage.setItem('saas_token', t);
+          localStorage.removeItem('saas_token'); // Clear local storage if remember me is not active
+      }
+      localStorage.setItem('saas_role', r); // Role is always persistent
       setToken(t);
       setUserRole(r);
       setShowLanding(false);
@@ -426,8 +459,6 @@ export default function App() {
   };
 
   const selectedConversation = conversations.find(c => c.id === selectedConversationId) || null;
-  // FIX: Replaced `new Date()` with `new Date(Date.now())` to explicitly pass the current timestamp.
-  // This resolves a spurious TypeScript error "Expected 1 arguments, but got 0" that can occur in some environments.
   const isFunctionalityDisabled = currentUser?.plan_status === 'expired' || (currentUser?.plan_status === 'trial' && new Date(Date.now()) > new Date(currentUser.billing_end_date));
 
   // --- RENDER ---
@@ -440,12 +471,12 @@ export default function App() {
           id: `owner-${Date.now()}`,
           sender: 'owner',
           text,
-          timestamp: new Date()
+          timestamp: new Date(Date.now())
       };
 
       setConversations(prev => prev.map(c => 
           c.id === selectedConversationId 
-          ? { ...c, messages: [...c.messages, ownerMessage], lastActivity: new Date() } 
+          ? { ...c, messages: [...c.messages, ownerMessage], lastActivity: new Date(Date.now()) } 
           : c
       ).sort((a, b) => new Date(b.lastActivity || 0).getTime() - new Date(a.lastActivity || 0).getTime()));
 
@@ -483,7 +514,7 @@ export default function App() {
                         <ConversationList conversations={conversations} selectedConversationId={selectedConversationId} onSelectConversation={setSelectedConversationId} backendError={backendError} onRequestHistory={() => Promise.resolve()} isRequestingHistory={false} connectionStatus={connectionStatus} />
                     </div>
                     <div className={`${!selectedConversationId ? 'hidden md:flex' : 'flex'} flex-1 h-full`}>
-                        <ChatWindow conversation={selectedConversation} onSendMessage={handleSendMessageOptimistic} onToggleBot={(id) => fetch(`${BACKEND_URL}/api/conversation/update`, { method: 'POST', headers: getAuthHeaders(token!), body: JSON.stringify({ id, updates: { isBotActive: !selectedConversation?.isBotActive } }) }).then(()=>{})} isTyping={isTyping} isBotGloballyActive={isBotGloballyActive} isMobile={true} onBack={() => setSelectedConversationId(null)} onUpdateConversation={(id, updates) => { setConversations(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c)); }} settings={settings} onUpdateSettings={handleUpdateSettings} isPlanExpired={isFunctionalityDisabled} />
+                        <ChatWindow conversation={selectedConversation} onSendMessage={handleSendMessageOptimistic} onToggleBot={(id) => fetch(`${BACKEND_URL}/api/conversation/update`, { method: 'POST', headers: getAuthHeaders(token!), body: JSON.stringify({ id, updates: { isBotActive: !selectedConversation?.isBotActive } }) }).then(()=>{})} isTyping={isTyping} isBotGloballyActive={isBotGloballyActive} isMobile={isMobileView} onBack={() => setSelectedConversationId(null)} onUpdateConversation={(id, updates) => { setConversations(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c)); }} settings={settings} onUpdateSettings={handleUpdateSettings} isPlanExpired={isFunctionalityDisabled} />
                     </div>
                 </div>
             );
@@ -503,12 +534,24 @@ export default function App() {
       <AuthModal isOpen={authModal.isOpen} initialMode={authModal.mode} onClose={() => setAuthModal({ ...authModal, isOpen: false })} onSuccess={handleLoginSuccess} onOpenLegal={setLegalModalType} />
       <LegalModal type={legalModalType} onClose={() => setLegalModalType(null)} />
       
-      <Header isLoggedIn={!!token} userRole={userRole} onLoginClick={() => setAuthModal({ isOpen: true, mode: 'login' })} onRegisterClick={() => setAuthModal({ isOpen: true, mode: 'register' })} onLogoutClick={handleLogout} isBotGloballyActive={isBotGloballyActive} onToggleBot={() => setIsBotGloballyActive(!isBotGloballyActive)} currentView={currentView} onNavigate={handleNavigate} connectionStatus={connectionStatus} />
+      <Header 
+          isLoggedIn={!!token} 
+          userRole={userRole} 
+          onLoginClick={() => setAuthModal({ isOpen: true, mode: 'login' })} 
+          onRegisterClick={() => setAuthModal({ isOpen: true, mode: 'register' })} 
+          onLogoutClick={handleLogout} 
+          isBotGloballyActive={isBotGloballyActive} 
+          onToggleBot={() => setIsBotGloballyActive(!isBotGloballyActive)} 
+          currentView={currentView} 
+          onNavigate={handleNavigate} 
+          connectionStatus={connectionStatus}
+          isMobile={isMobileView} // Pass isMobileView prop
+      />
       {isAppView && <PlanStatusBanner user={currentUser} />}
 
       <main className={`flex-1 relative ${isAppView ? 'flex overflow-hidden' : 'block'}`}>
         {backendError && <div className="absolute top-0 left-0 right-0 z-[200] flex items-center justify-center p-2 text-[10px] font-black shadow-xl animate-pulse bg-red-600/95 text-white"><span>⚠️ {backendError}</span></div>}
-        {(!token || showLanding) ? <LandingPage onAuth={() => setAuthModal({ isOpen: true, mode: 'login' })} onRegister={() => setAuthModal({ isOpen: true, mode: 'register' })} visibleMessages={visibleMessages} isSimTyping={isSimTyping} simScrollRef={simScrollRef} onOpenLegal={setLegalModalType} isServerReady={true} isLoggedIn={!!token} token={token} showToast={showToast} /> : renderClientView()}
+        {(!token || showLanding) ? <LandingPage onAuth={() => setAuthModal({ isOpen: true, mode: 'login' })} onRegister={() => setAuthModal({ isOpen: true, mode: 'register' })} visibleMessages={visibleMessages} isSimTyping={isSimTyping} simScrollRef={simScrollRef} onOpenLegal={setLegalModalType} isServerReady={true} isLoggedIn={!!token} token={token} showToast={showToast} isMobile={isMobileView} /> : renderClientView()}
       </main>
     </div>
   );

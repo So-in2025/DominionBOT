@@ -1,4 +1,5 @@
 
+
 import makeWASocket, {
   DisconnectReason,
   makeCacheableSignalKeyStore,
@@ -361,7 +362,8 @@ async function _commonAiProcessingLogic(userId: string, jid: string, user: User,
             await sock.sendMessage(jid, { text: aiResult.responseText });
         }
 
-        const botMessage: Message = { id: `bot-${Date.now()}`, text: aiResult.responseText, sender: 'bot', timestamp: new Date() };
+        // FIX: Explicitly pass Date.now() to the Date constructor to avoid potential TypeScript errors in strict environments.
+        const botMessage: Message = { id: `bot-${Date.now()}`, text: aiResult.responseText, sender: 'bot', timestamp: new Date(Date.now()) };
         await conversationService.addMessage(userId, jid, botMessage);
     }
     

@@ -34,7 +34,8 @@ class CampaignService {
     }
 
     // NEW: Force execute specific campaign ignoring schedule/window
-    public async forceExecuteCampaign(campaignId: string, userId: string) {
+    // FIX: Added 'force' parameter to the method signature.
+    public async forceExecuteCampaign(campaignId: string, userId: string, force: boolean = false) {
         if (this.processingCampaignIds.has(campaignId)) {
             throw new Error("⚠️ La campaña ya se está ejecutando. Espera a que termine.");
         }
@@ -43,7 +44,7 @@ class CampaignService {
         if (!campaign) throw new Error("Campaña no encontrada");
         if (campaign.userId !== userId) throw new Error("Acceso denegado");
 
-        logService.warn(`[CAMPAIGN] ⚡ EJECUCIÓN FORZADA MANUAL INICIADA para: ${campaign.name}`, userId);
+        logService.warn(`[CAMPAIGN] ⚡ EJECUTANDO CAMPAÑA ${force ? '(FORZADA)' : ''}: ${campaign.name}`, userId);
         
         // LOCK IMMEDIATELY
         this.processingCampaignIds.add(campaignId);
@@ -250,7 +251,8 @@ class CampaignService {
         }
     }
 
-    private calculateNextRun(campaign: Campaign): string {
+    // FIX: Changed calculateNextRun from private to public.
+    public calculateNextRun(campaign: Campaign): string {
         const nowArg = this.getArgentinaDate();
         const type = campaign.schedule.type;
 

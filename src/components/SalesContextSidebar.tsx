@@ -1,4 +1,5 @@
 
+
 import React, { useState } from 'react';
 import { Conversation, InternalNote, LeadStatus } from '../types';
 
@@ -33,7 +34,19 @@ const SalesContextSidebar: React.FC<SalesContextSidebarProps> = ({
   const handleAddNote = (e: React.FormEvent) => {
     e.preventDefault();
     if (newNote.trim()) {
-      onAddNote(newNote.trim());
+      const newNoteEntry: InternalNote = {
+        id: Date.now().toString(),
+        author: 'HUMAN',
+        // FIX: Explicitly pass Date.now() to the Date constructor to avoid potential TypeScript errors in strict environments.
+        timestamp: new Date(Date.now()),
+        note: newNote.trim()
+      };
+      onAddNote(newNoteEntry.note); // Ensure the correct parameter is passed if onAddNote expects string
+      if (onUpdateConversation) {
+          onUpdateConversation(conversation.id, { 
+              internalNotes: [...(conversation.internalNotes || []), newNoteEntry] 
+          });
+      }
       setNewNote('');
     }
   };

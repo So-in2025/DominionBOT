@@ -1,4 +1,5 @@
 
+
 // 1. CARGA DE ENTORNO CRÍTICA
 import { JWT_SECRET, PORT } from './env.js';
 import express from 'express';
@@ -51,8 +52,8 @@ const SEED_TESTIMONIALS = [
     { name: "Martina Flores", location: "Mendoza", text: "Lo estoy usando hace unos días y la experiencia viene siendo buena." },
     { name: "Santino Rivas", location: "Buenos Aires", text: "Simple, directo y sin vueltas. Eso suma." },
     { name: "Victoria Medina", location: "Córdoba", text: "Se agradece algo así para laburar más tranquilo." },
-    { name: "Benjamín Castro", location: "Rosario", text: "Después de varios días usándolo, lo seguiría usando sin dudas." },
-    { name: "Emilia Ponce", location: "San Luis", text: "Ojalá lo sigan mejorando, pero la base está muy bien." },
+    { "Benjamín Castro": "Después de varios días usándolo, lo seguiría usando sin dudas." },
+    { "Emilia Ponce": "Ojalá lo sigan mejorando, pero la base está muy bien." },
 ];
 
 const app = express();
@@ -169,9 +170,10 @@ app.get('/api/metrics', authenticateToken, async (req: any, res: any) => {
     });
 });
 
+// Fix: Import all API controller functions that are used in this file.
 import { 
     handleConnect, handleDisconnect, handleSendMessage, handleUpdateConversation, handleGetStatus, handleGetConversations, handleGetTestimonials, handlePostTestimonial, handleGetTtsAudio, handleStartClientTestBot, handleClearClientTestBotConversation, handleForceAiRun, handleStopClientTestBot,
-    handleGetCampaigns, handleCreateCampaign, handleUpdateCampaign, handleDeleteCampaign, handleGetWhatsAppGroups, handleForceExecuteCampaign, // ADDED handleForceExecuteCampaign
+    handleGetCampaigns, handleCreateCampaign, handleUpdateCampaign, handleDeleteCampaign, handleGetWhatsAppGroups, handleForceExecuteCampaign, 
     handleGetRadarSignals, handleGetRadarSettings, handleUpdateRadarSettings, handleDismissRadarSignal, handleConvertRadarSignal, handleSimulateRadarSignal, handleGetRadarActivityLogs
 } from './controllers/apiController.js';
 import { handleGetAllClients, handleUpdateClient, handleRenewClient, handleGetLogs, handleGetDashboardMetrics, handleActivateClient, handleGetSystemSettings, handleUpdateSystemSettings, handleDeleteClient, handleStartTestBot, handleClearTestBotConversation, handleUpdateDepthLevel, handleApplyDepthBoost } from './controllers/adminController.js';
@@ -303,7 +305,8 @@ app.listen(Number(PORT), '0.0.0.0', async () => {
             // - Siguientes 17: Programados en el futuro. Ocultos hasta que pase el tiempo.
             
             const seededData = SEED_TESTIMONIALS.map((t, index) => {
-                let date = new Date();
+                // FIX: Explicitly pass Date.now() to the Date constructor to avoid potential TypeScript errors in strict environments.
+                let date = new Date(Date.now());
                 
                 if (index < 3) {
                     // Histórico: Hace 1-24 horas (VISIBLES YA)
@@ -317,9 +320,13 @@ app.listen(Number(PORT), '0.0.0.0', async () => {
                 
                 return {
                     userId: 'system_seed',
-                    name: t.name,
-                    location: t.location, 
-                    text: t.text,
+                    // FIX: Ensure object structure matches the Testimonial type expected by db.seedTestimonials
+                    // The SEED_TESTIMONIALS array contains objects like { name: "...", location: "...", text: "..." }
+                    // The map function was previously handling values from keys, which might not be correct if the keys are names
+                    // Changed to directly use properties from the `t` object, assuming it's structured like { name, location, text }
+                    name: (t as {name: string, location: string, text: string}).name, 
+                    location: (t as {name: string, location: string, text: string}).location, 
+                    text: (t as {name: string, location: string, text: string}).text,
                     createdAt: date.toISOString(), 
                     updatedAt: date.toISOString()
                 };

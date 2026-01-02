@@ -1,3 +1,4 @@
+
 import bcrypt from 'bcrypt';
 import mongoose, { Schema, Model } from 'mongoose';
 // FIX: Import LogLevel to use in SystemSettings defaults
@@ -280,7 +281,7 @@ class Database {
         whatsapp_number: username,
         plan_type: 'pro',
         plan_status: 'trial', 
-        billing_start_date: new Date().toISOString(),
+        billing_start_date: new Date(Date.now()).toISOString(),
         billing_end_date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(), 
         trial_qualified_leads_count: 0,
         is_founder: true, // NEW: Mark new users as founders
@@ -453,6 +454,10 @@ class Database {
       return newTestimonial.toObject();
   }
 
+  async getTestimonial(testimonialId: string): Promise<Testimonial | null> {
+      return await TestimonialModel.findById(testimonialId).lean();
+  }
+
   async getTestimonials(): Promise<Testimonial[]> {
       return await TestimonialModel.find().sort({ createdAt: -1 }).lean();
   }
@@ -533,6 +538,11 @@ class Database {
       
       await UserModel.updateOne({ id: userId }, { $set: { radar: newRadar } });
       return newRadar as RadarSettings;
+  }
+
+  // FIX: Added getRadarSignal method for retrieving a single radar signal.
+  async getRadarSignal(id: string): Promise<RadarSignal | null> {
+      return await RadarSignalModel.findOne({ id }).lean();
   }
 
   async createRadarSignal(signal: RadarSignal): Promise<RadarSignal> {
