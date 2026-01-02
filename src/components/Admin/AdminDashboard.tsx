@@ -11,7 +11,7 @@ interface AdminDashboardProps {
     onLogout: () => void;
 }
 
-type AdminView = 'dashboard' | 'clients' | 'logs' | 'test_bot' | 'depth_control'; // Added depth_control
+type AdminView = 'dashboard' | 'clients' | 'logs' | 'test_bot' | 'depth_control';
 
 const KpiCard: React.FC<{ label: string; value: string | number; icon: React.ReactNode; isCurrency?: boolean; }> = ({ label, value, icon, isCurrency }) => (
     <div className="bg-brand-surface border border-white/5 rounded-2xl p-6 flex items-center gap-6 group hover:bg-white/5 transition-all">
@@ -85,8 +85,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
         return () => clearInterval(interval);
     }, [token, backendUrl]);
 
-    // ... (Existing functions: updateSystemSettings, testSupportLink, executeReset, handleStartTestBot, etc.) ...
-    // Keeping existing helper functions for brevity, but they should be included in full code.
     const updateSystemSettings = async () => {
         if (!supportNumberInput || supportNumberInput.length < 10) {
             showToast('Número incompleto.', 'error');
@@ -126,8 +124,42 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
         } catch(e) {}
     };
 
-    const handleStartTestBot = async () => { /* ... existing ... */ };
-    const handleClearTestBotConversation = async () => { /* ... existing ... */ };
+    const handleStartTestBot = async () => {
+        if (!selectedTestClient) return;
+        setIsTestBotRunning(true);
+        try {
+            const res = await fetch(`${backendUrl}/api/admin/test-bot/start`, {
+                method: 'POST',
+                headers: getAuthHeaders(token),
+                body: JSON.stringify({ targetUserId: selectedTestClient })
+            });
+            if (res.ok) {
+                showToast("Simulación iniciada en background.", 'success');
+            } else {
+                showToast("Error al iniciar simulación.", 'error');
+            }
+        } catch (e) {
+            showToast("Error de conexión.", 'error');
+        } finally {
+            setIsTestBotRunning(false);
+        }
+    };
+
+    const handleClearTestBotConversation = async () => {
+        if (!selectedTestClient) return;
+        try {
+            const res = await fetch(`${backendUrl}/api/admin/test-bot/clear`, {
+                method: 'POST',
+                headers: getAuthHeaders(token),
+                body: JSON.stringify({ targetUserId: selectedTestClient })
+            });
+            if (res.ok) {
+                showToast("Conversación de prueba eliminada.", 'success');
+            }
+        } catch (e) {
+            showToast("Error de conexión.", 'error');
+        }
+    };
 
     // NEW: Depth Control Handlers
     const handleUpdateDepth = async () => {
@@ -188,17 +220,47 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
                 return (
                     <div className="space-y-8">
                         <DashboardView metrics={metrics} onAudit={onAudit} />
+                        
+                        {/* System Settings */}
                         <div className="bg-brand-surface border border-brand-gold/20 rounded-2xl p-6 shadow-xl relative overflow-hidden group">
-                            {/* Support Settings UI kept same as previous code */}
                             <div className="flex items-center gap-3 mb-6">
                                 <h3 className="text-sm font-black text-white uppercase tracking-widest">Configuración Global</h3>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-end">
                                 <div className="space-y-3">
                                     <label className="text-[10px] font-bold text-brand-gold uppercase tracking-widest">WhatsApp Soporte</label>
-                                    <input type="text" value={supportNumberInput} onChange={(e) => setSupportNumberInput(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-sm text-white" />
+                                    <div className="flex gap-2">
+                                        <input type="text" value={supportNumberInput} onChange={(e) => setSupportNumberInput(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-sm text-white" placeholder="549..." />
+                                        <button onClick={testSupportLink} className="p-4 bg-white/5 border border-white/10 rounded-xl text-gray-400 hover:text-white" title="Probar Link">
+                                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                        </button>
+                                    </div>
                                 </div>
                                 <button onClick={updateSystemSettings} className="w-full py-4 bg-brand-gold text-black rounded-xl font-black text-xs uppercase tracking-[0.2em]">Guardar</button>
+                            </div>
+                        </div>
+
+                        {/* Danger Zone */}
+                        <div className="bg-red-900/10 border border-red-500/20 rounded-2xl p-6">
+                            <h3 className="text-sm font-black text-red-500 uppercase tracking-widest mb-6">Zona de Peligro</h3>
+                            <div className="flex items-end gap-4">
+                                <div className="flex-1 space-y-2">
+                                    <label className="text-[9px] font-bold text-red-400 uppercase">Confirmación</label>
+                                    <input 
+                                        type="text" 
+                                        placeholder='Escribe "RESET" para confirmar' 
+                                        value={resetConfirmation}
+                                        onChange={(e) => setResetConfirmation(e.target.value)}
+                                        className="w-full bg-black/50 border border-red-500/30 rounded-xl p-3 text-red-500 text-xs font-black placeholder-red-900/50"
+                                    />
+                                </div>
+                                <button 
+                                    onClick={executeReset}
+                                    disabled={resetConfirmation !== 'RESET'}
+                                    className="px-8 py-3 bg-red-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest disabled:opacity-50 hover:bg-red-500 transition-all"
+                                >
+                                    Hard Reset
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -208,8 +270,56 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
             case 'logs':
                 return <LogTable logs={logs} getLogLevelPill={getLogLevelPill} />;
             case 'test_bot':
-                // Keeping existing Test Bot UI (Simulated)
-                return <div className="text-center p-10 text-gray-500">Test Bot Interface Placeholder (Same as before)</div>;
+                return (
+                    <div className="bg-brand-surface border border-white/5 rounded-2xl p-8 space-y-8">
+                        <div className="border-b border-white/10 pb-6">
+                            <h3 className="text-xl font-black text-white uppercase tracking-widest">Simulador de Bot Élite</h3>
+                            <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-2">Inyecta conversaciones de prueba en cuentas de clientes</p>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            <div className="space-y-4">
+                                <label className="block text-xs font-bold text-brand-gold uppercase tracking-widest">Cliente Objetivo</label>
+                                <select 
+                                    className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-sm text-white outline-none focus:border-brand-gold"
+                                    value={selectedTestClient || ''}
+                                    onChange={(e) => setSelectedTestClient(e.target.value)}
+                                >
+                                    <option value="">-- Seleccionar --</option>
+                                    {clients.map(c => <option key={c.id} value={c.id}>{c.business_name} ({c.username})</option>)}
+                                </select>
+                            </div>
+                            
+                            <div className="flex flex-col gap-4 justify-end">
+                                <button 
+                                    onClick={handleStartTestBot}
+                                    disabled={!selectedTestClient || isTestBotRunning}
+                                    className="w-full py-4 bg-brand-gold text-black rounded-xl font-black text-xs uppercase tracking-[0.2em] hover:scale-[1.02] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    {isTestBotRunning ? 'Ejecutando...' : 'Iniciar Secuencia de Prueba'}
+                                </button>
+                                <button 
+                                    onClick={handleClearTestBotConversation}
+                                    disabled={!selectedTestClient}
+                                    className="w-full py-4 bg-white/5 text-gray-400 border border-white/10 rounded-xl font-black text-xs uppercase tracking-[0.2em] hover:bg-white/10 transition-all disabled:opacity-50"
+                                >
+                                    Limpiar Conversación
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div className="bg-black/30 p-6 rounded-xl border border-white/5">
+                            <h4 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-4">Script de Prueba</h4>
+                            <ul className="space-y-2 text-xs text-gray-400 font-mono">
+                                <li>1. Hola, estoy interesado en tus servicios. ¿Cómo funciona?</li>
+                                <li>2. ¿Podrías explicarme un poco más sobre el plan PRO?</li>
+                                <li>3. ¿Cuál es el costo mensual?</li>
+                                <li>4. ¿Ofrecen alguna garantía o prueba?</li>
+                                <li>5. Suena interesante. Creo que estoy listo...</li>
+                            </ul>
+                        </div>
+                    </div>
+                );
             case 'depth_control':
                 return (
                     <section className="bg-brand-surface border border-white/5 rounded-2xl p-8 shadow-2xl">
@@ -257,7 +367,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
                                             <span className="text-2xl font-black text-white w-12 text-center">{newDepthLevel}</span>
                                         </div>
                                         <p className="text-[10px] text-gray-500 italic">
-                                            Nivel 1: Básico (Rápido) -> Nivel 10: Profundo (Lento, Costoso)
+                                            Nivel 1: Básico (Rápido) &rarr; Nivel 10: Profundo (Lento, Costoso)
                                         </p>
                                         <button onClick={handleUpdateDepth} className="w-full py-3 bg-blue-600/20 text-blue-400 border border-blue-600/50 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-600 hover:text-white transition-all">
                                             Establecer Nivel Base
@@ -313,6 +423,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
                     <button onClick={() => setView('dashboard')} className={`flex-1 min-w-[100px] py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${view === 'dashboard' ? 'bg-brand-gold text-black' : 'text-gray-500 hover:bg-white/5'}`}>Visión</button>
                     <button onClick={() => setView('clients')} className={`flex-1 min-w-[100px] py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${view === 'clients' ? 'bg-brand-gold text-black' : 'text-gray-500 hover:bg-white/5'}`}>Clientes</button>
                     <button onClick={() => setView('logs')} className={`flex-1 min-w-[100px] py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${view === 'logs' ? 'bg-brand-gold text-black' : 'text-gray-500 hover:bg-white/5'}`}>Logs</button>
+                    <button onClick={() => setView('test_bot')} className={`flex-1 min-w-[100px] py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${view === 'test_bot' ? 'bg-brand-gold text-black' : 'text-gray-500 hover:bg-white/5'}`}>Test Bot</button>
                     <button onClick={() => setView('depth_control')} className={`flex-1 min-w-[120px] py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${view === 'depth_control' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30' : 'text-gray-500 hover:bg-white/5'}`}>Depth Control</button>
                 </div>
 
@@ -322,28 +433,93 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
     );
 };
 
-// ... Helper Components (DashboardView, ClientTable, LogTable) remain largely same as before ...
-// Only DashboardView needs export if separated, but here it's inline.
+// --- Helper Components ---
+
 const DashboardView: React.FC<{metrics: GlobalDashboardMetrics | null, onAudit: (user: User) => void}> = ({ metrics, onAudit }) => {
-    // ... (Same implementation as previous file, just re-declaring for completeness in this block)
     if (!metrics) return null;
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
              <KpiCard label="Clientes Activos" value={metrics.totalClients} icon={<span className="text-xl">👥</span>} />
              <KpiCard label="MRR" value={metrics.mrr.toLocaleString()} icon={<span className="text-xl">$</span>} isCurrency />
              <KpiCard label="Leads Totales" value={metrics.globalLeads} icon={<span className="text-xl">🔥</span>} />
+             <KpiCard label="Nodos Online" value={metrics.onlineNodes} icon={<span className="text-xl text-green-500">●</span>} />
+             <KpiCard label="Cuentas Riesgo" value={metrics.atRiskAccounts} icon={<span className="text-xl text-red-500">⚠️</span>} />
         </div>
     );
 };
 
 const ClientTable: React.FC<{clients: User[], getPlanPill: Function, onAudit: Function}> = ({ clients, getPlanPill, onAudit }) => (
-    // ... (Same implementation)
-    <div className="bg-brand-surface rounded-xl border border-white/5 p-4 text-white">Tabla de Clientes (Simulada para brevedad)</div>
+    <div className="bg-brand-surface rounded-xl border border-white/5 overflow-hidden">
+        <div className="overflow-x-auto">
+            <table className="w-full text-left">
+                <thead className="bg-white/5 text-[9px] font-black uppercase text-gray-400 tracking-widest">
+                    <tr>
+                        <th className="p-4">Negocio / ID</th>
+                        <th className="p-4">Plan</th>
+                        <th className="p-4">Vencimiento</th>
+                        <th className="p-4">Profundidad</th>
+                        <th className="p-4">Estado</th>
+                        <th className="p-4">Acción</th>
+                    </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5 text-xs">
+                    {clients.map(client => (
+                        <tr key={client.id} className="hover:bg-white/5 transition-colors">
+                            <td className="p-4">
+                                <div className="font-bold text-white">{client.business_name}</div>
+                                <div className="text-gray-500 text-[10px] font-mono">{client.username}</div>
+                            </td>
+                            <td className="p-4">
+                                {getPlanPill(client.plan_status, client.plan_type)}
+                            </td>
+                            <td className="p-4 text-gray-400 font-mono">
+                                {new Date(client.billing_end_date).toLocaleDateString()}
+                            </td>
+                            <td className="p-4 font-black text-brand-gold">
+                                Lvl {client.depthLevel || 1}
+                            </td>
+                            <td className="p-4">
+                                <span className={`w-2 h-2 rounded-full inline-block mr-2 ${client.settings.isActive ? 'bg-green-500' : 'bg-red-500'}`}></span>
+                                {client.settings.isActive ? 'Bot ON' : 'Bot OFF'}
+                            </td>
+                            <td className="p-4">
+                                <button onClick={() => onAudit(client)} className="text-[9px] font-black bg-brand-gold text-black px-3 py-1.5 rounded uppercase hover:scale-105 transition-transform">
+                                    Gestionar
+                                </button>
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
+    </div>
 );
 
-const LogTable: React.FC<{logs: LogEntry[], getLogLevelPill: Function}> = ({ logs }) => (
-    // ... (Same implementation)
-    <div className="bg-brand-surface rounded-xl border border-white/5 p-4 text-white">Tabla de Logs (Simulada para brevedad)</div>
+const LogTable: React.FC<{logs: LogEntry[], getLogLevelPill: Function}> = ({ logs, getLogLevelPill }) => (
+    <div className="bg-brand-surface rounded-xl border border-white/5 overflow-hidden">
+        <div className="overflow-x-auto">
+            <table className="w-full text-left">
+                <thead className="bg-white/5 text-[9px] font-black uppercase text-gray-400 tracking-widest">
+                    <tr>
+                        <th className="p-4">Tiempo</th>
+                        <th className="p-4">Nivel</th>
+                        <th className="p-4">Usuario</th>
+                        <th className="p-4">Mensaje</th>
+                    </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5 text-[10px] font-mono">
+                    {logs.map((log) => (
+                        <tr key={log._id} className="hover:bg-white/5">
+                            <td className="p-4 text-gray-500">{new Date(log.timestamp).toLocaleTimeString()}</td>
+                            <td className="p-4">{getLogLevelPill(log.level)}</td>
+                            <td className="p-4 text-gray-400">{log.username || 'System'}</td>
+                            <td className="p-4 text-gray-300 w-1/2">{log.message}</td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
+    </div>
 );
 
 export default AdminDashboard;
