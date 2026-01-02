@@ -6,10 +6,10 @@ import { getSessionStatus, processAiResponseForJid, ELITE_BOT_JID, ELITE_BOT_NAM
 import { conversationService } from '../services/conversationService.js'; 
 import { v4 as uuidv4 } from 'uuid'; 
 
-// FIX: Changed to type alias for proper property inheritance from Express Request
-type AuthenticatedRequest<P = any, ResBody = any, ReqBody = any, ReqQuery = any> = ExpressRequest<P, ResBody, ReqBody, ReqQuery> & {
+// FIX: Changed to interface for proper property inheritance from Express Request
+interface AuthenticatedRequest<P = any, ResBody = any, ReqBody = any, ReqQuery = any> extends ExpressRequest<P, ResBody, ReqBody, ReqQuery> {
     user: { id: string; username: string; role: string; };
-};
+}
 
 const getAdminUser = (req: AuthenticatedRequest) => ({ id: req.user.id, username: req.user.username });
 

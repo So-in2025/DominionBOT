@@ -34,146 +34,90 @@ const ARCHETYPE_MAPPING = {
     [PromptArchetype.CUSTOM]: { toneValue: 3, rhythmValue: 3, intensityValue: 3 },
 };
 
-// --- INDUSTRY TEMPLATES (10 Plantillas Reales) ---
+// --- HIGH-LEVEL INDUSTRY TEMPLATES ---
 const INDUSTRY_TEMPLATES: Record<string, { label: string, data: Partial<WizardState & { priceText: string }> }> = {
     'AGENCY': {
-        label: 'Agencia de Marketing (SMMA)',
+        label: 'Agencia de Marketing High-Ticket',
         data: {
-            mission: 'Soy el Asistente de Crecimiento de [TU AGENCIA]. Mi objetivo es calificar dueños de negocio interesados en escalar sus ventas mediante publicidad digital.',
-            idealCustomer: 'Dueños de PYMES o E-commerce que facturan +$5k/mes y quieren delegar su marketing.',
-            detailedDescription: 'Ofrecemos un sistema de adquisición de clientes "Hecho para ti" usando Meta Ads y Google Ads. Garantizamos 10 citas calificadas en 30 días o no pagas.',
-            priceText: 'Desde $1000 USD / mes',
+            mission: 'Actúo como el Director de Crecimiento Estratégico de [TU AGENCIA]. Mi imperativo es identificar y cualificar empresas con capacidad de inversión listas para escalar su facturación mediante ecosistemas de publicidad digital.',
+            idealCustomer: 'CEOs y Fundadores de empresas de servicios o E-commerce facturando +$10k USD/mes, que valoran el tiempo sobre el dinero y buscan delegar la adquisición de clientes en expertos.',
+            detailedDescription: 'Implementamos una infraestructura de adquisición "Done-For-You" validada. No vendemos leads, vendemos facturación predecible. Nuestro sistema garantiza un flujo constante de citas cualificadas o devolvemos la inversión (ROI Garantizado).',
+            priceText: 'Inversión desde $2,000 USD/mes',
             objections: [
-                { id: 1, objection: 'Es muy caro', response: 'Entiendo. No es un gasto, es una inversión con retorno medible. Si te traigo $5 por cada $1 que pones, ¿te parecería caro?' },
-                { id: 2, objection: 'Ya tengo agencia', response: 'Genial. Muchos clientes llegan a nosotros buscando una segunda opinión o mejores resultados. ¿Estás 100% satisfecho con tu ROI actual?' }
+                { id: 1, objection: 'Es muy costoso', response: 'Entiendo que el precio sea un factor. Sin embargo, no somos un gasto operativo, somos una inversión de capital con retorno medible. Si nuestro sistema genera $5 por cada $1 invertido, ¿el costo sigue siendo relevante?' },
+                { id: 2, objection: 'Ya trabajé con agencias y fallaron', response: 'Es común. La mayoría vende "humo" o métricas vanidosas (likes). Nosotros nos enfocamos exclusivamente en el ROI y facturación. ¿Estarías dispuesto a ver una auditoría de por qué falló tu estrategia anterior?' }
             ],
-            rules: '- NO dar precios exactos sin calificar facturación.\n- SIEMPRE pedir agendar llamada de diagnóstico.\n- Tono experto y directo.'
+            rules: '- NUNCA revelar la estrategia completa por chat, el objetivo es la llamada.\n- Mantener autoridad y marco profesional (Frame Control).\n- Descalificar rápido si no tienen presupuesto.'
         }
     },
     'REAL_ESTATE': {
-        label: 'Inmobiliaria / Real Estate',
+        label: 'Inversiones Inmobiliarias Premium',
         data: {
-            mission: 'Soy el Asistente Inmobiliario de [TU NOMBRE]. Ayudo a compradores e inversores a encontrar propiedades de oportunidad antes de que salgan al mercado masivo.',
-            idealCustomer: 'Inversores o familias buscando propiedades en zonas premium, con presupuesto +$150k USD.',
-            detailedDescription: 'Asesoramiento integral para compra/venta de propiedades. Acceso a listado exclusivo "Off-Market". Gestión legal y financiera incluida.',
-            priceText: 'Comisión del 3% al 4%',
+            mission: 'Soy el Consultor de Activos Inmobiliarios de [TU NOMBRE/EMPRESA]. Mi función es filtrar el mercado para conectar inversores de capital con oportunidades "Off-Market" de alta plusvalía y revalorización asegurada.',
+            idealCustomer: 'Inversores patrimoniales, Family Offices o particulares con liquidez inmediata superior a $200k USD, buscando diversificación y seguridad jurídica.',
+            detailedDescription: 'Acceso exclusivo a desarrollos en preventa y propiedades subvaluadas antes de su salida al mercado masivo. Ofrecemos gestión integral: legal, fiscal y administración de renta posterior.',
+            priceText: 'Tickets desde $150,000 USD',
             objections: [
-                { id: 1, objection: 'Solo estoy mirando', response: 'Perfecto. El mercado cambia rápido. ¿Qué características debería tener una propiedad para que dejes de mirar y quieras visitarla?' },
-                { id: 2, objection: 'La zona es cara', response: 'Es una zona de alta revalorización. ¿Buscas precio o buscas una inversión segura a largo plazo?' }
+                { id: 1, objection: 'Solo estoy viendo opciones', response: 'Perfecto. El mercado inmobiliario es dinámico y las mejores oportunidades duran horas. Para no hacerte perder tiempo enviando fichas irrelevantes, ¿qué rentabilidad anual estás buscando?' },
+                { id: 2, objection: 'La comisión es alta', response: 'Nuestros honorarios se pagan solos con la negociación de precio que logramos. Un 10% de descuento en la compra cubre nuestra comisión y te deja ganancia inmediata. ¿Buscás precio o rentabilidad?' }
             ],
-            rules: '- NO enviar ubicación exacta sin registro previo.\n- Calificar presupuesto antes de enviar fichas.\n- Objetivo: Agendar visita física.'
+            rules: '- NO enviar ubicaciones exactas sin registro previo (KYC).\n- Calificar solvencia antes de agendar visita.\n- Proyectar exclusividad y escasez.'
         }
     },
     'ECOMMERCE': {
-        label: 'E-commerce / Retail',
+        label: 'E-commerce / Retail Exclusivo',
         data: {
-            mission: 'Soy el Asistente de Ventas de [TU TIENDA]. Ayudo a los clientes a elegir el producto perfecto y resolver dudas sobre envíos y tallas.',
-            idealCustomer: 'Compradores impulsivos o recurrentes que buscan calidad y rapidez en la entrega.',
-            detailedDescription: 'Tienda online de productos exclusivos. Envíos a todo el país en 24hs. Cambio gratis si no te queda bien.',
-            priceText: 'Varía según producto',
+            mission: 'Soy el Concierge de Compras de [TU MARCA]. Mi objetivo es brindar una experiencia de compra asistida, eliminando dudas y guiando al cliente hacia el producto que elevará su estilo de vida.',
+            idealCustomer: 'Compradores exigentes que valoran la calidad, la exclusividad y la inmediatez. Buscan una experiencia de unboxing superior y soporte post-venta garantizado.',
+            detailedDescription: 'Curaduría de productos [NICHO] de diseño exclusivo. Logística prioritaria (24hs) y política de "Satisfacción Total o Devolución Inmediata". No vendemos productos, vendemos estatus y solución.',
+            priceText: 'Catálogo Premium (Varía)',
             objections: [
-                { id: 1, objection: 'El envío es caro', response: 'Tenemos envío gratis en compras superiores a cierto monto. ¿Te gustaría agregar algo más al carrito?' },
-                { id: 2, objection: '¿Tienen garantía?', response: 'Sí, garantía total de satisfacción por 30 días. Si no te gusta, te devolvemos el dinero.' }
+                { id: 1, objection: 'El envío me parece caro', response: 'Utilizamos logística blindada para asegurar que tu producto llegue impecable en 24hs. Además, bonificamos el envío en compras superiores a $X. ¿Te gustaría agregar un accesorio para aprovecharlo?' },
+                { id: 2, objection: '¿Tienen garantía real?', response: 'Absolutamente. Ofrecemos 30 días de garantía incondicional. Si no te enamora al abrir la caja, gestionamos el retiro y reembolso sin preguntas.' }
             ],
-            rules: '- Respuestas cortas y rápidas.\n- Usar emojis.\n- SIEMPRE ofrecer productos complementarios (Cross-sell).'
+            rules: '- Respuestas concisas, estéticas y rápidas.\n- Usar gatillos mentales de urgencia (stock limitado).\n- Sugerir siempre un complemento (Upsell).'
         }
     },
     'COACHING': {
-        label: 'Coaching / Mentoria',
+        label: 'Mentoria / Coaching High-Ticket',
         data: {
-            mission: 'Soy el Asistente de Admisiones de [TU PROGRAMA]. Filtro candidatos para asegurar que solo ingresen personas comprometidas con su transformación.',
-            idealCustomer: 'Profesionales estancados que buscan un cambio radical en su carrera/vida y tienen capacidad de inversión.',
-            detailedDescription: 'Programa intensivo de 12 semanas "Transformación Total". Mentoria 1a1, grupo de soporte y recursos grabados.',
-            priceText: '$2500 USD (Plan Pago)',
+            mission: 'Soy el Asesor de Admisiones de [TU PROGRAMA]. Mi responsabilidad es auditar si el candidato tiene el perfil, el compromiso y la capacidad para ser un caso de éxito en nuestra mentoría.',
+            idealCustomer: 'Profesionales o emprendedores estancados que son conscientes de que necesitan una nueva metodología para romper su techo de cristal y están dispuestos a invertir en sí mismos.',
+            detailedDescription: 'Un protocolo de transformación de 12 semanas. No es un "cursito grabado", es un acompañamiento 1 a 1 con acceso directo al mentor, comunidad de élite y plan de acción a medida.',
+            priceText: 'Inversión: $3,000 USD',
             objections: [
-                { id: 1, objection: 'No tengo tiempo', response: 'El programa está diseñado para gente ocupada. Si no tienes 3 horas a la semana para tu futuro, ese es justamente el problema que resolvemos.' },
-                { id: 2, objection: 'Déjame pensarlo', response: 'Claro. Pero la indecisión es lo que te ha mantenido en el mismo lugar. ¿Qué duda específica te impide avanzar hoy?' }
+                { id: 1, objection: 'No tengo tiempo ahora', response: 'El programa está diseñado para ejecutivos ocupados. Si no tenés 4 horas a la semana para construir tu futuro, el problema no es el tiempo, es la prioridad. ¿Es este cambio una prioridad hoy?' },
+                { id: 2, objection: 'Es mucho dinero', response: 'Es dinero si lo ves como gasto. Es "gratis" si lo ves como inversión. Si este programa te ayuda a generar $10k extra al mes, ¿te parecería caro invertir $3k una sola vez?' }
             ],
-            rules: '- Tono autoritario pero empático.\n- NO rogar por la venta.\n- Descalificar si no muestran compromiso.'
+            rules: '- Postura de autoridad (Tú calificas al cliente, no al revés).\n- NO rogar. Si no califican, retiramos la oferta.\n- Enfocarse en el dolor actual y la visión futura.'
         }
     },
     'SOFTWARE': {
-        label: 'Software SaaS / B2B',
+        label: 'SaaS B2B Enterprise',
         data: {
-            mission: 'Soy el Bot de Onboarding de [TU SAAS]. Ayudo a empresas a entender cómo nuestro software puede automatizar sus procesos.',
-            idealCustomer: 'Gerentes de operaciones o dueños de empresas tecnológicas buscando eficiencia.',
-            detailedDescription: 'Plataforma All-in-One para gestión de proyectos. Incluye CRM, facturación y reportes automáticos.',
-            priceText: 'Desde $49/mes',
+            mission: 'Soy el Especialista de Soluciones de [TU SOFTWARE]. Ayudo a directores de operaciones a visualizar cómo nuestra tecnología puede automatizar sus flujos de trabajo y reducir costos operativos.',
+            idealCustomer: 'Empresas tecnológicas o agencias con equipos de +10 personas que sufren de caos operativo y procesos manuales ineficientes.',
+            detailedDescription: 'Suite integral de gestión empresarial. Centraliza CRM, Project Management y Facturación en un solo dashboard. Reduce el tiempo administrativo en un 40% garantizado durante el primer mes.',
+            priceText: 'Planes desde $99/mo',
             objections: [
-                { id: 1, objection: 'Es difícil de usar', response: 'Para nada. La curva de aprendizaje es de 30 minutos. Además, te asignamos un especialista de onboarding gratis.' },
-                { id: 2, objection: 'Es más caro que la competencia', response: 'Sí, porque hacemos lo que ellos hacen, más X e Y. Te ahorras pagar 3 herramientas distintas.' }
+                { id: 1, objection: 'La migración es difícil', response: 'Es una preocupación válida. Por eso incluimos un equipo de "Concierge Onboarding" que migra todos tus datos gratis en 48hs. No tenés que mover un dedo.' },
+                { id: 2, objection: 'Es más caro que X', response: 'Correcto. X es una herramienta básica. Nosotros somos un sistema operativo completo. Al usarnos, podés cancelar X, Y y Z, ahorrando dinero total a fin de mes.' }
             ],
-            rules: '- Enfocarse en el ahorro de tiempo/dinero.\n- Ofrecer Demo gratuita.\n- Lenguaje técnico moderado.'
-        }
-    },
-    'FINANCE': {
-        label: 'Asesoría Financiera',
-        data: {
-            mission: 'Soy el Asistente Financiero de [TU FIRMA]. Conecto inversores con oportunidades de alto rendimiento.',
-            idealCustomer: 'Personas con liquidez excedente buscando superar la inflación.',
-            detailedDescription: 'Portafolio diversificado de inversiones. Renta fija y variable. Asesoría personalizada regulada.',
-            priceText: 'Mínimo de Inversión $1000',
-            objections: [
-                { id: 1, objection: 'Me da miedo', response: 'El riesgo se gestiona con diversificación. Nuestro historial muestra una rentabilidad promedio sólida.' },
-                { id: 2, objection: '¿Puedo retirar cuando quiera?', response: 'Depende del instrumento. Tenemos opciones de liquidez inmediata (24hs) y opciones a plazo fijo con mayor tasa.' }
-            ],
-            rules: '- Tono MUY profesional y seguro.\n- NO prometer ganancias garantizadas imposibles.\n- Generar confianza.'
+            rules: '- Lenguaje técnico preciso pero accesible.\n- Enfocarse en el costo de inacción (cuánto pierden hoy).\n- Objetivo: Demo técnica.'
         }
     },
     'LEGAL': {
-        label: 'Estudio Jurídico',
+        label: 'Estudio Jurídico Corporativo',
         data: {
-            mission: 'Soy el Asistente Legal de [TU ESTUDIO]. Mi función es realizar un triaje inicial de casos para derivar al abogado especialista.',
-            idealCustomer: 'Personas con conflictos legales activos que necesitan representación inmediata.',
-            detailedDescription: 'Servicios legales en derecho civil, laboral y comercial. Primera consulta bonificada si tomamos el caso.',
-            priceText: 'Honorarios según regulación',
+            mission: 'Soy el Asistente Legal Senior de [TU ESTUDIO]. Realizo el triaje inicial para identificar casos de alta viabilidad y derivarlos a nuestros socios especialistas.',
+            idealCustomer: 'Empresas o particulares con conflictos legales activos que requieren representación agresiva y estratégica inmediata.',
+            detailedDescription: 'Defensa legal de alto perfil en derecho comercial y laboral. No cobramos consultas, cobramos soluciones. Historial de éxito del 92% en litigios complejos.',
+            priceText: 'Honorarios según complejidad',
             objections: [
-                { id: 1, objection: '¿Cuánto cobran la consulta?', response: 'La primera evaluación de viabilidad es sin cargo. Si procedemos, se pactan honorarios.' },
-                { id: 2, objection: '¿Garantizan el resultado?', response: 'En derecho no se garantizan resultados, se garantizan medios y profesionalismo. Nuestro historial de éxito es del 90%.' }
+                { id: 1, objection: '¿Cuánto sale la consulta?', response: 'La evaluación de viabilidad inicial es sin cargo. Si tomamos el caso, trabajamos con un esquema de honorarios transparente y pre-acordado. Lo costoso es no tener una buena defensa.' },
+                { id: 2, objection: 'Necesito garantía de ganar', response: 'En derecho, garantizar resultados es anti-ético. Garantizamos la mejor estrategia posible y dedicación total. Nuestro track record habla por sí mismo.' }
             ],
-            rules: '- Tono formal y distante.\n- No dar asesoramiento legal específico por chat.\n- Filtrar casos no rentables.'
-        }
-    },
-    'GYM': {
-        label: 'Gimnasio / Fitness',
-        data: {
-            mission: 'Soy el Coach Virtual de [TU GIMNASIO]. Ayudo a las personas a elegir el plan de entrenamiento ideal.',
-            idealCustomer: 'Personas que quieren mejorar su salud física y estética cerca de nuestra ubicación.',
-            detailedDescription: 'Gimnasio completo con musculación, cardio y clases grupales (Crossfit, Zumba, Yoga). Abierto 24hs.',
-            priceText: '$30 USD / mes',
-            objections: [
-                { id: 1, objection: 'Está lejos', response: 'Entiendo. Aunque muchos socios vienen de lejos por la calidad de las máquinas y el ambiente. ¿Te gustaría venir a probar un día gratis?' },
-                { id: 2, objection: 'Es caro', response: 'Incluye acceso ilimitado a todas las clases y seguimiento por app. Es menos de $1 por día.' }
-            ],
-            rules: '- Tono enérgico y motivador.\n- Invitar siempre a una clase de prueba.\n- Usar emojis de fuerza 💪.'
-        }
-    },
-    'DENTAL': {
-        label: 'Clínica Dental / Estética',
-        data: {
-            mission: 'Soy el Asistente de Pacientes de [TU CLÍNICA]. Gestiono turnos y resuelvo dudas sobre tratamientos.',
-            idealCustomer: 'Pacientes que buscan mejorar su sonrisa o tratar dolores dentales con tecnología moderna.',
-            detailedDescription: 'Odontología integral, ortodoncia invisible, implantes y estética dental. Tecnología sin dolor.',
-            priceText: 'Consulta diagnóstico $20',
-            objections: [
-                { id: 1, objection: 'Tengo miedo al dentista', response: 'Es normal. Nos especializamos en "Odontología Slow" y sin dolor. Usamos anestesia digital computarizada.' },
-                { id: 2, objection: '¿Aceptan obra social?', response: 'Trabajamos principalmente de forma particular para garantizar los mejores materiales, pero te damos factura para reintegro.' }
-            ],
-            rules: '- Tono cálido y contenedor.\n- Transmitir higiene y seguridad.\n- Priorizar urgencias.'
-        }
-    },
-    'RESTAURANT': {
-        label: 'Gastronomía / Delivery',
-        data: {
-            mission: 'Soy el Camarero Virtual de [TU RESTAURANTE]. Tomo pedidos y reservas de forma eficiente.',
-            idealCustomer: 'Comensales hambrientos que buscan comida rica y rápida.',
-            detailedDescription: 'El mejor [TIPO DE COMIDA] de la ciudad. Ingredientes frescos y recetas de autor.',
-            priceText: 'Promedio $15 p/p',
-            objections: [
-                { id: 1, objection: '¿Cuánto tardan?', response: 'El tiempo promedio de entrega es de 40-50 minutos. Sale caliente y recién hecho.' },
-                { id: 2, objection: '¿Tienen opciones veganas?', response: 'Sí, tenemos una sección exclusiva en el menú con opciones deliciosas sin origen animal.' }
-            ],
-            rules: '- Tono apetitoso y servicial.\n- Enviar fotos de los platos si piden recomendación.\n- Confirmar dirección de envío.'
+            rules: '- Tono extremadamente formal, sobrio y distante.\n- Nunca dar consejo legal específico por chat.\n- Filtrar casos pequeños o sin sustento.'
         }
     }
 };
@@ -279,6 +223,28 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
       onUpdateSettings(newSettings);
   };
 
+  // Restablecer valores de personalidad a los defaults del arquetipo seleccionado
+  const resetPersonality = () => {
+      if (!current) return;
+      const mapping = ARCHETYPE_MAPPING[current.archetype];
+      const newSettings = {
+          ...current,
+          toneValue: mapping.toneValue,
+          rhythmValue: mapping.rhythmValue,
+          intensityValue: mapping.intensityValue
+      };
+      setCurrent(newSettings);
+      showToast('Ajustes restablecidos al arquetipo base.', 'info');
+  };
+
+  // Guardar explícitamente los ajustes de personalidad
+  const savePersonalitySettings = () => {
+      if (!current) return;
+      onUpdateSettings(current);
+      showToast('Ajustes de personalidad guardados.', 'success');
+      audioService.play('action_success');
+  };
+
   const saveWizardToSettings = () => {
       if (!current) return;
       const compiledDescription = `
@@ -310,37 +276,41 @@ ${wizardState.rules}
       audioService.play('action_success');
   };
 
-  // --- MAGIC AI AUTOCOMPLETE ---
+  // --- MAGIC AI AUTOCOMPLETE & REFINEMENT ---
   const handleMagicFill = async () => {
       if (!current?.geminiApiKey) {
           showToast('Configura tu API Key de Gemini en el panel derecho primero.', 'error');
           return;
       }
       if (!wizardState.mission || !wizardState.idealCustomer) {
-          showToast('Completa la Misión y el Cliente Ideal para que la IA tenga contexto.', 'info');
+          showToast('Ingresa una idea base de Misión y Cliente para que la IA pueda trabajar.', 'info');
           return;
       }
 
       setIsMagicFilling(true);
       try {
           const ai = new GoogleGenAI({ apiKey: current.geminiApiKey });
+          
+          // Enhanced Prompt: Ask AI to REFINE the inputs first, then generate the rest.
           const prompt = `
-            Actúa como un estratega de ventas de élite.
-            Basado en esta Misión: "${wizardState.mission}" 
-            y este Cliente Ideal: "${wizardState.idealCustomer}",
+            Actúa como un Consultor de Negocios de Élite y Copywriter Senior.
             
-            Genera el resto de la configuración del bot en formato JSON estricto:
-            1. "detailedDescription": Una descripción persuasiva e irresistible de la oferta/servicio.
-            2. "priceText": Un texto de precio sugerido coherente (ej: "Desde $X").
-            3. "objections": Un array con 3 objeciones probables y sus respuestas ganadoras de manejo de objeciones.
-            4. "rules": 3 reglas de oro para el comportamiento del bot (ej: No usar emojis, ser breve).
+            Tengo estos borradores iniciales de un usuario:
+            Misión Base: "${wizardState.mission}"
+            Cliente Base: "${wizardState.idealCustomer}"
+
+            TU TAREA:
+            1. MEJORA PROFESIONALMENTE la "Misión" y el "Cliente Ideal". Reescríbelos para que suenen autoritarios, persuasivos y de alto nivel (High-Ticket).
+            2. BASADO EN ESO, genera el resto de la configuración del bot.
 
             Output JSON Schema:
             {
-                "detailedDescription": string,
-                "priceText": string,
-                "objections": [{ "objection": string, "response": string }],
-                "rules": string
+                "refinedMission": string, // La misión mejorada
+                "refinedIdealCustomer": string, // El cliente mejorado
+                "detailedDescription": string, // Descripción irresistible de la oferta
+                "priceText": string, // Sugerencia de precio/anchor
+                "objections": [{ "objection": string, "response": string }], // 3 objeciones probables y respuestas ganadoras
+                "rules": string // 3 reglas de oro de comportamiento
             }
           `;
 
@@ -355,12 +325,16 @@ ${wizardState.rules}
           if (data.detailedDescription) {
               setWizardState(prev => ({
                   ...prev,
+                  // Replace inputs with the AI-refined versions
+                  mission: data.refinedMission || prev.mission,
+                  idealCustomer: data.refinedIdealCustomer || prev.idealCustomer,
+                  
                   detailedDescription: data.detailedDescription,
                   objections: data.objections.map((o: any, i: number) => ({ id: Date.now() + i, ...o })),
                   rules: data.rules
               }));
               handleUpdate('priceText', data.priceText || '');
-              showToast('✨ Estrategia Neural generada exitosamente.', 'success');
+              showToast('✨ Estrategia mejorada y generada por IA.', 'success');
               audioService.play('action_success');
               // Auto-advance to next step to show the magic
               setStep(1); 
@@ -467,10 +441,11 @@ ${wizardState.rules}
                                         <p className="text-xs text-gray-400 mt-1">Define quién es la IA y a quién sirve.</p>
                                     </div>
                                     <div className="flex gap-2">
-                                        <select onChange={(e) => applyTemplate(e.target.value)} className="bg-black/40 border border-white/10 text-white text-[9px] font-bold uppercase rounded-lg px-3 py-2 outline-none focus:border-brand-gold cursor-pointer hover:bg-white/5 transition-colors">
-                                            <option value="">⚡ Cargar Plantilla...</option>
+                                        {/* FIX: Improved Select Styling for visibility */}
+                                        <select onChange={(e) => applyTemplate(e.target.value)} className="bg-brand-surface border border-white/20 text-white text-[9px] font-bold uppercase rounded-lg px-3 py-2 outline-none focus:border-brand-gold cursor-pointer hover:bg-white/5 transition-colors shadow-lg">
+                                            <option value="" className="bg-brand-black text-gray-400">⚡ Cargar Plantilla...</option>
                                             {Object.entries(INDUSTRY_TEMPLATES).map(([k, v]) => (
-                                                <option key={k} value={k}>{v.label}</option>
+                                                <option key={k} value={k} className="bg-brand-black text-white py-2">{v.label}</option>
                                             ))}
                                         </select>
                                     </div>
@@ -502,11 +477,11 @@ ${wizardState.rules}
                                     className="w-full py-4 bg-gradient-to-r from-purple-900/40 to-blue-900/40 border border-white/10 rounded-xl text-xs font-black uppercase tracking-widest text-white hover:border-brand-gold/50 transition-all flex items-center justify-center gap-2 group shadow-lg hover:shadow-brand-gold/10"
                                 >
                                     {isMagicFilling ? (
-                                        <span className="animate-pulse">Generando Inteligencia Neural...</span>
+                                        <span className="animate-pulse">Analizando y Refinando Estrategia...</span>
                                     ) : (
                                         <>
                                             <span className="text-lg group-hover:rotate-12 transition-transform">✨</span> 
-                                            <span className="group-hover:text-brand-gold transition-colors">Autocompletar con IA</span>
+                                            <span className="group-hover:text-brand-gold transition-colors">Mejorar y Autocompletar con IA</span>
                                         </>
                                     )}
                                 </button>
@@ -628,7 +603,7 @@ ${wizardState.rules}
                 <div className="lg:col-span-5 space-y-6">
                     
                     {/* PERSONALITY SETTINGS */}
-                    <div className="bg-brand-surface border border-white/5 rounded-[32px] p-8 shadow-2xl relative overflow-hidden">
+                    <div className="bg-brand-surface border border-white/5 rounded-[32px] p-8 shadow-2xl relative overflow-hidden flex flex-col h-full">
                         <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/5 rounded-full blur-3xl pointer-events-none"></div>
                         
                         <h3 className="text-sm font-black text-white uppercase tracking-widest mb-6">Ajustes de Personalidad</h3>
@@ -647,7 +622,7 @@ ${wizardState.rules}
                         </div>
 
                         {/* Sliders */}
-                        <div className="space-y-6">
+                        <div className="space-y-6 flex-1">
                             {[
                                 { label: 'Tono de Voz', val: current.toneValue, key: 'toneValue', minLabel: 'Agresivo', maxLabel: 'Amigable' },
                                 { label: 'Ritmo de Chat', val: current.rhythmValue, key: 'rhythmValue', minLabel: 'Rápido', maxLabel: 'Pausado' },
@@ -670,6 +645,22 @@ ${wizardState.rules}
                                     </div>
                                 </div>
                             ))}
+                        </div>
+
+                        {/* PERSONALITY ACTIONS FOOTER (ADDED) */}
+                        <div className="mt-8 pt-6 border-t border-white/5 flex gap-3">
+                            <button 
+                                onClick={resetPersonality} 
+                                className="flex-1 py-3 bg-white/5 text-gray-400 hover:text-white border border-white/10 rounded-xl font-black text-[9px] uppercase tracking-widest transition-all"
+                            >
+                                Restablecer
+                            </button>
+                            <button 
+                                onClick={savePersonalitySettings} 
+                                className="flex-1 py-3 bg-brand-gold/10 text-brand-gold border border-brand-gold/30 rounded-xl font-black text-[9px] uppercase tracking-widest hover:bg-brand-gold hover:text-black transition-all"
+                            >
+                                Guardar Ajustes
+                            </button>
                         </div>
                     </div>
 
