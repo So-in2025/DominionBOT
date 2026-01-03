@@ -25,7 +25,10 @@ class ConversationService {
     let conversation = conversations[safeJid] || conversations[jid];
 
     const isEliteBotJid = jid === ELITE_BOT_JID;
-    const nowISO = new Date().toISOString(); // FORCE ISO STRING
+    
+    // FORCE NOW for sorting, unless it's strictly history import
+    // This ensures new messages ALWAYS jump to top, even if device time is off
+    const effectiveLastActivity = isHistoryImport ? (message.timestamp instanceof Date ? message.timestamp.toISOString() : new Date(message.timestamp).toISOString()) : new Date().toISOString();
 
     if (!conversation) {
       const leadIdentifier = jid.split('@')[0];
@@ -46,7 +49,7 @@ class ConversationService {
         internalNotes: [],
         isAiSignalsEnabled: true,
         isTestBotConversation: isEliteBotJid, 
-        lastActivity: nowISO
+        lastActivity: effectiveLastActivity
       };
     } else {
         // Enforce Test Bot Rules on existing conversation
@@ -75,9 +78,8 @@ class ConversationService {
         // Sort to maintain chronological order (crucial for display)
         conversation.messages.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
         
-        // FORCE UPDATE LAST ACTIVITY TO ISO STRING
-        // This ensures the sorting on the frontend works correctly (String vs String comparison)
-        conversation.lastActivity = message.timestamp instanceof Date ? message.timestamp.toISOString() : new Date(message.timestamp).toISOString();
+        // UPDATE LAST ACTIVITY TO FORCE SORTING
+        conversation.lastActivity = effectiveLastActivity;
     } 
 
     // Status Automation

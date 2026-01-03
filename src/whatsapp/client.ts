@@ -247,6 +247,9 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
         sock.ev.on('messages.upsert', async ({ messages, type }) => {
             if (!messages || messages.length === 0) return;
             
+            // DEBUG LOG: See incoming events in terminal
+            console.log(`[WA-DEBUG] Received ${messages.length} messages. Type: ${type}`);
+
             try {
                 const messagesByJid: Record<string, typeof messages> = {};
                 
@@ -285,7 +288,8 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
 
                             // Early Exit Filter (Time)
                             const msgTimestamp = typeof msg.messageTimestamp === 'number' ? msg.messageTimestamp : (msg.messageTimestamp as any)?.low || Date.now() / 1000;
-                            const isOldForAI = msgTimestamp < (Date.now() / 1000 - 10);
+                            // Reduce threshold to 2 seconds to avoid ignoring recent messages if servers drift
+                            const isOldForAI = msgTimestamp < (Date.now() / 1000 - 300); // Only ignore older than 5 mins
 
                             const userMessage: Message = {
                                 id: msg.key.id || Date.now().toString(),
@@ -295,6 +299,9 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                             };
 
                             const senderName = msg.pushName || (msg as any).verifiedBizName || undefined;
+
+                            // DEBUG LOG
+                            console.log(`[WA-DEBUG] Processing msg from ${jid}: "${messageText.substring(0, 20)}..." (Old? ${isOldForAI})`);
 
                             await conversationService.addMessage(userId, jid, userMessage, senderName, isOldForAI);
 

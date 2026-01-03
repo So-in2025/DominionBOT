@@ -43,16 +43,20 @@ const ConversationList: React.FC<ConversationListProps> = ({
           return matchesSearch && matchesStatus;
       });
 
-      // 2. SORT (Robust Sort: Handles Strings, Dates, and missing values safely)
+      // 2. SORT (Aggressive Sort)
       return filtered.sort((a, b) => {
-          const dateA = a.lastActivity ? new Date(a.lastActivity).getTime() : 0;
-          const dateB = b.lastActivity ? new Date(b.lastActivity).getTime() : 0;
-          
-          // Safety check for invalid dates (NaN)
-          const validA = isNaN(dateA) ? 0 : dateA;
-          const validB = isNaN(dateB) ? 0 : dateB;
+          // Robust timestamp extraction
+          const getTime = (c: Conversation) => {
+              if (c.lastActivity) return new Date(c.lastActivity).getTime();
+              // Fallback to last message if lastActivity is missing
+              if (c.messages.length > 0) return new Date(c.messages[c.messages.length - 1].timestamp).getTime();
+              return 0;
+          };
 
-          return validB - validA; // Descending order (Newest first)
+          const timeA = getTime(a);
+          const timeB = getTime(b);
+          
+          return timeB - timeA; // Descending (Newest first)
       });
   }, [conversations, searchTerm, statusFilter]);
 
@@ -66,7 +70,7 @@ const ConversationList: React.FC<ConversationListProps> = ({
             <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-400">Buzón de Entrada</h3>
             <div className={`flex items-center gap-1.5 transition-opacity duration-500 ${isSyncing ? 'opacity-100' : 'opacity-30'}`}>
                 <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
-                <span className="text-[8px] font-bold text-green-500 uppercase tracking-wider">Live Sync</span>
+                <span className="text-[8px] font-bold text-green-500 uppercase tracking-wider">Sincronizando...</span>
             </div>
         </div>
         <div className="relative">
@@ -103,7 +107,7 @@ const ConversationList: React.FC<ConversationListProps> = ({
           <ul className="flex flex-col">
             {filteredConversations.map(convo => (
               <ConversationListItem
-                key={convo.id}
+                key={`${convo.id}-${convo.lastActivity}`} // FORCE RE-RENDER on timestamp change
                 conversation={convo}
                 isSelected={convo.id === selectedConversationId}
                 onSelect={() => onSelectConversation(convo.id)}

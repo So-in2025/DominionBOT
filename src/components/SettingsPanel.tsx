@@ -123,9 +123,9 @@ const SpeechRecognition = (window as any).SpeechRecognition || (window as any).w
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUpdateSettings, onOpenLegal, showToast }) => {
   const [current, setCurrent] = useState<BotSettings | null>(null);
-  const [isAdvancedMode, setIsAdvancedMode] = useState(false); // NEW STATE FOR TOGGLE
+  const [isAdvancedMode, setIsAdvancedMode] = useState(false); 
   
-  // WIZARD STATE (Updated with API_SETUP)
+  // WIZARD STATE 
   const [wizardStep, setWizardStep] = useState<'IDENTITY' | 'API_SETUP' | 'CONTEXT' | 'PATH' | 'LOADING'>('IDENTITY');
   
   // DATA STATE
@@ -136,14 +136,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
   const [showWebTooltip, setShowWebTooltip] = useState(false);
   const [isAnalyzingWeb, setIsAnalyzingWeb] = useState(false);
   
-  // New: Advanced Wizard State
   const [wizNeuralConfig, setWizNeuralConfig] = useState<NeuralRouterConfig | undefined>(undefined);
 
   const [isProcessing, setIsProcessing] = useState(false);
-  const [wizardState, setWizardState] = useState<WizardState>({
-      mission: '', idealCustomer: '', detailedDescription: '',
-      objections: [{ id: 1, objection: '', response: '' }], rules: ''
-  });
+  
+  // For standard settings saving
+  const [isSaving, setIsSaving] = useState(false);
 
   const recognitionRef = useRef<any>(null);
 
@@ -153,19 +151,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
         if (settings.geminiApiKey) {
             setWizApiKey(settings.geminiApiKey);
         }
-        // Init toggle based on settings
         setIsAdvancedMode(settings.useAdvancedModel || false);
         setWizNeuralConfig(settings.neuralConfig);
     }
   }, [settings]);
-
-  const handleToggleAdvancedMode = () => {
-      if (!current) return;
-      const newVal = !isAdvancedMode;
-      setIsAdvancedMode(newVal);
-      // Persist the mode preference
-      onUpdateSettings({ ...current, useAdvancedModel: newVal });
-  };
 
   // --- AUDIO RECORDING LOGIC ---
   const toggleRecording = () => {
@@ -212,6 +201,26 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
     setCurrent(newSettings);
   };
 
+  const handleSaveChanges = async () => {
+      if (!current) return;
+      setIsSaving(true);
+      try {
+          const payload = {
+              ...current,
+              useAdvancedModel: isAdvancedMode,
+              // If advanced mode is on, ensure neuralConfig is included from state if modified
+              neuralConfig: isAdvancedMode ? (wizNeuralConfig || current.neuralConfig) : current.neuralConfig
+          };
+          await onUpdateSettings(payload);
+          showToast('Configuración sincronizada con el núcleo.', 'success');
+          audioService.play('action_success');
+      } catch (e) {
+          showToast('Error al guardar.', 'error');
+      } finally {
+          setIsSaving(false);
+      }
+  };
+
   // --- WEB ANALYSIS FEATURE ---
   const analyzeWebsite = async () => {
       if (!wizIdentity.website) return;
@@ -225,31 +234,22 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
           const cleanKey = wizApiKey.trim(); 
           const ai = new GoogleGenAI({ apiKey: cleanKey }); 
           
-          // REFINED PROMPT: MORE SALES ORIENTED, LESS DESCRIPTIVE
           const prompt = `
             Analiza el sitio web: ${wizIdentity.website}
-            
             TU OBJETIVO: Configurar la "Personalidad de Venta" de una IA.
-            
             Redacta en PRIMERA PERSONA ("Soy el asistente de...", "Ofrezco...").
             NO hagas un resumen corporativo aburrido.
-            
             ESTRUCTURA REQUERIDA:
             1. ROL Y OFERTA: "Soy el especialista en [Rubro]. Mi meta es vender [Productos principales]..."
             2. PRECIOS Y PLANES: Lista los precios exactos encontrados (ej: "$180.000 ARS"). Si no hay, di "A cotizar".
             3. GANCHO COMERCIAL: 2 o 3 frases cortas sobre por qué elegirnos (Valor Único). Convierte características en beneficios.
             4. CLIENTE OBJETIVO: A quién le estoy vendiendo.
-            
-            IMPORTANTE: Si mencionan herramientas de competencia (ej: Chatfuel, ManyChat), omítelas o cámbialas por "Nuestras soluciones de IA", a menos que sea un servicio de implementación de esas herramientas.
           `;
 
-          // UPDATED MODEL to gemini-2.5-flash as requested
           const response = await ai.models.generateContent({
               model: 'gemini-2.5-flash', 
               contents: [{ parts: [{ text: prompt }] }],
-              config: { 
-                  tools: [{ googleSearch: {} }]
-              }
+              config: { tools: [{ googleSearch: {} }] }
           });
 
           const extractedText = response.text;
@@ -262,7 +262,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
           }
 
       } catch (e: any) {
-          console.error("WEB ANALYSIS ERROR:", e);
           showToast(`Error analizando la web: ${e.message || 'Error desconocido'}`, 'error');
       } finally {
           setIsAnalyzingWeb(false);
@@ -277,22 +276,18 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
           return;
       }
       
-      // IF ADVANCED MODE, JUST SAVE THE NEURAL CONFIG AND FINISH
       if (isAdvancedMode) {
           if (!wizNeuralConfig?.masterIdentity) {
               showToast('Debes configurar al menos la Identidad Maestra.', 'error');
               return;
           }
-          
           setWizardStep('LOADING');
-          // Short delay to simulate saving
           setTimeout(() => {
               if (!current) return;
               const newSettings = {
                   ...current,
                   productName: wizIdentity.name,
                   ctaLink: wizIdentity.website || current.ctaLink,
-                  // Use Master Identity as description fallback
                   productDescription: wizNeuralConfig.masterIdentity, 
                   useAdvancedModel: true,
                   neuralConfig: wizNeuralConfig,
@@ -306,7 +301,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
           return;
       }
 
-      // LINEAR PATH (ORIGINAL AI GENERATION)
       if (!wizContext || wizContext.length < 10) {
           showToast('El contexto es muy corto. Escribe o dicta más detalles.', 'error');
           return;
@@ -320,25 +314,17 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
           const ai = new GoogleGenAI({ apiKey: cleanKey });
           const prompt = `
             ACTÚA COMO: Consultor de Negocios de Élite.
-            
             INPUT DEL USUARIO:
             Nombre Negocio: "${wizIdentity.name}"
             Web: "${wizIdentity.website}"
             Contexto/Descripción: "${wizContext}"
-
             TU TAREA:
-            Genera la configuración estratégica completa para un Chatbot de Ventas (Dominion Bot) basado en los datos anteriores.
-            Deduce el arquetipo de personalidad ideal.
-
+            Genera la configuración estratégica completa para un Chatbot de Ventas (Dominion Bot).
             FORMATO JSON REQUERIDO:
             {
-                "mission": "...", // Misión principal del bot (1a persona)
-                "idealCustomer": "...", // Quién es el cliente ideal
-                "detailedDescription": "...", // Descripción persuasiva de la oferta
-                "priceText": "...", // Texto sugerido para precios (ej: Desde $100)
-                "objections": [{ "objection": "...", "response": "..." }], // 2 objeciones comunes y manejo
-                "rules": "...", // 3 reglas de comportamiento críticas
-                "archetype": "..." // Uno de: VENTA_CONSULTIVA, CIERRE_DIRECTO, SOPORTE_TECNICO, RELACIONAL_EMPATICO
+                "mission": "...", "idealCustomer": "...", "detailedDescription": "...",
+                "priceText": "...", "objections": [{ "objection": "...", "response": "..." }],
+                "rules": "...", "archetype": "..." 
             }
           `;
 
@@ -349,7 +335,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
           });
 
           const data = JSON.parse(res.text || '{}');
-          
           finishWizard(data, 'AI');
 
       } catch (e) {
@@ -417,9 +402,9 @@ ${data.rules}
           toneValue: mapping.toneValue,
           rhythmValue: mapping.rhythmValue,
           intensityValue: mapping.intensityValue,
-          geminiApiKey: wizApiKey.trim(), // Ensure Key is saved trimmed
+          geminiApiKey: wizApiKey.trim(), 
           isWizardCompleted: true,
-          useAdvancedModel: false // Explicitly set false for Linear Path
+          useAdvancedModel: false 
       };
 
       onUpdateSettings(newSettings);
@@ -433,8 +418,129 @@ ${data.rules}
   if (current.isWizardCompleted) {
       return (
         <div className="flex-1 bg-brand-black p-4 md:p-8 overflow-y-auto custom-scrollbar font-sans relative z-10 animate-fade-in">
-            <div className="max-w-7xl mx-auto pb-32">
-                {/* ... (Existing Main Settings Code) ... */}
+            <div className="max-w-7xl mx-auto pb-32 space-y-8">
+                
+                <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 border-b border-white/5 pb-6">
+                    <div>
+                        <h2 className="text-3xl font-black text-white tracking-tighter uppercase flex items-center gap-3">
+                            Configuración <span className="text-brand-gold">Neural</span>
+                        </h2>
+                        <p className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.3em] mt-1">Calibración del Núcleo</p>
+                    </div>
+                    <div className="flex gap-4">
+                        <button 
+                            onClick={() => { if(confirm('¿Reiniciar el asistente de configuración?')) { handleUpdate('isWizardCompleted', false); setWizardStep('IDENTITY'); } }} 
+                            className="px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-400 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all"
+                        >
+                            Reiniciar Wizard
+                        </button>
+                        <button 
+                            onClick={handleSaveChanges} 
+                            disabled={isSaving}
+                            className="px-6 py-2 bg-brand-gold text-black rounded-lg text-[10px] font-black uppercase tracking-widest hover:scale-105 transition-all shadow-lg shadow-brand-gold/20 disabled:opacity-50"
+                        >
+                            {isSaving ? 'Sincronizando...' : 'Guardar Cambios'}
+                        </button>
+                    </div>
+                </header>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    {/* LEFT COL: General & Activation */}
+                    <div className="space-y-8">
+                        <div className="bg-brand-surface border border-white/5 rounded-3xl p-6 shadow-xl">
+                            <div className="flex items-center justify-between mb-6">
+                                <h3 className="text-sm font-black text-white uppercase tracking-widest">Estado del Bot</h3>
+                                <div onClick={() => handleUpdate('isActive', !current.isActive)} className={`w-12 h-6 rounded-full relative cursor-pointer transition-colors ${current.isActive ? 'bg-green-500' : 'bg-red-500/20'}`}>
+                                    <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transform transition-transform ${current.isActive ? 'translate-x-6' : 'translate-x-0.5'}`}></div>
+                                </div>
+                            </div>
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-[9px] font-black text-brand-gold uppercase tracking-widest mb-1">Nombre Comercial</label>
+                                    <input type="text" value={current.productName} onChange={e => handleUpdate('productName', e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl p-3 text-white text-xs font-bold focus:border-brand-gold outline-none" />
+                                </div>
+                                <div>
+                                    <label className="block text-[9px] font-black text-brand-gold uppercase tracking-widest mb-1">Gemini API Key</label>
+                                    <input type="password" value={current.geminiApiKey || ''} onChange={e => handleUpdate('geminiApiKey', e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl p-3 text-white text-xs font-mono focus:border-brand-gold outline-none" placeholder="******" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="bg-brand-surface border border-white/5 rounded-3xl p-6 shadow-xl">
+                            <h3 className="text-sm font-black text-white uppercase tracking-widest mb-6">Arquitectura</h3>
+                            <div className="flex p-1 bg-black/40 border border-white/10 rounded-xl mb-4">
+                                <button onClick={() => setIsAdvancedMode(false)} className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${!isAdvancedMode ? 'bg-white/10 text-white' : 'text-gray-500'}`}>Lineal (Simple)</button>
+                                <button onClick={() => setIsAdvancedMode(true)} className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${isAdvancedMode ? 'bg-brand-gold text-black' : 'text-gray-500'}`}>Modular (Adv)</button>
+                            </div>
+                            <p className="text-[9px] text-gray-500 leading-relaxed">
+                                {isAdvancedMode 
+                                    ? "Sistema de enrutamiento inteligente. Define múltiples 'expertos' y un nodo maestro." 
+                                    : "Modelo unificado. Una sola identidad y contexto para todo el flujo."}
+                            </p>
+                        </div>
+                        
+                        {!isAdvancedMode && (
+                            <div className="bg-brand-surface border border-white/5 rounded-3xl p-6 shadow-xl">
+                                <h3 className="text-sm font-black text-white uppercase tracking-widest mb-6">Personalidad</h3>
+                                <div className="space-y-6">
+                                    {['toneValue', 'rhythmValue', 'intensityValue'].map((field) => (
+                                        <div key={field}>
+                                            <div className="flex justify-between mb-2">
+                                                <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest">
+                                                    {field === 'toneValue' ? 'Tono (Formal - Amigable)' : field === 'rhythmValue' ? 'Ritmo (Lento - Rápido)' : 'Intensidad (Suave - Agresivo)'}
+                                                </label>
+                                                <span className="text-[9px] font-mono text-brand-gold">{(current as any)[field]}</span>
+                                            </div>
+                                            <input 
+                                                type="range" min="1" max="5" 
+                                                value={(current as any)[field]} 
+                                                onChange={e => handleUpdate(field as keyof BotSettings, parseInt(e.target.value))} 
+                                                className="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-brand-gold" 
+                                            />
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* RIGHT COL: Main Context / Modular Config */}
+                    <div className="lg:col-span-2 space-y-8">
+                        {isAdvancedMode ? (
+                            <AdvancedNeuralConfig 
+                                initialConfig={current.neuralConfig || { masterIdentity: current.productDescription, modules: [] }}
+                                onChange={(cfg) => {
+                                    setWizNeuralConfig(cfg);
+                                    // Live update current state mostly for safety, though handled on save
+                                    handleUpdate('neuralConfig', cfg); 
+                                }}
+                            />
+                        ) : (
+                            <div className="bg-brand-surface border border-white/5 rounded-3xl p-8 shadow-xl h-full">
+                                <div className="flex justify-between items-center mb-6">
+                                    <h3 className="text-sm font-black text-white uppercase tracking-widest">Contexto Unificado (Prompt)</h3>
+                                    <span className="text-[9px] text-gray-500 uppercase font-bold tracking-widest">Modelo Lineal</span>
+                                </div>
+                                <textarea 
+                                    value={current.productDescription} 
+                                    onChange={e => handleUpdate('productDescription', e.target.value)} 
+                                    className="w-full h-[500px] bg-black/50 border border-white/10 rounded-xl p-6 text-white text-xs font-mono leading-relaxed focus:border-brand-gold outline-none resize-none custom-scrollbar"
+                                    placeholder="Aquí reside el cerebro de tu bot..."
+                                />
+                                <div className="grid grid-cols-2 gap-4 mt-6">
+                                    <div>
+                                        <label className="block text-[9px] font-black text-brand-gold uppercase tracking-widest mb-1">Precio Base (Ref)</label>
+                                        <input type="text" value={current.priceText} onChange={e => handleUpdate('priceText', e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl p-3 text-white text-xs focus:border-brand-gold outline-none" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[9px] font-black text-brand-gold uppercase tracking-widest mb-1">Link de Cierre (CTA)</label>
+                                        <input type="text" value={current.ctaLink} onChange={e => handleUpdate('ctaLink', e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl p-3 text-white text-xs focus:border-brand-gold outline-none" />
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
             </div>
         </div>
       );
