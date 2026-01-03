@@ -131,6 +131,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
   const [wizContext, setWizContext] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [showWebTooltip, setShowWebTooltip] = useState(false);
+  const [isAnalyzingWeb, setIsAnalyzingWeb] = useState(false);
   
   const [isProcessing, setIsProcessing] = useState(false);
   const [wizardState, setWizardState] = useState<WizardState>({
@@ -196,6 +197,56 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
     if (!current) return;
     const newSettings = { ...current, [field]: value };
     setCurrent(newSettings);
+  };
+
+  // --- WEB ANALYSIS FEATURE ---
+  const analyzeWebsite = async () => {
+      if (!wizIdentity.website) return;
+      if (!current?.geminiApiKey) {
+          showToast('Configura tu API Key de Gemini en Ajustes primero.', 'error');
+          return;
+      }
+
+      setIsAnalyzingWeb(true);
+      try {
+          const ai = new GoogleGenAI({ apiKey: current.geminiApiKey });
+          const prompt = `
+            Analiza el sitio web: ${wizIdentity.website}
+            
+            Tu objetivo es extraer el "Contexto Operativo" para configurar un vendedor de IA.
+            
+            Extrae y redacta en primera persona ("Somos...", "Ofrecemos..."):
+            1. Qué productos/servicios venden.
+            2. Quién es el cliente ideal (inferido).
+            3. Propuesta de valor única.
+            4. Información de precios si es pública.
+            
+            Mantén la respuesta concisa (max 150 palabras) y lista para ser usada como contexto base.
+          `;
+
+          const response = await ai.models.generateContent({
+              model: 'gemini-3-flash-preview',
+              contents: [{ parts: [{ text: prompt }] }],
+              config: { 
+                  tools: [{ googleSearch: {} }] // Enable search to actually read the site
+              }
+          });
+
+          const extractedText = response.text;
+          if (extractedText) {
+              setWizContext(prev => (prev ? prev + '\n\n' : '') + extractedText);
+              showToast('Sitio web analizado. Revisa el texto generado.', 'success');
+              audioService.play('action_success');
+          } else {
+              showToast('No se pudo extraer información relevante.', 'error');
+          }
+
+      } catch (e) {
+          console.error(e);
+          showToast('Error analizando la web. Intenta manualmente.', 'error');
+      } finally {
+          setIsAnalyzingWeb(false);
+      }
   };
 
   // --- PATH A: AI AUTOCOMPLETE ---
@@ -482,31 +533,53 @@ ${data.rules}
 
                 {/* STEP 2: CONTEXT (HYBRID) */}
                 {wizardStep === 'CONTEXT' && (
-                    <div className="space-y-6 animate-fade-in">
+                    <div className="space-y-6 animate-fade-in relative">
                         <div className="text-center">
                             <h3 className="text-xl font-black text-white uppercase tracking-widest">Contexto Operativo</h3>
                             <p className="text-xs text-gray-400 mt-2 font-medium">Cuéntale a la IA qué vendes y cómo. Escribe o dicta.</p>
                         </div>
 
+                        {/* WEB ANALYSIS BUTTON (Visible if URL is present) */}
+                        {wizIdentity.website && (
+                            <div className="absolute top-0 right-0">
+                                <button 
+                                    onClick={analyzeWebsite}
+                                    disabled={isAnalyzingWeb}
+                                    className="flex items-center gap-2 bg-brand-gold/10 border border-brand-gold/30 hover:bg-brand-gold/20 text-brand-gold px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all disabled:opacity-50"
+                                >
+                                    {isAnalyzingWeb ? (
+                                        <>
+                                            <div className="w-3 h-3 border-2 border-brand-gold border-t-transparent rounded-full animate-spin"></div>
+                                            Analizando Web...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <span className="text-xs">✨</span> Analizar {wizIdentity.website}
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        )}
+
                         <div className="relative group">
                             <textarea 
                                 value={wizContext}
                                 onChange={(e) => setWizContext(e.target.value)}
-                                className="w-full h-48 bg-black/50 border border-white/10 rounded-xl p-5 text-white text-sm leading-relaxed focus:border-brand-gold outline-none resize-none custom-scrollbar placeholder-gray-700 transition-all"
+                                className="w-full h-48 bg-black/50 border border-white/10 rounded-xl p-5 pb-12 text-white text-sm leading-relaxed focus:border-brand-gold outline-none resize-none custom-scrollbar placeholder-gray-700 transition-all z-10 relative"
                                 placeholder={`Ej: Soy una agencia de marketing. Vendemos gestión de redes desde $300 USD. Quiero que el bot sea agresivo en el cierre. Si preguntan por descuentos, diles que no, pero que ofrecemos garantía.`}
                             />
-                            {/* EDUCATIONAL OVERLAY (Fades out when typing) */}
+                            {/* EDUCATIONAL OVERLAY (Fades out when typing) - MOVED TO BOTTOM */}
                             {!wizContext && !isRecording && (
-                                <div className="absolute inset-0 p-5 pointer-events-none flex flex-col justify-center items-center text-center opacity-30">
-                                    <p className="text-sm font-bold text-gray-400 mb-2">💡 Tip de Calibración</p>
-                                    <p className="text-xs text-gray-500 max-w-xs">Incluye: Qué vendes, precios base, tu diferencial y reglas que el bot no debe romper nunca.</p>
+                                <div className="absolute bottom-4 left-4 right-16 p-2 pointer-events-none flex flex-col justify-end text-left opacity-50 z-20">
+                                    <p className="text-[10px] font-bold text-gray-400 mb-1">💡 Tip de Calibración:</p>
+                                    <p className="text-[9px] text-gray-500 leading-snug">Incluye: Qué vendes, precios base, tu diferencial y reglas que el bot no debe romper nunca.</p>
                                 </div>
                             )}
                             
                             {/* MIC BUTTON */}
                             <button 
                                 onClick={toggleRecording}
-                                className={`absolute bottom-4 right-4 p-3 rounded-full shadow-lg transition-all ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-brand-gold text-black hover:scale-110'}`}
+                                className={`absolute bottom-4 right-4 p-3 rounded-full shadow-lg transition-all z-30 ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-brand-gold text-black hover:scale-110'}`}
                                 title="Dictar por voz"
                             >
                                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
