@@ -206,7 +206,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
 
       setIsAnalyzingWeb(true);
       try {
-          const ai = new GoogleGenAI({ apiKey: wizApiKey }); // Use local state key
+          const cleanKey = wizApiKey.trim(); 
+          const ai = new GoogleGenAI({ apiKey: cleanKey }); 
           const prompt = `
             Analiza el sitio web: ${wizIdentity.website}
             
@@ -221,8 +222,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
             Mantén la respuesta concisa (max 150 palabras) y lista para ser usada como contexto base.
           `;
 
+          // UPDATED MODEL to gemini-2.5-flash as requested
           const response = await ai.models.generateContent({
-              model: 'gemini-3-flash-preview',
+              model: 'gemini-2.5-flash', 
               contents: [{ parts: [{ text: prompt }] }],
               config: { 
                   tools: [{ googleSearch: {} }]
@@ -238,9 +240,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
               showToast('No se pudo extraer información relevante.', 'error');
           }
 
-      } catch (e) {
-          console.error(e);
-          showToast('Error analizando la web. Verifica tu API Key.', 'error');
+      } catch (e: any) {
+          console.error("WEB ANALYSIS ERROR:", e);
+          showToast(`Error analizando la web: ${e.message || 'Error desconocido'}`, 'error');
       } finally {
           setIsAnalyzingWeb(false);
       }
@@ -262,7 +264,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
       setIsProcessing(true);
 
       try {
-          const ai = new GoogleGenAI({ apiKey: wizApiKey });
+          const cleanKey = wizApiKey.trim();
+          const ai = new GoogleGenAI({ apiKey: cleanKey });
           const prompt = `
             ACTÚA COMO: Consultor de Negocios de Élite.
             
@@ -362,7 +365,7 @@ ${data.rules}
           toneValue: mapping.toneValue,
           rhythmValue: mapping.rhythmValue,
           intensityValue: mapping.intensityValue,
-          geminiApiKey: wizApiKey, // Ensure Key is saved
+          geminiApiKey: wizApiKey.trim(), // Ensure Key is saved trimmed
           isWizardCompleted: true
       };
 
@@ -411,6 +414,10 @@ ${data.rules}
                             <h3 className="text-sm font-black text-white uppercase tracking-widest mb-4">Motor IA</h3>
                             <input 
                                 type="password" 
+                                name="gemini_api_key_field"
+                                id="gemini_api_key_field"
+                                autoComplete="new-password"
+                                data-lpignore="true"
                                 value={current.geminiApiKey || ''} 
                                 onChange={e => handleUpdate('geminiApiKey', e.target.value)}
                                 className="w-full bg-black/50 border border-white/10 rounded-xl p-3 text-white text-xs font-mono tracking-widest focus:border-brand-gold outline-none mb-2"
@@ -539,6 +546,10 @@ ${data.rules}
                                 <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2 ml-1">Gemini API Key</label>
                                 <input 
                                     type="password"
+                                    name="gemini_api_key_setup"
+                                    id="gemini_api_key_setup"
+                                    autoComplete="new-password"
+                                    data-lpignore="true"
                                     value={wizApiKey}
                                     onChange={(e) => setWizApiKey(e.target.value)}
                                     placeholder="Pegar AI Studio Key aquí..."
@@ -572,7 +583,7 @@ ${data.rules}
                                     if(wizApiKey.length > 20) {
                                         // Save intermediate state to settings immediately so next steps can use it
                                         if (current) {
-                                            const tempSettings = { ...current, geminiApiKey: wizApiKey };
+                                            const tempSettings = { ...current, geminiApiKey: wizApiKey.trim() };
                                             setCurrent(tempSettings);
                                             onUpdateSettings(tempSettings); // Persist early
                                         }
@@ -597,9 +608,9 @@ ${data.rules}
                             <p className="text-xs text-gray-400 mt-2 font-medium">Cuéntale a la IA qué vendes y cómo. Escribe o dicta.</p>
                         </div>
 
-                        {/* WEB ANALYSIS BUTTON - Repositioned above Textarea */}
+                        {/* WEB ANALYSIS BUTTON - Repositioned above Textarea with Spacing */}
                         {wizIdentity.website && (
-                            <div className="flex justify-end mb-2">
+                            <div className="flex justify-end mb-6 px-1">
                                 <button 
                                     onClick={analyzeWebsite}
                                     disabled={isAnalyzingWeb}
