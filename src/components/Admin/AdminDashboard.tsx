@@ -1,5 +1,4 @@
 
-
 import React, { useEffect, useState } from 'react';
 import { User, LogEntry, GlobalDashboardMetrics, SystemSettings, LogLevel } from '../../types';
 import { getAuthHeaders } from '../../config';
@@ -29,8 +28,71 @@ const KpiCard: React.FC<{ label: string; value: string | number; icon: React.Rea
     </div>
 );
 
+const LandingPageManager: React.FC<{
+    settings: SystemSettings;
+    onSave: (updates: Partial<SystemSettings>) => void;
+}> = ({ settings, onSave }) => {
+    const [localSettings, setLocalSettings] = useState(settings);
+    
+    useEffect(() => {
+        setLocalSettings(settings);
+    }, [settings]);
+
+    const handleSave = () => {
+        onSave(localSettings);
+    };
+
+    const handleChange = (key: keyof SystemSettings, value: string | number) => {
+        setLocalSettings(prev => ({ ...prev!, [key]: value }));
+    };
+
+    return (
+        <div className="bg-brand-surface border border-brand-gold/20 rounded-2xl p-6 shadow-xl relative overflow-hidden group space-y-8 mt-8">
+            <h3 className="text-sm font-black text-white uppercase tracking-widest">Gestión de Landing Page</h3>
+            
+            <div>
+                <label className="text-[10px] font-bold text-brand-gold uppercase tracking-widest">Cotización Dólar Blue (ARS)</label>
+                <input 
+                    type="number"
+                    value={localSettings.dolarBlueRate || 1450}
+                    onChange={e => handleChange('dolarBlueRate', Number(e.target.value))}
+                    className="w-full mt-2 bg-black/50 border border-white/10 rounded-xl p-4 text-sm text-white" 
+                />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="space-y-4 bg-black/30 p-4 rounded-lg border border-white/5">
+                    <h4 className="text-xs font-bold text-white uppercase">Plan Standard</h4>
+                    <input type="number" value={localSettings.planStandardPriceUSD || 19} onChange={e => handleChange('planStandardPriceUSD', Number(e.target.value))} className="w-full bg-black/50 border border-white/10 rounded-xl p-2 text-sm text-white" placeholder="Precio USD"/>
+                    <textarea value={localSettings.planStandardDescription || ''} onChange={e => handleChange('planStandardDescription', e.target.value)} className="w-full h-24 bg-black/50 border border-white/10 rounded-xl p-2 text-xs text-white custom-scrollbar" placeholder="Descripción..."/>
+                </div>
+                <div className="space-y-4 bg-black/30 p-4 rounded-lg border border-white/5">
+                    <h4 className="text-xs font-bold text-white uppercase">Plan Sniper</h4>
+                    <input type="number" value={localSettings.planSniperPriceUSD || 39} onChange={e => handleChange('planSniperPriceUSD', Number(e.target.value))} className="w-full bg-black/50 border border-white/10 rounded-xl p-2 text-sm text-white" placeholder="Precio USD"/>
+                    <textarea value={localSettings.planSniperDescription || ''} onChange={e => handleChange('planSniperDescription', e.target.value)} className="w-full h-24 bg-black/50 border border-white/10 rounded-xl p-2 text-xs text-white custom-scrollbar" placeholder="Descripción..."/>
+                </div>
+                <div className="space-y-4 bg-black/30 p-4 rounded-lg border border-white/5">
+                    <h4 className="text-xs font-bold text-white uppercase">Neuro-Boost</h4>
+                    <input type="number" value={localSettings.planNeuroBoostPriceUSD || 5} onChange={e => handleChange('planNeuroBoostPriceUSD', Number(e.target.value))} className="w-full bg-black/50 border border-white/10 rounded-xl p-2 text-sm text-white" placeholder="Precio USD"/>
+                    <textarea value={localSettings.planNeuroBoostDescription || ''} onChange={e => handleChange('planNeuroBoostDescription', e.target.value)} className="w-full h-24 bg-black/50 border border-white/10 rounded-xl p-2 text-xs text-white custom-scrollbar" placeholder="Descripción..."/>
+                </div>
+            </div>
+
+            <button onClick={handleSave} className="w-full py-3 bg-brand-gold text-black font-black uppercase tracking-widest rounded-xl text-xs hover:scale-[1.01] transition-transform">
+                Guardar Cambios de Landing
+            </button>
+        </div>
+    );
+};
+
+
 // --- Placeholder Components for AdminDashboard View Sections ---
-const DashboardView: React.FC<{ metrics: GlobalDashboardMetrics | null; onAudit: (user: User) => void; }> = ({ metrics, onAudit }) => {
+const DashboardView: React.FC<{ 
+    metrics: GlobalDashboardMetrics | null; 
+    onAudit: (user: User) => void;
+    settings: SystemSettings;
+    onSaveSettings: (updates: Partial<SystemSettings>) => void;
+}> = ({ metrics, onAudit, settings, onSaveSettings }) => {
     if (!metrics) return null;
     return (
         <div className="space-y-8">
@@ -41,7 +103,7 @@ const DashboardView: React.FC<{ metrics: GlobalDashboardMetrics | null; onAudit:
                 <KpiCard label="Nodos Online" value={metrics.onlineNodes} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>} />
                 <KpiCard label="Leads Calientes" value={metrics.hotLeads} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.25-5.5S14 4 14 4V3c-1-.5-3-2-3-2V2s-1-.5-3-2c0 0 0 0 0 0L4 12v3l2.657 2.657z" /></svg>} />
             </div>
-            {/* You can add more detailed metrics or charts here */}
+            <LandingPageManager settings={settings} onSave={onSaveSettings} />
         </div>
     );
 };
@@ -201,7 +263,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
     const [clients, setClients] = useState<User[]>([]);
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const [metrics, setMetrics] = useState<GlobalDashboardMetrics | null>(null);
-    // FIX: Initialize SystemSettings with dominionNetworkJid and Kill Switch
     const [systemSettings, setSystemSettings] = useState<SystemSettings>({ supportWhatsappNumber: '', logLevel: 'INFO', dominionNetworkJid: '5491110000000@s.whatsapp.net', isOutboundKillSwitchActive: false });
     const [view, setView] = useState<AdminView>('dashboard');
     const [loading, setLoading] = useState(true);
@@ -406,7 +467,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
             case 'dashboard':
                 return (
                     <div className="space-y-8">
-                        <DashboardView metrics={metrics} onAudit={onAudit} />
+                        <DashboardView metrics={metrics} onAudit={onAudit} settings={systemSettings} onSaveSettings={updateSystemSettings} />
                         
                         {/* System Settings */}
                         <div className="bg-brand-surface border border-brand-gold/20 rounded-2xl p-6 shadow-xl relative overflow-hidden group">

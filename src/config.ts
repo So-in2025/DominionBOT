@@ -12,7 +12,7 @@ export const STORAGE_KEY_BACKEND = 'dominion_backend_url';
 
 // --- ZONA DE EMERGENCIA: HARDCODE (FALLBACK) ---
 // Configuración para arquitectura Híbrida: Backend Local (Ngrok) <-> Frontend Vercel
-const MANUAL_BACKEND_URL = "https://unblanketed-waylon-arbitrarily.ngrok-free.dev"; 
+// DEPRECATED: Se eliminó la URL hardcodeada para priorizar variables de entorno y la función de Smart Link.
 // ------------------------------------
 
 // Detección segura de la URL del Backend desde variables de entorno o LocalStorage
@@ -26,16 +26,11 @@ const getEnvUrl = () => {
         }
     }
 
-    // 2. Si hay un hardcode manual, ÚSALO como default.
-    if (MANUAL_BACKEND_URL) {
-        return MANUAL_BACKEND_URL;
-    }
-
-    // 3. Intentar proceso de Node.js (Backend)
+    // 2. Intentar proceso de Node.js (Backend)
     if (typeof process !== 'undefined' && process.env && process.env.BACKEND_URL) {
         return process.env.BACKEND_URL;
     }
-    // 4. Intentar import.meta de Vite (Frontend)
+    // 3. Intentar import.meta de Vite (Frontend)
     try {
         const meta = (import.meta as any);
         if (meta && meta.env) {
@@ -47,7 +42,7 @@ const getEnvUrl = () => {
         // Suppress client-side errors
     }
     
-    // 5. Fallback para desarrollo local puro
+    // 4. Fallback para desarrollo local puro
     if (typeof g.window !== 'undefined') {
         const hostname = g.window.location.hostname;
         if (hostname === 'localhost' || hostname === '127.0.0.1') {

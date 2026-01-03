@@ -1,6 +1,6 @@
 
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { Conversation, BotSettings, Message, View, ConnectionStatus, User, LeadStatus, PromptArchetype, Testimonial } from './types';
+import { Conversation, BotSettings, Message, View, ConnectionStatus, User, LeadStatus, PromptArchetype, Testimonial, SystemSettings } from './types';
 import Header from './components/Header';
 import ConversationList from './components/ConversationList';
 import ChatWindow from './components/ChatWindow';
@@ -108,8 +108,9 @@ const LandingPage: React.FC<{
   isLoggedIn: boolean;
   token: string | null;
   showToast: (message: string, type: 'success' | 'error' | 'info') => void;
-  isMobile: boolean; // Added isMobile prop
-}> = ({ onAuth, onRegister, visibleMessages, isSimTyping, simScrollRef, onOpenLegal, isServerReady, isLoggedIn, token, showToast, isMobile }) => {
+  isMobile: boolean;
+  settings: SystemSettings | null;
+}> = ({ onAuth, onRegister, visibleMessages, isSimTyping, simScrollRef, onOpenLegal, isServerReady, isLoggedIn, token, showToast, isMobile, settings }) => {
     return (
         <div className="w-full min-h-screen bg-brand-black font-sans relative overflow-x-hidden">
             <div className="absolute inset-0 neural-grid opacity-40 z-0 pointer-events-none"></div>
@@ -182,7 +183,7 @@ const LandingPage: React.FC<{
             <HowItWorksArt />
             <HowItWorksSection />
             <SecurityCanvas />
-            <NeuralArchitectureSection />
+            <NeuralArchitectureSection settings={settings} />
             <TestimonialsCarousel isLoggedIn={isLoggedIn} token={token} showToast={showToast} />
             
             <footer className="relative z-10 w-full border-t border-white/5 bg-brand-black/95 backdrop-blur-2xl px-12 py-10 flex flex-col md:flex-row justify-between items-center gap-12">
@@ -262,6 +263,7 @@ export function App() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [settings, setSettings] = useState<BotSettings | null>(null);
+  const [systemSettings, setSystemSettings] = useState<SystemSettings | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(ConnectionStatus.DISCONNECTED);
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [pairingCode, setPairingCode] = useState<string | null>(null);
@@ -298,6 +300,27 @@ export function App() {
     setToast({ message, type });
   }, []);
   
+  useEffect(() => {
+    const fetchSystemSettings = async () => {
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/system/settings`);
+            if (res.ok) {
+                const contentType = res.headers.get("content-type");
+                if (contentType && contentType.indexOf("application/json") !== -1) {
+                    setSystemSettings(await res.json());
+                } else {
+                    console.error("No se pudo obtener la configuración: la respuesta no es JSON.", await res.text());
+                }
+            } else {
+                console.error(`Fallo al obtener la configuración del sistema: Status ${res.status}`);
+            }
+        } catch (e) {
+            console.error("No se pudo obtener la configuración del sistema para la página de destino", e);
+        }
+    };
+    fetchSystemSettings();
+  }, []);
+
   const handleNavigate = (view: View) => {
       if (view === View.CHATS && (window as any).IS_LANDING_VIEW) {
           setShowLanding(true);
@@ -560,7 +583,7 @@ export function App() {
       // Map View
       switch(currentView) {
         case View.DASHBOARD: return <AgencyDashboard token={token!} backendUrl={BACKEND_URL} settings={settings!} onUpdateSettings={handleUpdateSettings} currentUser={currentUser} showToast={showToast} />;
-        case View.CAMPAIGNS: return <CampaignsPanel token={token!} backendUrl={BACKEND_URL} showToast={showToast} />;
+        case View.CAMPAIGNS: return <CampaignsPanel token={token!} backendUrl={BACKEND_URL} showToast={showToast} settings={settings} />;
         case View.RADAR: return <RadarPanel token={token!} backendUrl={BACKEND_URL} showToast={showToast} />;
         case View.NETWORK: return <NetworkPanel token={token!} backendUrl={BACKEND_URL} currentUser={currentUser} settings={settings} onUpdateSettings={handleUpdateSettings} showToast={showToast} />; {/* NEW: Render NetworkPanel */}
         case View.SETTINGS: return <SettingsPanel settings={settings} isLoading={isLoadingSettings} onUpdateSettings={isFunctionalityDisabled ? ()=>{} : handleUpdateSettings} onOpenLegal={setLegalModalType} showToast={showToast} />;
@@ -614,7 +637,7 @@ export function App() {
 
       <main className={`flex-1 relative ${isAppView ? 'flex overflow-hidden' : 'block'}`}>
         {backendError && <div className="absolute top-0 left-0 right-0 z-[200] flex items-center justify-center p-2 text-[10px] font-black shadow-xl animate-pulse bg-red-600/95 text-white"><span>⚠️ {backendError}</span></div>}
-        {(!token || showLanding) ? <LandingPage onAuth={() => setAuthModal({ isOpen: true, mode: 'login' })} onRegister={() => setAuthModal({ isOpen: true, mode: 'register' })} visibleMessages={visibleMessages} isSimTyping={isSimTyping} simScrollRef={simScrollRef} onOpenLegal={setLegalModalType} isServerReady={true} isLoggedIn={!!token} token={token} showToast={showToast} isMobile={isMobileView} /> : renderClientView()}
+        {(!token || showLanding) ? <LandingPage onAuth={() => setAuthModal({ isOpen: true, mode: 'login' })} onRegister={() => setAuthModal({ isOpen: true, mode: 'register' })} visibleMessages={visibleMessages} isSimTyping={isSimTyping} simScrollRef={simScrollRef} onOpenLegal={setLegalModalType} isServerReady={true} isLoggedIn={!!token} token={token} showToast={showToast} isMobile={isMobileView} settings={systemSettings} /> : renderClientView()}
       </main>
     </div>
   );

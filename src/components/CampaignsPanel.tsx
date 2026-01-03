@@ -1,18 +1,20 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Campaign, WhatsAppGroup } from '../types';
+import { Campaign, WhatsAppGroup, BotSettings } from '../types';
 import { getAuthHeaders } from '../config';
+import { GoogleGenAI } from '@google/genai';
 
 interface CampaignsPanelProps {
     token: string;
     backendUrl: string;
     showToast: (message: string, type: 'success' | 'error' | 'info') => void;
+    settings: BotSettings | null;
 }
 
 const DAYS_OF_WEEK = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
 const FULL_DAYS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 
-const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, showToast }) => {
+const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, showToast, settings }) => {
     const [campaigns, setCampaigns] = useState<Campaign[]>([]);
     const [groups, setGroups] = useState<WhatsAppGroup[]>([]);
     const [view, setView] = useState<'LIST' | 'CREATE'>('LIST');
@@ -35,6 +37,10 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
     const [startHour, setStartHour] = useState(9);
     const [endHour, setEndHour] = useState(20);
     const [useSpintax, setUseSpintax] = useState(true);
+
+    // AI Image Prompt State
+    const [generatedPrompt, setGeneratedPrompt] = useState('');
+    const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false);
 
     // --- SMART CALCULATOR (CLIENT SIDE PREVIEW) ---
     const nextRunPreview = useMemo(() => {
@@ -160,6 +166,7 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
         setSelectedDays([]);
         setScheduledTime('09:00');
         setStartDate(new Date().toISOString().split('T')[0]);
+        setGeneratedPrompt('');
     };
 
     const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -183,6 +190,59 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
         } else {
             setSelectedDays(prev => [...prev, dayIndex].sort());
         }
+    };
+
+    const handleGeneratePrompt = async () => {
+        if (!message || isGeneratingPrompt || !settings?.geminiApiKey) {
+            showToast('Escribe el mensaje de la campaña y asegúrate de tener una API Key de Gemini configurada.', 'error');
+            return;
+        }
+
+        setIsGeneratingPrompt(true);
+        setGeneratedPrompt('');
+
+        try {
+            const ai = new GoogleGenAI({ apiKey: settings.geminiApiKey });
+            const prompt = `
+Actúa como un director de arte y experto en marketing visual. Basado en el siguiente texto de una campaña de WhatsApp, crea un prompt detallado y profesional para un generador de imágenes de IA como Midjourney o DALL-E 3.
+
+El prompt debe describir una imagen conceptual, poderosa y de alta calidad que capture la esencia del mensaje.
+
+Incluye los siguientes elementos en tu prompt:
+- **Estilo:** (ej: fotográfico, cinematográfico, ilustración 3D, minimalista, etc.)
+- **Composición:** (ej: primer plano, plano general, vista isométrica, etc.)
+- **Iluminación:** (ej: luz dorada del atardecer, neón, luz de estudio dramática, etc.)
+- **Paleta de colores:** (ej: tonos fríos y corporativos, colores vibrantes, monocromático, etc.)
+- **Emoción o atmósfera:** (ej: sensación de urgencia, lujo, confianza, innovación, etc.)
+
+**Texto de la campaña:**
+"${message}"
+
+**Tu prompt generado:**
+`;
+            const response = await ai.models.generateContent({
+                model: 'gemini-3-flash-preview',
+                contents: prompt,
+            });
+
+            if (response.text) {
+                setGeneratedPrompt(response.text.trim());
+                showToast('Prompt generado con éxito.', 'success');
+            } else {
+                throw new Error('La respuesta de la IA estaba vacía.');
+            }
+
+        } catch (e) {
+            console.error(e);
+            showToast('Error al generar el prompt. Revisa tu API Key de Gemini.', 'error');
+        } finally {
+            setIsGeneratingPrompt(false);
+        }
+    };
+
+    const copyPrompt = () => {
+        navigator.clipboard.writeText(generatedPrompt);
+        showToast('Prompt copiado al portapapeles.', 'info');
     };
 
     const handleSave = async () => {
@@ -366,6 +426,30 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
                                             </div>
                                         )}
                                     </div>
+                                </div>
+                                
+                                {/* AI IMAGE PROMPT GENERATOR */}
+                                <div className="bg-black/20 p-6 rounded-2xl border border-white/5 space-y-4">
+                                    <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest">Asistente de Imagen Táctica</label>
+                                    <button onClick={handleGeneratePrompt} disabled={!message || isGeneratingPrompt} className="w-full flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-xl text-xs font-bold uppercase tracking-widest transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                                        {isGeneratingPrompt ? (
+                                            <>
+                                                <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>
+                                                Generando...
+                                            </>
+                                        ) : (
+                                            <>✨ Generar Prompt con IA</>
+                                        )}
+                                    </button>
+                                    {generatedPrompt && (
+                                        <div className="space-y-3 pt-4 border-t border-white/10 animate-fade-in">
+                                            <textarea readOnly value={generatedPrompt} className="w-full h-32 bg-black/40 border border-white/10 rounded-xl p-3 text-gray-300 text-[10px] font-mono leading-relaxed custom-scrollbar resize-none" />
+                                            <div className="flex gap-2">
+                                                <button onClick={copyPrompt} className="flex-1 py-2 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-lg text-[9px] font-bold uppercase hover:bg-blue-500/20">Copiar</button>
+                                                <a href="https://chat.openai.com/" target="_blank" rel="noopener noreferrer" className="flex-1 text-center py-2 bg-green-500/10 text-green-400 border border-green-500/20 rounded-lg text-[9px] font-bold uppercase hover:bg-green-500/20">Abrir en ChatGPT-4o</a>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 

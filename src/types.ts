@@ -1,5 +1,4 @@
 
-
 export interface SimulationLab {
     experiments: SimulationRun[];
     aggregatedScore: number;
@@ -463,6 +462,13 @@ export interface Testimonial {
 export interface SystemSettings {
     supportWhatsappNumber: string;
     logLevel: LogLevel;
-    dominionNetworkJid?: string; // FIX: Made optional to handle potential missing data from API
-    isOutboundKillSwitchActive?: boolean; // NEW: Kill Switch Flag
+    dominionNetworkJid?: string;
+    isOutboundKillSwitchActive?: boolean;
+    dolarBlueRate?: number;
+    planStandardPriceUSD?: number;
+    planSniperPriceUSD?: number;
+    planNeuroBoostPriceUSD?: number;
+    planStandardDescription?: string;
+    planSniperDescription?: string;
+    planNeuroBoostDescription?: string;
 }
