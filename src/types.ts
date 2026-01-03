@@ -326,23 +326,9 @@ export interface Conversation {
   isTestBotConversation?: boolean; 
 }
 
-export interface BrainModule {
-  id: string;
-  name: string;
-  triggers: string; // Comma-separated keywords
-  context: string;
-}
-
-export interface ModularBrain {
-  architecture: 'MODULAR';
-  defaultModule: string; // ID of the default module
-  modules: BrainModule[];
-}
-
 export interface BotSettings {
   productName: string;
-  productDescription: string | ModularBrain;
-  brainArchitecture?: 'MONOLITHIC' | 'MODULAR';
+  productDescription: string;
   priceText: string;
   ticketValue: number; // NEW: Real Ticket Value for metrics
   freeTrialDays: number;
