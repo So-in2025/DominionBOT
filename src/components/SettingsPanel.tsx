@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { BotSettings, PromptArchetype } from '../types';
+import { BotSettings, PromptArchetype, NeuralRouterConfig } from '../types';
 import { GoogleGenAI, Type } from '@google/genai';
 import { audioService } from '../services/audioService';
 import { openSupportWhatsApp } from '../utils/textUtils';
@@ -136,6 +136,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
   const [showWebTooltip, setShowWebTooltip] = useState(false);
   const [isAnalyzingWeb, setIsAnalyzingWeb] = useState(false);
   
+  // New: Advanced Wizard State
+  const [wizNeuralConfig, setWizNeuralConfig] = useState<NeuralRouterConfig | undefined>(undefined);
+
   const [isProcessing, setIsProcessing] = useState(false);
   const [wizardState, setWizardState] = useState<WizardState>({
       mission: '', idealCustomer: '', detailedDescription: '',
@@ -152,6 +155,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
         }
         // Init toggle based on settings
         setIsAdvancedMode(settings.useAdvancedModel || false);
+        setWizNeuralConfig(settings.neuralConfig);
     }
   }, [settings]);
 
@@ -272,6 +276,37 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
           setWizardStep('API_SETUP');
           return;
       }
+      
+      // IF ADVANCED MODE, JUST SAVE THE NEURAL CONFIG AND FINISH
+      if (isAdvancedMode) {
+          if (!wizNeuralConfig?.masterIdentity) {
+              showToast('Debes configurar al menos la Identidad Maestra.', 'error');
+              return;
+          }
+          
+          setWizardStep('LOADING');
+          // Short delay to simulate saving
+          setTimeout(() => {
+              if (!current) return;
+              const newSettings = {
+                  ...current,
+                  productName: wizIdentity.name,
+                  ctaLink: wizIdentity.website || current.ctaLink,
+                  // Use Master Identity as description fallback
+                  productDescription: wizNeuralConfig.masterIdentity, 
+                  useAdvancedModel: true,
+                  neuralConfig: wizNeuralConfig,
+                  geminiApiKey: wizApiKey.trim(),
+                  isWizardCompleted: true
+              };
+              onUpdateSettings(newSettings);
+              showToast('🧠 Arquitectura Modular Activada.', 'success');
+              audioService.play('action_success');
+          }, 1500);
+          return;
+      }
+
+      // LINEAR PATH (ORIGINAL AI GENERATION)
       if (!wizContext || wizContext.length < 10) {
           showToast('El contexto es muy corto. Escribe o dicta más detalles.', 'error');
           return;
@@ -383,7 +418,8 @@ ${data.rules}
           rhythmValue: mapping.rhythmValue,
           intensityValue: mapping.intensityValue,
           geminiApiKey: wizApiKey.trim(), // Ensure Key is saved trimmed
-          isWizardCompleted: true
+          isWizardCompleted: true,
+          useAdvancedModel: false // Explicitly set false for Linear Path
       };
 
       onUpdateSettings(newSettings);
@@ -450,6 +486,27 @@ ${data.rules}
                     </div>
                 </div>
                 
+                {/* EDUCATIONAL BANNER */}
+                <div className="mb-8 p-4 rounded-xl border border-white/5 bg-white/5 flex items-start gap-4">
+                    <div className={`p-2 rounded-lg ${isAdvancedMode ? 'bg-brand-gold/10 text-brand-gold' : 'bg-blue-500/10 text-blue-400'}`}>
+                        {isAdvancedMode ? (
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86 3.86l-.477 2.387c-.037.184.011.373.13.514l1.392 1.624a1 1 0 00.707.362h2.242a2 2 0 001.022-.547l1.022-1.022a2 2 0 00.547-1.022l.477-2.387c.037-.184-.011-.373-.13-.514l-1.392-1.624a1 1 0 00-.707-.362z" /></svg>
+                        ) : (
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                        )}
+                    </div>
+                    <div>
+                        <h4 className={`text-sm font-bold uppercase mb-1 ${isAdvancedMode ? 'text-brand-gold' : 'text-blue-400'}`}>
+                            {isAdvancedMode ? 'Arquitectura Modular (Router + Expertos)' : 'Arquitectura Lineal (Agente Único)'}
+                        </h4>
+                        <p className="text-xs text-gray-400 leading-relaxed">
+                            {isAdvancedMode 
+                                ? 'El sistema actúa como un Router Central que deriva a Módulos Especializados según la intención del cliente. Ideal para negocios complejos con múltiples productos, áreas o sucursales.' 
+                                : 'El sistema funciona como un único agente con un contexto unificado. Ideal para negocios enfocados en un producto/servicio principal donde la simplicidad y la coherencia son clave.'}
+                        </p>
+                    </div>
+                </div>
+
                 {isAdvancedMode ? (
                     <AdvancedNeuralConfig 
                         initialConfig={current.neuralConfig} 
@@ -524,7 +581,7 @@ ${data.rules}
       );
   }
 
-  // VIEW: WIZARD (Unchanged logic for the initial setup)
+  // VIEW: WIZARD
   return (
     <div className="flex-1 bg-brand-black flex flex-col items-center justify-center p-6 relative overflow-hidden font-sans">
         {/* Background Ambient */}
@@ -550,7 +607,7 @@ ${data.rules}
                 </div>
             </div>
 
-            <div className="bg-brand-surface border border-white/10 rounded-[32px] p-8 md:p-12 shadow-2xl relative backdrop-blur-sm">
+            <div className={`bg-brand-surface border border-white/10 rounded-[32px] p-8 md:p-12 shadow-2xl relative backdrop-blur-sm transition-all duration-500 ${isAdvancedMode && wizardStep === 'CONTEXT' ? 'max-w-4xl w-full' : ''}`}>
                 
                 {/* STEP 1: IDENTITY */}
                 {wizardStep === 'IDENTITY' && (
@@ -680,79 +737,125 @@ ${data.rules}
                     </div>
                 )}
 
-                {/* STEP 3: CONTEXT (HYBRID) */}
+                {/* STEP 3: CONTEXT (HYBRID: LINEAR VS MODULAR CHOICE) */}
                 {wizardStep === 'CONTEXT' && (
                     <div className="space-y-6 animate-fade-in relative">
                         <div className="text-center mb-6">
-                            <h3 className="text-xl font-black text-white uppercase tracking-widest">Contexto Operativo</h3>
-                            <p className="text-xs text-gray-400 mt-2 font-medium">Cuéntale a la IA qué vendes y cómo. Escribe o dicta.</p>
+                            <h3 className="text-xl font-black text-white uppercase tracking-widest">Definición de Inteligencia</h3>
+                            <p className="text-xs text-gray-400 mt-2 font-medium">Selecciona la arquitectura que mejor se adapte a la complejidad de tu negocio.</p>
                         </div>
 
-                        {/* WEB ANALYSIS BUTTON - Repositioned above Textarea with Spacing */}
-                        {wizIdentity.website && (
-                            <div className="flex justify-end mb-6 px-1">
+                        {/* MODE SELECTOR */}
+                        <div className="flex p-1 bg-black/40 border border-white/10 rounded-xl mb-6">
+                            <button 
+                                onClick={() => setIsAdvancedMode(false)}
+                                className={`flex-1 py-3 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${!isAdvancedMode ? 'bg-white/10 text-white shadow-inner' : 'text-gray-500 hover:text-white'}`}
+                            >
+                                Agente Lineal (Simple)
+                            </button>
+                            <button 
+                                onClick={() => setIsAdvancedMode(true)}
+                                className={`flex-1 py-3 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${isAdvancedMode ? 'bg-brand-gold text-black shadow-lg' : 'text-gray-500 hover:text-white'}`}
+                            >
+                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86 3.86l-.477 2.387c-.037.184.011.373.13.514l1.392 1.624a1 1 0 00.707.362h2.242a2 2 0 001.022-.547l1.022-1.022a2 2 0 00.547-1.022l.477-2.387c.037-.184-.011-.373-.13-.514l-1.392-1.624a1 1 0 00-.707-.362z" /></svg>
+                                Enjambre Modular (Avanzado)
+                            </button>
+                        </div>
+
+                        {/* EDUCATIONAL INFO BOX */}
+                        <div className={`p-4 rounded-xl border mb-6 transition-all duration-300 ${isAdvancedMode ? 'bg-brand-gold/5 border-brand-gold/20' : 'bg-blue-500/5 border-blue-500/20'}`}>
+                            <h4 className={`text-xs font-bold uppercase mb-1 ${isAdvancedMode ? 'text-brand-gold' : 'text-blue-400'}`}>
+                                {isAdvancedMode ? '¿Para quién es el Modo Modular?' : '¿Para quién es el Modo Lineal?'}
+                            </h4>
+                            <p className="text-[10px] text-gray-400 leading-relaxed">
+                                {isAdvancedMode 
+                                    ? 'Para negocios complejos que requieren múltiples "especialistas". Por ejemplo: Una Inmobiliaria que tiene un departamento de Alquileres, otro de Ventas y otro de Administración. El sistema actúa como un "Router" inteligente.' 
+                                    : 'Para la mayoría de los negocios. El bot actúa como un único agente con una identidad y conocimiento unificado. Ideal si vendes un producto principal o servicio específico.'}
+                            </p>
+                        </div>
+
+                        {isAdvancedMode ? (
+                            // ADVANCED MODULAR INTERFACE INSIDE WIZARD
+                            <div className="max-h-[500px] overflow-y-auto custom-scrollbar pr-2 border border-white/5 rounded-2xl p-4 bg-black/20">
+                                <AdvancedNeuralConfig 
+                                    initialConfig={wizNeuralConfig}
+                                    onChange={(cfg) => setWizNeuralConfig(cfg)}
+                                />
+                            </div>
+                        ) : (
+                            // LINEAR CONTEXT INTERFACE
+                            <div className="relative group animate-fade-in">
+                                {/* WEB ANALYSIS BUTTON */}
+                                {wizIdentity.website && (
+                                    <div className="flex justify-end mb-2 px-1">
+                                        <button 
+                                            onClick={analyzeWebsite}
+                                            disabled={isAnalyzingWeb}
+                                            className="flex items-center gap-2 bg-brand-gold/10 border border-brand-gold/30 hover:bg-brand-gold/20 text-brand-gold px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all disabled:opacity-50"
+                                        >
+                                            {isAnalyzingWeb ? (
+                                                <>
+                                                    <div className="w-3 h-3 border-2 border-brand-gold border-t-transparent rounded-full animate-spin"></div>
+                                                    Analizando...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <span className="text-xs">✨</span> Analizar {wizIdentity.website}
+                                                </>
+                                            )}
+                                        </button>
+                                    </div>
+                                )}
+                                <textarea 
+                                    value={wizContext}
+                                    onChange={(e) => setWizContext(e.target.value)}
+                                    className="w-full h-48 bg-black/50 border border-white/10 rounded-xl p-5 pb-12 text-white text-sm leading-relaxed focus:border-brand-gold outline-none resize-none custom-scrollbar placeholder-gray-700 transition-all z-10 relative"
+                                    placeholder={`Ej: Soy una agencia de marketing. Vendemos gestión de redes desde $300 USD. Quiero que el bot sea agresivo en el cierre. Si preguntan por descuentos, diles que no, pero que ofrecemos garantía.`}
+                                />
+                                {!wizContext && !isRecording && (
+                                    <div className="absolute bottom-4 left-4 right-16 p-2 pointer-events-none flex flex-col justify-end text-left opacity-50 z-20">
+                                        <p className="text-[10px] font-bold text-gray-400 mb-1">💡 Tip de Calibración:</p>
+                                        <p className="text-[9px] text-gray-500 leading-snug">Incluye: Qué vendes, precios base, tu diferencial y reglas que el bot no debe romper nunca.</p>
+                                    </div>
+                                )}
+                                
                                 <button 
-                                    onClick={analyzeWebsite}
-                                    disabled={isAnalyzingWeb}
-                                    className="flex items-center gap-2 bg-brand-gold/10 border border-brand-gold/30 hover:bg-brand-gold/20 text-brand-gold px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all disabled:opacity-50"
+                                    onClick={toggleRecording}
+                                    className={`absolute bottom-4 right-4 p-3 rounded-full shadow-lg transition-all z-30 ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-brand-gold text-black hover:scale-110'}`}
+                                    title="Dictar por voz"
                                 >
-                                    {isAnalyzingWeb ? (
-                                        <>
-                                            <div className="w-3 h-3 border-2 border-brand-gold border-t-transparent rounded-full animate-spin"></div>
-                                            Analizando Web...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <span className="text-xs">✨</span> Analizar {wizIdentity.website}
-                                        </>
-                                    )}
+                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
                                 </button>
                             </div>
                         )}
 
-                        <div className="relative group">
-                            <textarea 
-                                value={wizContext}
-                                onChange={(e) => setWizContext(e.target.value)}
-                                className="w-full h-48 bg-black/50 border border-white/10 rounded-xl p-5 pb-12 text-white text-sm leading-relaxed focus:border-brand-gold outline-none resize-none custom-scrollbar placeholder-gray-700 transition-all z-10 relative"
-                                placeholder={`Ej: Soy una agencia de marketing. Vendemos gestión de redes desde $300 USD. Quiero que el bot sea agresivo en el cierre. Si preguntan por descuentos, diles que no, pero que ofrecemos garantía.`}
-                            />
-                            {/* EDUCATIONAL OVERLAY (Fades out when typing) - MOVED TO BOTTOM */}
-                            {!wizContext && !isRecording && (
-                                <div className="absolute bottom-4 left-4 right-16 p-2 pointer-events-none flex flex-col justify-end text-left opacity-50 z-20">
-                                    <p className="text-[10px] font-bold text-gray-400 mb-1">💡 Tip de Calibración:</p>
-                                    <p className="text-[9px] text-gray-500 leading-snug">Incluye: Qué vendes, precios base, tu diferencial y reglas que el bot no debe romper nunca.</p>
-                                </div>
-                            )}
-                            
-                            {/* MIC BUTTON */}
-                            <button 
-                                onClick={toggleRecording}
-                                className={`absolute bottom-4 right-4 p-3 rounded-full shadow-lg transition-all z-30 ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-brand-gold text-black hover:scale-110'}`}
-                                title="Dictar por voz"
-                            >
-                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
-                            </button>
-                        </div>
-
-                        <div className="flex gap-4 pt-2">
+                        <div className="flex gap-4 pt-4 border-t border-white/5">
                             <button onClick={() => setWizardStep('API_SETUP')} className="px-6 py-3 text-gray-500 font-bold text-xs uppercase hover:text-white transition-colors">Atrás</button>
-                            <button 
-                                onClick={() => { if(wizContext.length > 5) setWizardStep('PATH'); else showToast('Danos un poco más de contexto.', 'error'); }}
-                                className="flex-1 py-3 bg-white/10 hover:bg-white/20 text-white border border-white/10 rounded-xl font-black text-xs uppercase tracking-[0.2em] transition-all hover:scale-[1.02]"
-                            >
-                                Siguiente &rarr;
-                            </button>
+                            {isAdvancedMode ? (
+                                <button 
+                                    onClick={executeNeuralPath} 
+                                    className="flex-1 py-3 bg-brand-gold text-black rounded-xl font-black text-xs uppercase tracking-[0.2em] transition-all hover:scale-[1.02] shadow-lg shadow-brand-gold/20"
+                                >
+                                    Finalizar Arquitectura
+                                </button>
+                            ) : (
+                                <button 
+                                    onClick={() => { if(wizContext.length > 5) setWizardStep('PATH'); else showToast('Danos un poco más de contexto.', 'error'); }}
+                                    className="flex-1 py-3 bg-white/10 hover:bg-white/20 text-white border border-white/10 rounded-xl font-black text-xs uppercase tracking-[0.2em] transition-all hover:scale-[1.02]"
+                                >
+                                    Siguiente &rarr;
+                                </button>
+                            )}
                         </div>
                     </div>
                 )}
 
-                {/* STEP 4: THE FORK (CHOICE) */}
+                {/* STEP 4: THE FORK (CHOICE) - ONLY FOR LINEAR MODE NOW */}
                 {wizardStep === 'PATH' && (
                     <div className="space-y-8 animate-fade-in">
                         <div className="text-center mb-8">
-                            <h3 className="text-xl font-black text-white uppercase tracking-widest">Elije tu Estrategia</h3>
-                            <p className="text-xs text-gray-400 mt-2 font-medium">¿Cómo quieres construir el cerebro?</p>
+                            <h3 className="text-xl font-black text-white uppercase tracking-widest">Estrategia Lineal</h3>
+                            <p className="text-xs text-gray-400 mt-2 font-medium">¿Cómo quieres construir el cerebro de tu agente único?</p>
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -804,7 +907,7 @@ ${data.rules}
                     <div className="py-20 text-center animate-fade-in flex flex-col items-center">
                         <div className="w-20 h-20 border-4 border-brand-gold/20 border-t-brand-gold rounded-full animate-spin mb-8 shadow-[0_0_40px_rgba(212,175,55,0.2)]"></div>
                         <h3 className="text-xl font-black text-white uppercase tracking-widest animate-pulse">Estructurando Red Neural</h3>
-                        <p className="text-xs text-gray-500 mt-3 font-mono">Aplicando arquitectura Elite++...</p>
+                        <p className="text-xs text-gray-500 mt-3 font-mono">Aplicando arquitectura {isAdvancedMode ? 'Modular' : 'Elite'}...</p>
                     </div>
                 )}
 
