@@ -25,6 +25,7 @@ const sessions = new Map<string, WASocket>();
 const qrCache = new Map<string, string>(); 
 const codeCache = new Map<string, string>(); 
 const connectionLocks = new Map<string, boolean>(); 
+const manualDisconnects = new Set<string>(); // NEW: Track intentional disconnects
 
 const logger = pino({ level: 'silent' }); 
 
@@ -156,22 +157,43 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
             }
 
             if (connection === 'close') {
+                // --- NEW ROBUST DISCONNECT LOGIC ---
+                if (manualDisconnects.has(userId)) {
+                    logService.info(`[WA-CLIENT] Desconexión manual procesada. No se reconectará.`, userId);
+                    manualDisconnects.delete(userId);
+                    qrCache.delete(userId);
+                    codeCache.delete(userId);
+                    sessions.delete(userId);
+                    connectionLocks.delete(userId);
+                    return; // EXIT, no reconnect
+                }
+                
                 const disconnectError = lastDisconnect?.error as Boom;
                 const statusCode = disconnectError?.output?.statusCode;
+        
+                if (!disconnectError) {
+                    logService.warn(`[WA-CLIENT] Conexión cerrada sin un error explícito (Clean disconnect).`, userId);
+                    // If a clean disconnect happens during pairing, it's likely a loop. Abort.
+                    if(qrCache.has(userId) || codeCache.has(userId)) {
+                        logService.error(`[WA-CLIENT] 🚨 Desconexión limpia durante la fase de enlace detectada. Abortando reconexión automática para prevenir bucle. El usuario debe reintentar.`, null, userId);
+                        qrCache.delete(userId);
+                        codeCache.delete(userId);
+                        sessions.delete(userId);
+                        connectionLocks.delete(userId);
+                        return; // EXIT, no reconnect
+                    }
+                }
+                // --- END NEW LOGIC ---
                 
                 const isConflict = disconnectError?.message === 'Stream Errored' && disconnectError?.data === 'conflict';
                 const isCorrupt428 = statusCode === 428; 
                 const isLoggedOut = statusCode === DisconnectReason.loggedOut;
-                // NEW: Detect Bad MAC or Crypto errors loosely by code 401/500/generic or specific error messages
                 const isCryptoError = statusCode === 401 || disconnectError?.message?.includes('Bad MAC') || disconnectError?.message?.includes('decryption');
 
                 if (isConflict || isCorrupt428 || isCryptoError) {
                     logService.error(`[WA-CLIENT] 🚨 ERROR CRÍTICO DE SESIÓN (${statusCode} / ${disconnectError?.message}). Purgando.`, disconnectError, userId);
                     
-                    // AGGRESSIVE CLEANUP
-                    try {
-                        sessions.get(userId)?.end(undefined);
-                    } catch(e) {}
+                    try { sessions.get(userId)?.end(undefined); } catch(e) {}
                     
                     sessions.delete(userId);
                     qrCache.delete(userId);
@@ -183,7 +205,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                 }
 
                 const shouldReconnect = !isLoggedOut;
-                logService.warn(`[WA-CLIENT] Conexión cerrada (${statusCode}). Reconectando: ${shouldReconnect}`, userId);
+                logService.warn(`[WA-CLIENT] Conexión cerrada (Código: ${statusCode || 'N/A'}). Reconectando: ${shouldReconnect}`, userId);
                 
                 qrCache.delete(userId);
                 codeCache.delete(userId);
@@ -193,7 +215,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                 if (shouldReconnect) {
                     setTimeout(() => connectToWhatsApp(userId, phoneNumber), 3000); 
                 } else {
-                    logService.info(`[WA-CLIENT] Usuario desconectado. Limpiando datos.`, userId);
+                    logService.info(`[WA-CLIENT] Usuario desconectado. Limpiando datos de sesión.`, userId);
                     await clearBindedSession(userId); 
                 }
             } else if (connection === 'open') {
@@ -300,6 +322,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
 
 export async function disconnectWhatsApp(userId: string) {
     logService.info(`[WA-CLIENT] Ejecutando desconexión manual para ${userId}`, userId);
+    manualDisconnects.add(userId); // Add to set BEFORE ending session
     const sock = sessions.get(userId);
     if (sock) {
         try { sock.end(undefined); } catch (e) {}
