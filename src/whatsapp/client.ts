@@ -49,17 +49,28 @@ setInterval(async () => {
     }
 }, 2000); 
 
-function extractMessageContent(msg: proto.IWebMessageInfo): string | null {
-    const message = msg.message;
+// RECURSIVE MESSAGE EXTRACTOR (The "Unwrapper")
+function extractMessageContent(msg: proto.IWebMessageInfo | proto.IMessage): string | null {
+    const message = (msg as any).message || msg; 
     if (!message) return null;
 
+    // 1. Standard Text
     if (message.conversation) return message.conversation;
     if (message.extendedTextMessage?.text) return message.extendedTextMessage.text;
     
+    // 2. Media Captions
     if (message.imageMessage?.caption) return message.imageMessage.caption;
     if (message.videoMessage?.caption) return message.videoMessage.caption;
     if (message.documentMessage?.caption) return message.documentMessage.caption;
 
+    // 3. Unwrap Complex Types
+    if (message.ephemeralMessage?.message) return extractMessageContent(message.ephemeralMessage.message);
+    if (message.viewOnceMessage?.message) return extractMessageContent(message.viewOnceMessage.message);
+    if (message.viewOnceMessageV2?.message) return extractMessageContent(message.viewOnceMessageV2.message);
+    if (message.documentWithCaptionMessage?.message) return extractMessageContent(message.documentWithCaptionMessage.message);
+    if (message.editedMessage?.message?.protocolMessage?.editedMessage) return extractMessageContent(message.editedMessage.message.protocolMessage.editedMessage);
+
+    // 4. Media Placeholders
     if (message.imageMessage) return '📷 [Imagen]';
     if (message.audioMessage) return '🎤 [Audio]';
     if (message.videoMessage) return '🎥 [Video]';
@@ -67,6 +78,12 @@ function extractMessageContent(msg: proto.IWebMessageInfo): string | null {
     if (message.stickerMessage) return '👾 [Sticker]';
     if (message.contactMessage) return '👤 [Contacto]';
     if (message.locationMessage) return '📍 [Ubicación]';
+    
+    // 5. Fallback for unknown types (don't return null unless empty)
+    // This ensures we at least see *something* in the chat list
+    if (Object.keys(message).length > 0 && !message.protocolMessage && !message.reactionMessage && !message.pollUpdateMessage) {
+        return 'Unknown Message Type';
+    }
 
     return null;
 }
@@ -76,13 +93,10 @@ export function getSessionStatus(userId: string): { status: ConnectionStatus, qr
     const qr = qrCache.get(userId);
     const code = codeCache.get(userId);
 
-    // Prioritize Connected state
     if (sock?.user) return { status: ConnectionStatus.CONNECTED };
-    
     if (code) return { status: ConnectionStatus.AWAITING_SCAN, pairingCode: code };
     if (qr) return { status: ConnectionStatus.AWAITING_SCAN, qr };
 
-    // If no socket but we are here, we are disconnected
     return { status: ConnectionStatus.DISCONNECTED };
 }
 
@@ -91,7 +105,6 @@ export function getSocket(userId: string): WASocket | undefined {
 }
 
 export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
-    // 1. FORCE CLEANUP WITH DELAY (Cool-down Protocol)
     const oldSock = sessions.get(userId);
     if (oldSock) {
         try {
@@ -104,11 +117,9 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
         sessions.delete(userId);
     }
 
-    // Clear caches
     qrCache.delete(userId);
     codeCache.delete(userId);
 
-    // CRITICAL: Wait for socket cleanup to propagate (prevents collision)
     await new Promise(resolve => setTimeout(resolve, 2000));
 
     try {
@@ -129,6 +140,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
             browser: Browsers.macOS('Chrome'),
             agent: user?.settings?.proxyUrl ? new HttpsProxyAgent(user.settings.proxyUrl) as any : undefined,
             generateHighQualityLinkPreview: true,
+            // CRITICAL FIX: Do NOT ignore @lid. WhatsApp uses LIDs for many private chats now.
             shouldIgnoreJid: jid => jid?.endsWith('@broadcast'), 
             syncFullHistory: true, 
             defaultQueryTimeoutMs: 60000, 
@@ -148,12 +160,10 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                 logService.info(`[WA-CLIENT] QR generado.`, userId);
                 qrCache.set(userId, await QRCode.toDataURL(qr));
                 
-                // Pairing Code Logic: Only request if phone number is provided AND we are in QR state (socket ready)
                 if (phoneNumber && !codeCache.get(userId)) {
                     logService.info(`[WA-CLIENT] Solicitando código de emparejamiento para ${phoneNumber}...`, userId);
                     setTimeout(async () => {
                         try {
-                            // Verify socket still exists and hasn't closed
                             const currentSock = sessions.get(userId);
                             if (currentSock && !currentSock.user) {
                                 const code = await currentSock.requestPairingCode(phoneNumber);
@@ -163,7 +173,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                         } catch (e) {
                             logService.error("Error pidiendo código", e, userId);
                         }
-                    }, 2000); // Wait 2s after QR availability to request code
+                    }, 2000); 
                 }
             }
 
@@ -177,7 +187,6 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                 
                 const isLoggedOut = statusCode === DisconnectReason.loggedOut;
 
-                // CLEANUP MEMORY ALWAYS ON CLOSE
                 qrCache.delete(userId);
                 codeCache.delete(userId);
                 sessions.delete(userId);
@@ -185,7 +194,6 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                 if (isLoggedOut) {
                     logService.warn(`[WA-CLIENT] ⚠️ Sesión cerrada por WhatsApp (401/LoggedOut). Purgando datos.`, userId);
                     await clearBindedSession(userId); 
-                    // AUTO-RESTART with delay
                     setTimeout(() => connectToWhatsApp(userId, phoneNumber), 2000);
                 } else {
                     logService.warn(`[WA-CLIENT] Conexión interrumpida (Código: ${statusCode}). Reconectando en 3s...`, userId);
@@ -210,11 +218,15 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
             if (!messages || messages.length === 0) return;
             
             try {
+                // DEBUG LOG: See exactly what comes in
+                // console.log(`[RAW-UPSERT] Recibidos ${messages.length} mensajes. Type: ${type}. JID ej: ${messages[0].key.remoteJid}`);
+
                 const messagesByJid: Record<string, typeof messages> = {};
                 
                 for (const msg of messages) {
                     const jid = msg.key.remoteJid;
-                    if (!jid || jid === 'status@broadcast' || jid.endsWith('@lid')) continue; 
+                    // REMOVED @lid filter here. Only ignore status broadcast.
+                    if (!jid || jid === 'status@broadcast') continue; 
                     if (!messagesByJid[jid]) messagesByJid[jid] = [];
                     messagesByJid[jid].push(msg);
                 }
@@ -222,6 +234,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                 const chatProcessPromises = Object.keys(messagesByJid).map(async (jid) => {
                     const chatMessages = messagesByJid[jid];
                     
+                    // --- GROUP MESSAGES (RADAR) ---
                     if (jid.endsWith('@g.us')) {
                         for (const msg of chatMessages) {
                             if (msg.key.fromMe) continue;
@@ -234,10 +247,14 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                         return;
                     }
 
+                    // --- PRIVATE MESSAGES (INBOX) ---
                     for (const msg of chatMessages) {
                         try {
                             const messageText = extractMessageContent(msg);
-                            if (!messageText) continue;
+                            if (!messageText) {
+                                // console.log(`[MSG-SKIP] Mensaje vacío o ignorado de ${jid}`);
+                                continue; 
+                            }
 
                             const msgTimestamp = typeof msg.messageTimestamp === 'number' ? msg.messageTimestamp : (msg.messageTimestamp as any)?.low || Date.now() / 1000;
                             const isOldForAI = msgTimestamp < (Date.now() / 1000 - 300); 
@@ -251,8 +268,15 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
 
                             const senderName = msg.pushName || (msg as any).verifiedBizName || undefined;
 
+                            // 1. SAVE TO DB FIRST (Priority)
                             await conversationService.addMessage(userId, jid, userMessage, senderName, isOldForAI);
+                            
+                            // Log ingestion for visibility
+                            if (!msg.key.fromMe) {
+                                logService.info(`[INBOX] 📩 Mensaje guardado de ${senderName || jid}: "${messageText.substring(0, 15)}..."`, userId);
+                            }
 
+                            // 2. QUEUE FOR AI (If new)
                             if (!msg.key.fromMe && !isOldForAI && type === 'notify') {
                                 aiProcessingQueue.add(`${userId}::${jid}`);
                             }
