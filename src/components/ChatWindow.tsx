@@ -45,13 +45,23 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const [showSidebar, setShowSidebar] = useState(true);
   const [isTogglingBot, setIsTogglingBot] = useState(false);
   const [isForcingAi, setIsForcingAi] = useState(false);
-  const [isSharingSignal, setIsSharingSignal] = useState(false); // NEW
+  const [isSharingSignal, setIsSharingSignal] = useState(false); 
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  useEffect(scrollToBottom, [conversation?.messages, isTyping, conversation?.suggestedReplies]);
+  // Recommended Fix: Reset sidebar state on conversation switch (Desktop only to avoid mobile layout shifts)
+  useEffect(() => {
+      if (!isMobile) setShowSidebar(true);
+  }, [conversation?.id, isMobile]);
+
+  // FIX 1: Optimized scroll dependency to avoid jitter on poll
+  useEffect(scrollToBottom, [
+      conversation?.messages.length, 
+      // Removed isTyping dependency as it's no longer used for visual shifts
+      conversation?.suggestedReplies?.length
+  ]);
 
   const handleSuggestionClick = (suggestion: string) => {
       onSendMessage(suggestion);
@@ -65,6 +75,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       setIsTogglingBot(true);
       try {
           await onToggleBot(conversation.id);
+          // FIX 2: Immediately sync local state to avoid polling lag
+          onUpdateConversation?.(conversation.id, {
+              isBotActive: !conversation.isBotActive
+          });
       } finally {
           setIsTogglingBot(false);
       }
@@ -105,7 +119,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       }
   };
 
-  // NEW: Handle sharing signal to the Network
   const handleShareSignal = async () => {
       if (!conversation || !settings || !settings.isNetworkEnabled) return;
 
@@ -152,7 +165,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const currentNumber = conversation.id.split('@')[0];
   const isBlacklisted = settings?.ignoredJids?.includes(currentNumber);
 
-  // Bot Status Text Logic
   const isBotActive = conversation.isBotActive && isBotGloballyActive && !conversation.isMuted && !isBlacklisted && !isPlanExpired;
   const botStatusText = isBotActive ? "● Bot: Escuchando" : (conversation.isMuted ? "● Bot: Silenciado (Manual)" : "● Bot: Pausado");
   const botStatusColor = isBotActive ? "text-green-500 animate-pulse" : "text-gray-500";
@@ -166,6 +178,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       !isPlanExpired &&
       !conversation.isTestBotConversation;
 
+  // FIX 3: Defensive check for dates to handle ISO strings from backend
+  const safeMessages = conversation.messages.map(m => ({
+      ...m,
+      timestamp: m.timestamp instanceof Date ? m.timestamp : new Date(m.timestamp)
+  }));
 
   return (
     <div className="flex-1 flex flex-row h-full overflow-hidden">
@@ -195,7 +212,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 </h2>
                 <div className="flex flex-col">
                     <p className="text-[10px] text-gray-500 font-mono mt-0.5 tracking-wider">{displaySubtitle}</p>
-                    {/* NEW: Explicit Bot Status */}
                     <p className={`text-[9px] font-black uppercase tracking-widest mt-0.5 ${botStatusColor}`}>
                         {botStatusText}
                     </p>
@@ -312,16 +328,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
               </div>
           )}
 
-          {conversation.messages.map(msg => (
+          {safeMessages.map(msg => (
             <MessageBubble key={msg.id} message={msg} />
           ))}
-          {isTyping && !isBlacklisted && (
-               <div className="flex items-center gap-2 text-gray-500 text-[10px] italic ml-4 animate-pulse uppercase tracking-widest font-bold">
-                  <span>Signal Core Procesando</span>
-                  <span className="w-1 h-1 bg-gray-500 rounded-full"></span>
-                  <span className="w-1 h-1 bg-gray-500 rounded-full"></span>
-               </div>
-          )}
+          {/* REMOVED GHOST UI: Dead flag `isTyping` removed to prevent confusion */}
           <div ref={messagesEndRef} />
         </div>
 
@@ -349,7 +359,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
 
         <ChatInput
           onSendMessage={onSendMessage}
-          disabled={!isBotGloballyActive || (conversation.isBotActive && !conversation.isMuted) || (isPlanExpired && conversation.isBotActive) || isBlacklisted}
+          // FIX 4: ChatInput disabled only if expired or blacklisted to allow human intervention
+          disabled={!!isPlanExpired || !!isBlacklisted}
           placeholder={isPlanExpired ? 'Modo Lectura - Licencia Requerida' : (isBlacklisted ? 'Conversación Bloqueada' : (conversation.isMuted ? 'Escribe o selecciona una sugerencia...' : (conversation.isBotActive ? 'La IA está respondiendo...' : 'Escribe un mensaje...')))}
         />
       </div>

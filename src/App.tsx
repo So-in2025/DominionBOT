@@ -263,7 +263,6 @@ export function App() {
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [pairingCode, setPairingCode] = useState<string | null>(null);
   const [backendError, setBackendError] = useState<string | null>(null); 
-  const [isTyping, setIsTyping] = useState(false);
   const [isLoadingSettings, setIsLoadingSettings] = useState(false);
   const [toast, setToast] = useState<ToastData | null>(null);
   
@@ -282,6 +281,13 @@ export function App() {
   const simScrollRef = useRef<HTMLDivElement>(null);
 
   const [isMobileView, setIsMobileView] = useState(window.innerWidth < 768); // Detect mobile view
+
+  // ORPHAN CHECK: If selectedConversationId is not in conversations, reset it
+  useEffect(() => {
+      if (selectedConversationId && !conversations.some(c => c.id === selectedConversationId)) {
+          setSelectedConversationId(null);
+      }
+  }, [conversations, selectedConversationId]);
 
   useEffect(() => {
     const handleResize = () => setIsMobileView(window.innerWidth < 768);
@@ -364,10 +370,31 @@ export function App() {
     try {
         const res = await fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) });
         if (res.ok) {
-            const latestConversations = await res.json();
-            setConversations(latestConversations.sort((a: Conversation, b: Conversation) => 
-                new Date(b.lastActivity || 0).getTime() - new Date(a.lastActivity || 0).getTime()
-            ));
+            const latestConversations: Conversation[] = await res.json();
+            
+            setConversations(prev => {
+                const map = new Map(prev.map(c => [c.id, c]));
+                for (const incoming of latestConversations) {
+                    const existing = map.get(incoming.id);
+                    if (!existing) {
+                        map.set(incoming.id, incoming);
+                    } else {
+                        // MERGE STRATEGY:
+                        // Keep local if it has more messages (optimistic updates pending)
+                        // Otherwise sync with server (incoming)
+                        // Always take status/activity from server unless we just updated it locally (handled by optimistic setters)
+                        map.set(incoming.id, {
+                            ...incoming,
+                            messages: existing.messages.length > incoming.messages.length
+                                ? existing.messages 
+                                : incoming.messages
+                        });
+                    }
+                }
+                return Array.from(map.values()).sort((a, b) => 
+                    new Date(b.lastActivity || 0).getTime() - new Date(a.lastActivity || 0).getTime()
+                );
+            });
         }
     } catch (e) {}
   }, [token]);
@@ -551,7 +578,12 @@ export function App() {
       audioService.play('login_welcome');
   };
 
-  const selectedConversation = conversations.find(c => c.id === selectedConversationId) || null;
+  // FIX 3: Memoize selectedConversation to ensure reactivity with polling updates
+  const selectedConversation = useMemo(
+      () => conversations.find(c => c.id === selectedConversationId) || null,
+      [conversations, selectedConversationId]
+  );
+
   const isFunctionalityDisabled = currentUser?.plan_status === 'expired' || (currentUser?.plan_status === 'trial' && new Date(Date.now()) > new Date(currentUser.billing_end_date));
 
   // --- RENDER ---
@@ -561,15 +593,17 @@ export function App() {
       if (!selectedConversationId || !token) return;
 
       const ownerMessage: Message = {
-          id: `owner-${Date.now()}`,
+          // FIX 2: Blindar ID para evitar colisiones en UI o duplicados del backend
+          id: `owner-${Date.now()}-${Math.random().toString(36).slice(2)}`,
           sender: 'owner',
           text,
-          timestamp: new Date(Date.now())
+          timestamp: new Date()
       };
 
       setConversations(prev => prev.map(c => 
           c.id === selectedConversationId 
-          ? { ...c, messages: [...c.messages, ownerMessage], lastActivity: new Date(Date.now()) } 
+          // FIX 1: lastActivity debe ser ISO String para consistencia con backend y ordenamiento
+          ? { ...c, messages: [...c.messages, ownerMessage], lastActivity: new Date().toISOString() } 
           : c
       ).sort((a, b) => new Date(b.lastActivity || 0).getTime() - new Date(a.lastActivity || 0).getTime()));
 
@@ -578,7 +612,33 @@ export function App() {
           method: 'POST', 
           headers: getAuthHeaders(token), 
           body: JSON.stringify({ to: selectedConversationId, text }) 
-      });
+      }).catch(() => showToast('Error al enviar mensaje', 'error'));
+  };
+
+  const handleToggleBot = async (id: string) => {
+      const convo = conversations.find(c => c.id === id);
+      if (!convo || !token) return;
+
+      const newStatus = !convo.isBotActive;
+
+      // Optimistic Update
+      setConversations(prev => prev.map(c => 
+          c.id === id ? { ...c, isBotActive: newStatus } : c
+      ));
+
+      try {
+          await fetch(`${BACKEND_URL}/api/conversation/update`, {
+              method: 'POST',
+              headers: getAuthHeaders(token),
+              body: JSON.stringify({ id, updates: { isBotActive: newStatus } })
+          });
+      } catch (e) {
+          showToast('Error al cambiar estado del bot', 'error');
+          // Revert optimistic update
+          setConversations(prev => prev.map(c => 
+              c.id === id ? { ...c, isBotActive: !newStatus } : c
+          ));
+      }
   };
 
   const renderClientView = () => {
@@ -608,7 +668,19 @@ export function App() {
                         <ConversationList conversations={conversations} selectedConversationId={selectedConversationId} onSelectConversation={setSelectedConversationId} backendError={backendError} onRequestHistory={() => Promise.resolve()} isRequestingHistory={false} connectionStatus={connectionStatus} />
                     </div>
                     <div className={`${!selectedConversationId ? 'hidden md:flex' : 'flex'} flex-1 h-full`}>
-                        <ChatWindow conversation={selectedConversation} onSendMessage={handleSendMessageOptimistic} onToggleBot={(id) => fetch(`${BACKEND_URL}/api/conversation/update`, { method: 'POST', headers: getAuthHeaders(token!), body: JSON.stringify({ id, updates: { isBotActive: !selectedConversation?.isBotActive } }) }).then(()=>{})} isTyping={isTyping} isBotGloballyActive={isBotGloballyActive} isMobile={isMobileView} onBack={() => setSelectedConversationId(null)} onUpdateConversation={(id, updates) => { setConversations(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c)); }} settings={settings} onUpdateSettings={handleUpdateSettings} isPlanExpired={isFunctionalityDisabled} />
+                        <ChatWindow 
+                            conversation={selectedConversation} 
+                            onSendMessage={handleSendMessageOptimistic} 
+                            onToggleBot={handleToggleBot} 
+                            isTyping={false} // Removed zombie state, passed hardcoded false
+                            isBotGloballyActive={isBotGloballyActive} 
+                            isMobile={isMobileView} 
+                            onBack={() => setSelectedConversationId(null)} 
+                            onUpdateConversation={(id, updates) => { setConversations(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c)); }} 
+                            settings={settings} 
+                            onUpdateSettings={handleUpdateSettings} 
+                            isPlanExpired={isFunctionalityDisabled} 
+                        />
                     </div>
                 </div>
             );
