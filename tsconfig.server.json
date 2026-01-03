@@ -16,6 +16,9 @@
     "src/config.ts",
     "src/services/audioService.ts",
     "src/services/geminiService.ts",
-    "src/utils/audioUtils.ts"
+    "src/utils/audioUtils.ts",
+    "src/utils/textUtils.ts",
+    "src/utils/colorUtils.ts",
+    "src/data/legalText.ts"
   ]
 }
