@@ -18,29 +18,27 @@ import { generateBotResponse } from '../services/aiService.js';
 import { useMongoDBAuthState, clearBindedSession } from './mongoAuth.js';
 import { logService } from '../services/logService.js';
 import * as QRCode from 'qrcode';
-import { radarService } from '../services/radarService.js'; // Import Radar Service
-import { Buffer } from 'buffer'; // Needed for media sending
+import { radarService } from '../services/radarService.js'; 
+import { Buffer } from 'buffer'; 
 
 const sessions = new Map<string, WASocket>();
 const qrCache = new Map<string, string>(); 
 const codeCache = new Map<string, string>(); 
 const connectionLocks = new Map<string, boolean>(); 
-const manualDisconnects = new Set<string>(); // NEW: Track intentional disconnects
+const manualDisconnects = new Set<string>(); 
 
 const logger = pino({ level: 'silent' }); 
 
-// FIX: Define and export these constants for consistent usage
 export const ELITE_BOT_JID = '5491112345678@s.whatsapp.net';
 export const ELITE_BOT_NAME = 'Simulador Neural';
 export const DOMINION_NETWORK_JID = '5491110000000@s.whatsapp.net';
-
 
 // AI Decoupling (Virtual Queue)
 const aiProcessingQueue = new Set<string>();
 setInterval(async () => {
     if (aiProcessingQueue.size > 0) {
-        const [item] = aiProcessingQueue; // Get the first item from the Set
-        aiProcessingQueue.delete(item);   // Remove it
+        const [item] = aiProcessingQueue; 
+        aiProcessingQueue.delete(item);   
         
         const [userId, jid] = item.split('::');
         if (userId && jid) {
@@ -51,7 +49,7 @@ setInterval(async () => {
             }
         }
     }
-}, 2000); // Process one item every 2 seconds
+}, 2000); 
 
 function extractMessageContent(msg: proto.IWebMessageInfo): string | null {
     const message = msg.message;
@@ -81,36 +79,41 @@ export function getSessionStatus(userId: string): { status: ConnectionStatus, qr
     const code = codeCache.get(userId);
     const isLocked = connectionLocks.get(userId);
 
+    // Prioritize Connected state
     if (sock?.user) return { status: ConnectionStatus.CONNECTED };
+    
+    // If locked (connecting/reconnecting), show Generating QR or Awaiting Scan based on if we have data
+    if (isLocked) {
+        if (code) return { status: ConnectionStatus.AWAITING_SCAN, pairingCode: code };
+        if (qr) return { status: ConnectionStatus.AWAITING_SCAN, qr };
+        return { status: ConnectionStatus.GENERATING_QR };
+    }
+
     if (code) return { status: ConnectionStatus.AWAITING_SCAN, pairingCode: code };
     if (qr) return { status: ConnectionStatus.AWAITING_SCAN, qr };
-    if (isLocked) return { status: ConnectionStatus.GENERATING_QR };
 
     return { status: ConnectionStatus.DISCONNECTED };
 }
 
-// Helper to get raw socket
 export function getSocket(userId: string): WASocket | undefined {
     return sessions.get(userId);
 }
 
 export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
+    // Reset manual disconnect flag on new attempt
+    manualDisconnects.delete(userId);
+
     if (connectionLocks.get(userId)) {
         logService.warn(`[WA-CLIENT] Conexión en proceso para ${userId}. Omitiendo duplicado.`, userId);
         return;
     }
 
-    if (sessions.has(userId)) {
-        try {
-            const oldSock = sessions.get(userId);
-            oldSock?.end(undefined);
-            sessions.delete(userId);
-        } catch (e) {}
-    }
+    // Do NOT delete existing session immediately here if we are just retrying.
+    // Only cleanup if explicitly needed.
 
     connectionLocks.set(userId, true);
-    qrCache.delete(userId);
-    codeCache.delete(userId);
+    // Do NOT clear caches here immediately, it causes flickering. 
+    // Let the new socket generate new ones if needed.
 
     try {
         logService.info(`[WA-CLIENT] Iniciando motor WhatsApp para: ${userId}`, userId);
@@ -130,7 +133,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
             browser: Browsers.macOS('Chrome'),
             agent: user?.settings?.proxyUrl ? new HttpsProxyAgent(user.settings.proxyUrl) as any : undefined,
             generateHighQualityLinkPreview: true,
-            shouldIgnoreJid: jid => jid?.endsWith('@broadcast'), // Removed g.us check to allow groups
+            shouldIgnoreJid: jid => jid?.endsWith('@broadcast'), 
             syncFullHistory: true, 
             defaultQueryTimeoutMs: 60000, 
             keepAliveIntervalMs: 10000, 
@@ -148,81 +151,51 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
             if (qr) {
                 logService.info(`[WA-CLIENT] QR generado.`, userId);
                 qrCache.set(userId, await QRCode.toDataURL(qr));
-                connectionLocks.set(userId, false); 
+                // Do NOT unlock yet, keep status as "Connecting/Scanning"
             }
 
             if (newPairingCode) {
                 codeCache.set(userId, newPairingCode);
-                connectionLocks.set(userId, false);
             }
 
             if (connection === 'close') {
-                // --- NEW ROBUST DISCONNECT LOGIC ---
+                const disconnectError = lastDisconnect?.error as Boom;
+                const statusCode = disconnectError?.output?.statusCode;
+                
+                // If intentional manual disconnect
                 if (manualDisconnects.has(userId)) {
-                    logService.info(`[WA-CLIENT] Desconexión manual procesada. No se reconectará.`, userId);
+                    logService.info(`[WA-CLIENT] Desconexión manual confirmada.`, userId);
                     manualDisconnects.delete(userId);
                     qrCache.delete(userId);
                     codeCache.delete(userId);
                     sessions.delete(userId);
                     connectionLocks.delete(userId);
-                    return; // EXIT, no reconnect
-                }
-                
-                const disconnectError = lastDisconnect?.error as Boom;
-                const statusCode = disconnectError?.output?.statusCode;
-        
-                if (!disconnectError) {
-                    logService.warn(`[WA-CLIENT] Conexión cerrada sin un error explícito (Clean disconnect).`, userId);
-                    // If a clean disconnect happens during pairing, it's likely a loop. Abort.
-                    if(qrCache.has(userId) || codeCache.has(userId)) {
-                        logService.error(`[WA-CLIENT] 🚨 Desconexión limpia durante la fase de enlace detectada. Abortando reconexión automática para prevenir bucle. El usuario debe reintentar.`, null, userId);
-                        qrCache.delete(userId);
-                        codeCache.delete(userId);
-                        sessions.delete(userId);
-                        connectionLocks.delete(userId);
-                        return; // EXIT, no reconnect
-                    }
-                }
-                // --- END NEW LOGIC ---
-                
-                const isConflict = disconnectError?.message === 'Stream Errored' && disconnectError?.data === 'conflict';
-                const isCorrupt428 = statusCode === 428; 
-                const isLoggedOut = statusCode === DisconnectReason.loggedOut;
-                const isCryptoError = statusCode === 401 || disconnectError?.message?.includes('Bad MAC') || disconnectError?.message?.includes('decryption');
-
-                if (isConflict || isCorrupt428 || isCryptoError) {
-                    logService.error(`[WA-CLIENT] 🚨 ERROR CRÍTICO DE SESIÓN (${statusCode} / ${disconnectError?.message}). Purgando.`, disconnectError, userId);
-                    
-                    try { sessions.get(userId)?.end(undefined); } catch(e) {}
-                    
-                    sessions.delete(userId);
-                    qrCache.delete(userId);
-                    codeCache.delete(userId);
-                    connectionLocks.delete(userId);
-                    
-                    await clearBindedSession(userId); // NUKE DATABASE SESSION
                     return; 
                 }
 
-                const shouldReconnect = !isLoggedOut;
-                logService.warn(`[WA-CLIENT] Conexión cerrada (Código: ${statusCode || 'N/A'}). Reconectando: ${shouldReconnect}`, userId);
+                const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
                 
-                qrCache.delete(userId);
-                codeCache.delete(userId);
-                sessions.delete(userId); 
-                connectionLocks.delete(userId); 
-
+                // CRITICAL FIX: If we are reconnecting (e.g. after scan), DO NOT WIPE SESSION/CACHE.
+                // Just retry connection.
                 if (shouldReconnect) {
-                    setTimeout(() => connectToWhatsApp(userId, phoneNumber), 3000); 
+                    logService.warn(`[WA-CLIENT] Reconectando (Código: ${statusCode})...`, userId);
+                    // Retain lock to prevent UI form flipping to "Disconnected"
+                    connectionLocks.set(userId, true); 
+                    setTimeout(() => connectToWhatsApp(userId, phoneNumber), 2000); 
                 } else {
-                    logService.info(`[WA-CLIENT] Usuario desconectado. Limpiando datos de sesión.`, userId);
+                    // FATAL ERROR (Logout)
+                    logService.error(`[WA-CLIENT] 🚨 Desconectado permanentemente (Logged Out).`, disconnectError, userId);
+                    qrCache.delete(userId);
+                    codeCache.delete(userId);
+                    sessions.delete(userId); 
+                    connectionLocks.delete(userId); 
                     await clearBindedSession(userId); 
                 }
             } else if (connection === 'open') {
                 logService.info(`[WA-CLIENT] ✅ CONEXIÓN ESTABLECIDA.`, userId);
                 qrCache.delete(userId);
                 codeCache.delete(userId);
-                connectionLocks.delete(userId);
+                connectionLocks.delete(userId); // Release lock now that we are stable
                 
                 if (isNewLogin) {
                     const user = await db.getUser(userId);
@@ -236,8 +209,11 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
         if (phoneNumber) {
             setTimeout(async () => {
                 try {
-                    const code = await sock.requestPairingCode(phoneNumber);
-                    codeCache.set(userId, code);
+                    // Only request if not already connected
+                    if (!sock.user) {
+                        const code = await sock.requestPairingCode(phoneNumber);
+                        codeCache.set(userId, code);
+                    }
                 } catch(e) {
                     logService.error("Error pidiendo código", e, userId);
                 }
@@ -247,17 +223,12 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
         sock.ev.on('messages.upsert', async ({ messages, type }) => {
             if (!messages || messages.length === 0) return;
             
-            // DEBUG LOG: See incoming events in terminal
-            console.log(`[WA-DEBUG] Received ${messages.length} messages. Type: ${type}`);
-
             try {
                 const messagesByJid: Record<string, typeof messages> = {};
                 
                 for (const msg of messages) {
-                    // Early Exit Filter (Broadcast)
                     const jid = msg.key.remoteJid;
                     if (!jid || jid === 'status@broadcast' || jid.endsWith('@lid')) continue; 
-                    
                     if (!messagesByJid[jid]) messagesByJid[jid] = [];
                     messagesByJid[jid].push(msg);
                 }
@@ -265,31 +236,25 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                 const chatProcessPromises = Object.keys(messagesByJid).map(async (jid) => {
                     const chatMessages = messagesByJid[jid];
                     
-                    // Radar Hook
                     if (jid.endsWith('@g.us')) {
                         for (const msg of chatMessages) {
                             if (msg.key.fromMe) continue;
                             const text = extractMessageContent(msg);
                             if (!text) continue;
-                            
                             const sender = msg.key.participant || msg.participant || jid; 
                             const senderName = msg.pushName || 'Unknown';
-                            
                             radarService.processGroupMessage(userId, jid, jid, sender, senderName, text).catch(e => console.error(e));
                         }
                         return;
                     }
 
-                    // Standard Chat Processing
                     for (const msg of chatMessages) {
                         try {
                             const messageText = extractMessageContent(msg);
                             if (!messageText) continue;
 
-                            // Early Exit Filter (Time)
                             const msgTimestamp = typeof msg.messageTimestamp === 'number' ? msg.messageTimestamp : (msg.messageTimestamp as any)?.low || Date.now() / 1000;
-                            // Reduce threshold to 2 seconds to avoid ignoring recent messages if servers drift
-                            const isOldForAI = msgTimestamp < (Date.now() / 1000 - 300); // Only ignore older than 5 mins
+                            const isOldForAI = msgTimestamp < (Date.now() / 1000 - 300); 
 
                             const userMessage: Message = {
                                 id: msg.key.id || Date.now().toString(),
@@ -300,12 +265,8 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
 
                             const senderName = msg.pushName || (msg as any).verifiedBizName || undefined;
 
-                            // DEBUG LOG
-                            console.log(`[WA-DEBUG] Processing msg from ${jid}: "${messageText.substring(0, 20)}..." (Old? ${isOldForAI})`);
-
                             await conversationService.addMessage(userId, jid, userMessage, senderName, isOldForAI);
 
-                            // AI Trigger (Decoupled)
                             if (!msg.key.fromMe && !isOldForAI && type === 'notify') {
                                 aiProcessingQueue.add(`${userId}::${jid}`);
                             }
@@ -324,12 +285,13 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
 
     } catch (error) {
         logService.error(`[WA-CLIENT] Fallo fatal al iniciar conexión`, error, userId);
+        connectionLocks.delete(userId);
     }
 }
 
 export async function disconnectWhatsApp(userId: string) {
     logService.info(`[WA-CLIENT] Ejecutando desconexión manual para ${userId}`, userId);
-    manualDisconnects.add(userId); // Add to set BEFORE ending session
+    manualDisconnects.add(userId); 
     const sock = sessions.get(userId);
     if (sock) {
         try { sock.end(undefined); } catch (e) {}
@@ -338,7 +300,7 @@ export async function disconnectWhatsApp(userId: string) {
     qrCache.delete(userId);
     codeCache.delete(userId);
     connectionLocks.delete(userId);
-    // CRITICAL: Ensure full DB wipe on manual disconnect to solve syncing issues
+    
     await clearBindedSession(userId); 
     await db.updateUser(userId, { whatsapp_number: '' });
     await db.updateUserSettings(userId, { isActive: false });
@@ -347,16 +309,12 @@ export async function disconnectWhatsApp(userId: string) {
 export async function sendMessage(senderId: string, jid: string, text: string, imageUrl?: string) {
     let sock: WASocket | undefined;
     if (senderId === DOMINION_NETWORK_JID) {
-        // Special case for network messages, use a system-wide connection or a dedicated one
         const systemSettings = await db.getSystemSettings();
         if (!systemSettings.dominionNetworkJid) {
             throw new Error("Dominion Network JID no configurado en ajustes del sistema.");
         }
-        sock = sessions.get('system_network'); // Assuming a dedicated system network socket
+        sock = sessions.get('system_network'); 
         if (!sock) {
-             // If system_network sock doesn't exist, try to connect it for this special use case
-             // This needs to be a robust, always-on connection.
-             // For now, if no system_network, just throw. In future, implement persistent system-level client.
              throw new Error("System network client not active for sending permission messages.");
         }
     } else {
@@ -424,7 +382,6 @@ async function _commonAiProcessingLogic(userId: string, jid: string, user: User,
             await sock.sendMessage(jid, { text: aiResult.responseText });
         }
 
-        // FIX: Explicitly pass Date.now() to the Date constructor to avoid potential TypeScript errors in strict environments.
         const botMessage: Message = { id: `bot-${Date.now()}`, text: aiResult.responseText, sender: 'bot', timestamp: new Date(Date.now()) };
         await conversationService.addMessage(userId, jid, botMessage);
     }
