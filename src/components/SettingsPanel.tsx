@@ -123,11 +123,12 @@ const SpeechRecognition = (window as any).SpeechRecognition || (window as any).w
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUpdateSettings, onOpenLegal, showToast }) => {
   const [current, setCurrent] = useState<BotSettings | null>(null);
   
-  // WIZARD STATE
-  const [wizardStep, setWizardStep] = useState<'IDENTITY' | 'CONTEXT' | 'PATH' | 'LOADING'>('IDENTITY');
+  // WIZARD STATE (Updated with API_SETUP)
+  const [wizardStep, setWizardStep] = useState<'IDENTITY' | 'API_SETUP' | 'CONTEXT' | 'PATH' | 'LOADING'>('IDENTITY');
   
   // DATA STATE
   const [wizIdentity, setWizIdentity] = useState({ name: '', website: '' });
+  const [wizApiKey, setWizApiKey] = useState('');
   const [wizContext, setWizContext] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [showWebTooltip, setShowWebTooltip] = useState(false);
@@ -144,12 +145,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
   useEffect(() => {
     if (settings) {
         setCurrent({ ...settings, ignoredJids: settings.ignoredJids || [] });
-        // Si ya está completado, parseamos para mostrar en modo manual si se quiere editar luego
-        if (settings.isWizardCompleted) {
-            // Logic to populate manual fields if needed
-        } else {
-            // Pre-fill name if available
-            // setWizIdentity(prev => ({...prev, name: settings.productName || ''}));
+        if (settings.geminiApiKey) {
+            setWizApiKey(settings.geminiApiKey);
         }
     }
   }, [settings]);
@@ -202,14 +199,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
   // --- WEB ANALYSIS FEATURE ---
   const analyzeWebsite = async () => {
       if (!wizIdentity.website) return;
-      if (!current?.geminiApiKey) {
-          showToast('Configura tu API Key de Gemini en Ajustes primero.', 'error');
+      if (!wizApiKey) {
+          showToast('Falta la API Key. Retrocede un paso.', 'error');
           return;
       }
 
       setIsAnalyzingWeb(true);
       try {
-          const ai = new GoogleGenAI({ apiKey: current.geminiApiKey });
+          const ai = new GoogleGenAI({ apiKey: wizApiKey }); // Use local state key
           const prompt = `
             Analiza el sitio web: ${wizIdentity.website}
             
@@ -228,14 +225,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
               model: 'gemini-3-flash-preview',
               contents: [{ parts: [{ text: prompt }] }],
               config: { 
-                  tools: [{ googleSearch: {} }] // Enable search to actually read the site
+                  tools: [{ googleSearch: {} }]
               }
           });
 
           const extractedText = response.text;
           if (extractedText) {
               setWizContext(prev => (prev ? prev + '\n\n' : '') + extractedText);
-              showToast('Sitio web analizado. Revisa el texto generado.', 'success');
+              showToast('Sitio web analizado exitosamente.', 'success');
               audioService.play('action_success');
           } else {
               showToast('No se pudo extraer información relevante.', 'error');
@@ -243,7 +240,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
 
       } catch (e) {
           console.error(e);
-          showToast('Error analizando la web. Intenta manualmente.', 'error');
+          showToast('Error analizando la web. Verifica tu API Key.', 'error');
       } finally {
           setIsAnalyzingWeb(false);
       }
@@ -251,8 +248,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
 
   // --- PATH A: AI AUTOCOMPLETE ---
   const executeNeuralPath = async () => {
-      if (!current?.geminiApiKey) {
-          showToast('Falta la API Key de Gemini. Configúrala en el panel derecho.', 'error');
+      if (!wizApiKey) {
+          showToast('Falta la API Key de Gemini.', 'error');
+          setWizardStep('API_SETUP');
           return;
       }
       if (!wizContext || wizContext.length < 10) {
@@ -264,7 +262,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
       setIsProcessing(true);
 
       try {
-          const ai = new GoogleGenAI({ apiKey: current.geminiApiKey });
+          const ai = new GoogleGenAI({ apiKey: wizApiKey });
           const prompt = `
             ACTÚA COMO: Consultor de Negocios de Élite.
             
@@ -297,13 +295,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
 
           const data = JSON.parse(res.text || '{}');
           
-          // Apply Logic
           finishWizard(data, 'AI');
 
       } catch (e) {
           console.error(e);
           showToast('Error en la generación neural. Intenta de nuevo.', 'error');
-          setWizardStep('CONTEXT'); // Go back
+          setWizardStep('CONTEXT'); 
           setIsProcessing(false);
       }
   };
@@ -313,7 +310,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
       const t = INDUSTRY_TEMPLATES[templateKey];
       if (!t) return;
 
-      // Inject User Data into Template
       const inject = (text: string = '') => {
           return text
             .replace(/\[NOMBRE_EMPRESA\]/g, wizIdentity.name)
@@ -327,7 +323,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
           priceText: t.data.priceText,
           objections: t.data.objections,
           rules: t.data.rules,
-          archetype: 'VENTA_CONSULTIVA' // Default good one
+          archetype: 'VENTA_CONSULTIVA' // Default
       };
 
       finishWizard(finalData, 'TEMPLATE');
@@ -353,7 +349,6 @@ ${(data.objections || []).map((obj: any) => `- Sobre "${obj.objection}": Respond
 ${data.rules}
       `;
 
-      // Determine Personality from AI or Default
       const arch = (data.archetype as PromptArchetype) || PromptArchetype.CONSULTATIVE;
       const mapping = ARCHETYPE_MAPPING[arch] || ARCHETYPE_MAPPING[PromptArchetype.CONSULTATIVE];
 
@@ -367,17 +362,15 @@ ${data.rules}
           toneValue: mapping.toneValue,
           rhythmValue: mapping.rhythmValue,
           intensityValue: mapping.intensityValue,
+          geminiApiKey: wizApiKey, // Ensure Key is saved
           isWizardCompleted: true
       };
 
       onUpdateSettings(newSettings);
       showToast(source === 'AI' ? '🧠 Cerebro Generado y Sincronizado.' : '📂 Plantilla Aplicada Exitosamente.', 'success');
       audioService.play('action_success');
-      // No need to change state here manually, parent prop update will trigger re-render showing the main dashboard
   };
 
-  // --- RENDER HELPERS ---
-  
   if (isLoading || !current) return <div className="p-10 text-center text-gray-500 animate-pulse font-black uppercase tracking-widest">Cargando Núcleo...</div>;
 
   // VIEW: MAIN SETTINGS (If Wizard Completed)
@@ -400,7 +393,7 @@ ${data.rules}
                 </div>
                 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    {/* Manual Editor (Simplified) */}
+                    {/* Manual Editor */}
                     <div className="space-y-4">
                         <label className="text-xs font-bold text-brand-gold uppercase tracking-widest">Prompt del Sistema (Solo Lectura / Edición Avanzada)</label>
                         <textarea 
@@ -413,7 +406,7 @@ ${data.rules}
 
                     {/* Controls */}
                     <div className="space-y-6">
-                         {/* GEMINI PANEL (Mini) */}
+                         {/* GEMINI PANEL */}
                         <div className="bg-brand-surface border border-white/5 rounded-2xl p-6 shadow-lg">
                             <h3 className="text-sm font-black text-white uppercase tracking-widest mb-4">Motor IA</h3>
                             <input 
@@ -426,7 +419,7 @@ ${data.rules}
                             <button onClick={() => onUpdateSettings(current)} className="text-[10px] text-gray-500 hover:text-white font-bold uppercase">Actualizar Key</button>
                         </div>
 
-                        {/* SLIDERS (Personality) */}
+                        {/* SLIDERS */}
                         <div className="bg-brand-surface border border-white/5 rounded-2xl p-6 shadow-lg space-y-6">
                             <h3 className="text-sm font-black text-white uppercase tracking-widest mb-2">Personalidad</h3>
                             {[
@@ -466,12 +459,12 @@ ${data.rules}
                     Configuración <span className="text-brand-gold">Neural</span>
                 </h2>
                 <div className="flex justify-center gap-2 mt-4">
-                    {['IDENTITY', 'CONTEXT', 'PATH'].map((s, idx) => {
-                        const steps = ['IDENTITY', 'CONTEXT', 'PATH'];
+                    {['IDENTITY', 'API_SETUP', 'CONTEXT', 'PATH'].map((s, idx) => {
+                        const steps = ['IDENTITY', 'API_SETUP', 'CONTEXT', 'PATH'];
                         const currIdx = steps.indexOf(wizardStep);
                         const isActive = idx <= currIdx;
                         return (
-                            <div key={s} className={`h-1.5 w-12 rounded-full transition-all duration-500 ${isActive ? 'bg-brand-gold shadow-[0_0_10px_rgba(212,175,55,0.5)]' : 'bg-white/10'}`}></div>
+                            <div key={s} className={`h-1.5 w-8 rounded-full transition-all duration-500 ${isActive ? 'bg-brand-gold shadow-[0_0_10px_rgba(212,175,55,0.5)]' : 'bg-white/10'}`}></div>
                         );
                     })}
                 </div>
@@ -510,7 +503,6 @@ ${data.rules}
                                     placeholder="www.tu-negocio.com"
                                     className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm focus:border-brand-gold outline-none transition-all placeholder-gray-700"
                                 />
-                                {/* VALUE TRAP TOOLTIP */}
                                 {showWebTooltip && !wizIdentity.website && (
                                     <div className="absolute top-0 right-0 -mt-10 md:-mr-4 bg-brand-gold text-black p-3 rounded-xl shadow-lg border border-white/20 animate-bounce cursor-pointer z-20 max-w-[200px]" onClick={() => openSupportWhatsApp('Hola, estoy configurando mi bot y vi que necesito una web profesional. ¿Me das info?')}>
                                         <div className="relative">
@@ -523,7 +515,7 @@ ${data.rules}
                         </div>
 
                         <button 
-                            onClick={() => { if(wizIdentity.name) setWizardStep('CONTEXT'); else showToast('El nombre es obligatorio.', 'error'); }}
+                            onClick={() => { if(wizIdentity.name) setWizardStep('API_SETUP'); else showToast('El nombre es obligatorio.', 'error'); }}
                             className="w-full py-4 bg-white/10 hover:bg-white/20 text-white border border-white/10 rounded-xl font-black text-xs uppercase tracking-[0.2em] transition-all hover:scale-[1.02] mt-4"
                         >
                             Siguiente &rarr;
@@ -531,17 +523,83 @@ ${data.rules}
                     </div>
                 )}
 
-                {/* STEP 2: CONTEXT (HYBRID) */}
+                {/* STEP 2: API SETUP (NEW STEP) */}
+                {wizardStep === 'API_SETUP' && (
+                    <div className="space-y-8 animate-fade-in">
+                        <div className="text-center">
+                            <h3 className="text-xl font-black text-white uppercase tracking-widest">Motor Cognitivo</h3>
+                            <p className="text-xs text-gray-400 mt-2 font-medium max-w-sm mx-auto">
+                                Dominion opera con tu propia llave maestra de Google (BYOK). 
+                                Esto garantiza privacidad total y control de costos.
+                            </p>
+                        </div>
+
+                        <div className="bg-black/30 border border-brand-gold/20 p-6 rounded-2xl space-y-4">
+                            <div>
+                                <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2 ml-1">Gemini API Key</label>
+                                <input 
+                                    type="password"
+                                    value={wizApiKey}
+                                    onChange={(e) => setWizApiKey(e.target.value)}
+                                    placeholder="Pegar AI Studio Key aquí..."
+                                    className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm font-mono focus:border-brand-gold outline-none transition-all placeholder-gray-700 tracking-wider"
+                                />
+                            </div>
+                            
+                            <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                                <a 
+                                    href="https://aistudio.google.com/app/apikey" 
+                                    target="_blank" 
+                                    rel="noreferrer"
+                                    className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-[10px] font-bold text-gray-300 uppercase tracking-wider transition-all"
+                                >
+                                    <span>🔑</span> Obtener Key Gratis
+                                </a>
+                                {/* Placeholder for Tutorial Video */}
+                                <button 
+                                    onClick={() => showToast('Video tutorial próximamente. Usa el link de Google por ahora.', 'info')}
+                                    className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-[10px] font-bold text-gray-300 uppercase tracking-wider transition-all"
+                                >
+                                    <span>▶️</span> Ver Tutorial (1 min)
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="flex gap-4 pt-2">
+                            <button onClick={() => setWizardStep('IDENTITY')} className="px-6 py-3 text-gray-500 font-bold text-xs uppercase hover:text-white transition-colors">Atrás</button>
+                            <button 
+                                onClick={() => { 
+                                    if(wizApiKey.length > 20) {
+                                        // Save intermediate state to settings immediately so next steps can use it
+                                        if (current) {
+                                            const tempSettings = { ...current, geminiApiKey: wizApiKey };
+                                            setCurrent(tempSettings);
+                                            onUpdateSettings(tempSettings); // Persist early
+                                        }
+                                        setWizardStep('CONTEXT'); 
+                                    } else {
+                                        showToast('Ingresa una API Key válida.', 'error'); 
+                                    }
+                                }}
+                                className="flex-1 py-3 bg-white/10 hover:bg-white/20 text-white border border-white/10 rounded-xl font-black text-xs uppercase tracking-[0.2em] transition-all hover:scale-[1.02]"
+                            >
+                                Validar & Continuar &rarr;
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* STEP 3: CONTEXT (HYBRID) */}
                 {wizardStep === 'CONTEXT' && (
                     <div className="space-y-6 animate-fade-in relative">
-                        <div className="text-center">
+                        <div className="text-center mb-6">
                             <h3 className="text-xl font-black text-white uppercase tracking-widest">Contexto Operativo</h3>
                             <p className="text-xs text-gray-400 mt-2 font-medium">Cuéntale a la IA qué vendes y cómo. Escribe o dicta.</p>
                         </div>
 
-                        {/* WEB ANALYSIS BUTTON (Visible if URL is present) */}
+                        {/* WEB ANALYSIS BUTTON - Repositioned above Textarea */}
                         {wizIdentity.website && (
-                            <div className="absolute top-0 right-0">
+                            <div className="flex justify-end mb-2">
                                 <button 
                                     onClick={analyzeWebsite}
                                     disabled={isAnalyzingWeb}
@@ -587,7 +645,7 @@ ${data.rules}
                         </div>
 
                         <div className="flex gap-4 pt-2">
-                            <button onClick={() => setWizardStep('IDENTITY')} className="px-6 py-3 text-gray-500 font-bold text-xs uppercase hover:text-white transition-colors">Atrás</button>
+                            <button onClick={() => setWizardStep('API_SETUP')} className="px-6 py-3 text-gray-500 font-bold text-xs uppercase hover:text-white transition-colors">Atrás</button>
                             <button 
                                 onClick={() => { if(wizContext.length > 5) setWizardStep('PATH'); else showToast('Danos un poco más de contexto.', 'error'); }}
                                 className="flex-1 py-3 bg-white/10 hover:bg-white/20 text-white border border-white/10 rounded-xl font-black text-xs uppercase tracking-[0.2em] transition-all hover:scale-[1.02]"
@@ -598,7 +656,7 @@ ${data.rules}
                     </div>
                 )}
 
-                {/* STEP 3: THE FORK (CHOICE) */}
+                {/* STEP 4: THE FORK (CHOICE) */}
                 {wizardStep === 'PATH' && (
                     <div className="space-y-8 animate-fade-in">
                         <div className="text-center mb-8">
@@ -666,7 +724,7 @@ ${data.rules}
                             onClick={() => openSupportWhatsApp('Hola, estoy trabado en la configuración del Cerebro. ¿Me ayudan con una auditoría?')} 
                             className="text-[9px] text-gray-500 hover:text-brand-gold font-bold uppercase tracking-widest flex items-center gap-2 transition-colors group"
                         >
-                            <span className="grayscale group-hover:grayscale-0 transition-all">🆘</span> ¿Te sientes abrumado? Solicitar Auditoría Humana (Gratis)
+                            <span className="grayscale group-hover:grayscale-0 transition-all">🆘</span> ¿Te sientes abrumado? Solicitar Auditoría Humana
                         </button>
                     </div>
                 )}
