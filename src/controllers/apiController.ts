@@ -1,5 +1,4 @@
 
-// ... (imports remain the same)
 import { Buffer } from 'buffer';
 import { connectToWhatsApp, disconnectWhatsApp, sendMessage, getSessionStatus, processAiResponseForJid, fetchUserGroups, ELITE_BOT_JID, ELITE_BOT_NAME, DOMINION_NETWORK_JID } from '../whatsapp/client.js'; 
 import { conversationService } from '../services/conversationService.js';
@@ -95,6 +94,34 @@ export const handleUpdateConversation = async (req: AuthenticatedRequest<any, an
     }
 };
 
+export const handleDeleteConversation = async (req: AuthenticatedRequest<{ id: string }, any, { blacklist: boolean }>, res: any) => {
+    try {
+        const { id: userId } = req.user;
+        const { id: jid } = req.params;
+        const { blacklist } = req.body;
+
+        // Perform physical removal
+        await db.removeUserConversation(userId, jid);
+
+        if (blacklist) {
+            const user = await db.getUser(userId);
+            if (user) {
+                const number = jid.split('@')[0];
+                const currentIgnored = user.settings.ignoredJids || [];
+                if (!currentIgnored.includes(number)) {
+                    await db.updateUserSettings(userId, { ignoredJids: [...currentIgnored, number] });
+                }
+            }
+        }
+
+        logService.audit(`Conversación eliminada: ${jid}${blacklist ? ' (y bloqueada)' : ''}`, userId, req.user.username);
+        res.status(200).json({ message: 'Conversación eliminada.' });
+    } catch (e: any) {
+        logService.error('Error deleting conversation', e, getClientUser(req).id);
+        res.status(500).json({ message: 'Error interno del servidor.' });
+    }
+};
+
 export const handleForceAiRun = async (req: AuthenticatedRequest<any, any, { id: string }>, res: any) => {
     try {
         const { id: userId } = req.user;
@@ -110,7 +137,8 @@ export const handleForceAiRun = async (req: AuthenticatedRequest<any, any, { id:
 export const handleGetConversations = async (req: AuthenticatedRequest, res: any) => {
     try {
         const { id } = req.user;
-        const conversations = await conversationService.getConversations(id);
+        const since = req.query.since as string | undefined; // Get the timestamp
+        const conversations = await conversationService.getConversations(id, since);
         res.json(conversations);
     } catch (e: any) {
         logService.error('Error fetching conversations', e, getClientUser(req).id);

@@ -10,6 +10,8 @@ interface HeaderProps {
   onLogoutClick: () => void;
   isBotGloballyActive: boolean;
   onToggleBot: () => void;
+  isAutonomousClosing: boolean; // NUEVO
+  onToggleAutonomous: () => void; // NUEVO
   currentView: View;
   onNavigate: (view: View) => void;
   connectionStatus: ConnectionStatus;
@@ -25,6 +27,8 @@ const Header: React.FC<HeaderProps> = ({
     onLogoutClick,
     isBotGloballyActive, 
     onToggleBot, 
+    isAutonomousClosing,
+    onToggleAutonomous,
     currentView, 
     onNavigate, 
     connectionStatus,
@@ -125,17 +129,34 @@ const Header: React.FC<HeaderProps> = ({
             {isLoggedIn ? (
                 <div className="flex items-center gap-2 sm:gap-4">
                     {!isSuperAdmin && (
-                        <div className="flex items-center gap-2 bg-black/50 border border-white/10 px-2 sm:px-4 py-1.5 rounded-full">
-                            <div className={`w-1.5 h-1.5 rounded-full ${isBotGloballyActive ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
-                            <span className="text-[8px] md:text-[9px] font-black text-gray-300 uppercase tracking-widest hidden xs:block">
-                                {isBotGloballyActive ? 'SISTEMA ACTIVO' : 'SISTEMA PAUSADO'}
-                            </span>
-                            <button 
-                                onClick={onToggleBot}
-                                className={`w-7 h-3.5 md:w-8 md:h-4 rounded-full relative transition-colors duration-300 ${isBotGloballyActive ? 'bg-brand-gold' : 'bg-gray-700'}`}
-                            >
-                                <div className={`absolute top-0.5 w-2.5 h-2.5 md:w-3 md:h-3 bg-black rounded-full transition-all duration-300 ${isBotGloballyActive ? 'left-[14px] md:left-[18px]' : 'left-0.5'}`}></div>
-                            </button>
+                        <div className="flex items-center gap-4">
+                            {/* GUARDIA AUTÓNOMA TOGGLE */}
+                            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all ${isAutonomousClosing ? 'bg-indigo-900/40 border-indigo-500/50 shadow-[0_0_15px_rgba(99,102,241,0.3)]' : 'bg-black/50 border-white/10'}`} title="Modo Guardia: La IA cierra ventas sola (Ideal para la noche)">
+                                <span className={`text-[8px] md:text-[9px] font-black uppercase tracking-widest ${isAutonomousClosing ? 'text-indigo-400' : 'text-gray-500'}`}>
+                                    {isAutonomousClosing ? 'GUARDIA ON' : 'GUARDIA OFF'}
+                                </span>
+                                <button 
+                                    onClick={onToggleAutonomous}
+                                    className={`w-7 h-3.5 md:w-8 md:h-4 rounded-full relative transition-colors duration-300 ${isAutonomousClosing ? 'bg-indigo-500' : 'bg-gray-700'}`}
+                                >
+                                    <div className={`absolute top-0.5 w-2.5 h-2.5 md:w-3 md:h-3 bg-white rounded-full transition-all duration-300 ${isAutonomousClosing ? 'left-[14px] md:left-[18px]' : 'left-0.5'}`}></div>
+                                </button>
+                                {isAutonomousClosing && <span className="animate-pulse">🌙</span>}
+                            </div>
+
+                            {/* SISTEMA GLOBAL TOGGLE */}
+                            <div className="flex items-center gap-2 bg-black/50 border border-white/10 px-2 sm:px-4 py-1.5 rounded-full">
+                                <div className={`w-1.5 h-1.5 rounded-full ${isBotGloballyActive ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
+                                <span className="text-[8px] md:text-[9px] font-black text-gray-300 uppercase tracking-widest hidden xs:block">
+                                    {isBotGloballyActive ? 'SISTEMA ACTIVO' : 'SISTEMA PAUSADO'}
+                                </span>
+                                <button 
+                                    onClick={onToggleBot}
+                                    className={`w-7 h-3.5 md:w-8 md:h-4 rounded-full relative transition-colors duration-300 ${isBotGloballyActive ? 'bg-brand-gold' : 'bg-gray-700'}`}
+                                >
+                                    <div className={`absolute top-0.5 w-2.5 h-2.5 md:w-3 md:h-3 bg-black rounded-full transition-all duration-300 ${isBotGloballyActive ? 'left-[14px] md:left-[18px]' : 'left-0.5'}`}></div>
+                                </button>
+                            </div>
                         </div>
                     )}
 

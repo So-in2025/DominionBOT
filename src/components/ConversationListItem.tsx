@@ -1,11 +1,14 @@
-import React from 'react';
+
+import React, { useState } from 'react';
 import { Conversation, LeadStatus } from '../types';
 import { formatPhoneNumber } from '../utils/textUtils';
+import { BACKEND_URL, getAuthHeaders } from '../config';
 
 interface ConversationListItemProps {
   conversation: Conversation;
   isSelected: boolean;
   onSelect: () => void;
+  onDelete?: (id: string) => void;
 }
 
 const statusColorClass = {
@@ -14,7 +17,8 @@ const statusColorClass = {
   [LeadStatus.HOT]: 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)] animate-pulse',
 };
 
-const ConversationListItem: React.FC<ConversationListItemProps> = ({ conversation, isSelected, onSelect }) => {
+const ConversationListItem: React.FC<ConversationListItemProps> = ({ conversation, isSelected, onSelect, onDelete }) => {
+  const [isDeleting, setIsDeleting] = useState(false);
   const lastMessage = conversation.messages[conversation.messages.length - 1];
   const colorClass = statusColorClass[conversation.status];
   
@@ -22,12 +26,35 @@ const ConversationListItem: React.FC<ConversationListItemProps> = ({ conversatio
   const displayTitle = conversation.leadName;
   const displaySubtitle = formatPhoneNumber(conversation.leadIdentifier);
 
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const blacklist = window.confirm(`¿BORRAR CHAT?\n\nEsto eliminará a "${displayTitle}" de tu lista.\n\n¿Quieres también BLOQUEARLO para que la IA no le responda nunca más?`);
+    
+    setIsDeleting(true);
+    try {
+        const token = localStorage.getItem('saas_token');
+        const res = await fetch(`${BACKEND_URL}/api/conversation/${encodeURIComponent(conversation.id)}`, {
+            method: 'DELETE',
+            headers: getAuthHeaders(token!),
+            body: JSON.stringify({ blacklist })
+        });
+        if (res.ok) {
+            onDelete?.(conversation.id);
+        }
+    } catch (e) {
+        console.error("Delete Error", e);
+    } finally {
+        setIsDeleting(false);
+    }
+  };
+
   return (
     <li
       onClick={onSelect}
       className={`
         relative flex items-start p-4 cursor-pointer border-b border-white/5 transition-all duration-200 group
         ${isSelected ? 'bg-brand-gold/10' : 'hover:bg-white/5'}
+        ${isDeleting ? 'opacity-50 pointer-events-none' : ''}
       `}
     >
       {/* Selection Marker */}
@@ -48,9 +75,17 @@ const ConversationListItem: React.FC<ConversationListItemProps> = ({ conversatio
           <h3 className={`text-sm font-semibold truncate transition-colors ${isSelected ? 'text-brand-gold' : 'text-gray-200 group-hover:text-white'}`}>
             {displayTitle}
           </h3>
-          <span className="text-[10px] text-gray-500 flex-shrink-0 ml-2 font-mono">
-            {new Date(lastMessage?.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-gray-500 font-mono">
+              {new Date(lastMessage?.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </span>
+            <button 
+                onClick={handleDelete}
+                className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-red-500/20 text-gray-600 hover:text-red-500 rounded-lg transition-all"
+            >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+            </button>
+          </div>
         </div>
         
         {/* Always display formatted phone number as a subtitle */}
@@ -58,7 +93,7 @@ const ConversationListItem: React.FC<ConversationListItemProps> = ({ conversatio
 
         {/* Signal Tags (Signals) */}
         {conversation.tags && conversation.tags.length > 0 && (
-            <div className="flex flex-wrap gap-1 mb-1.5 mt-2"> {/* Adjusted margin-top */}
+            <div className="flex flex-wrap gap-1 mb-1.5 mt-2">
                 {conversation.tags.slice(0, 3).map(tag => (
                     <span key={tag} className="px-1.5 py-0.5 rounded bg-brand-gold/5 border border-brand-gold/20 text-brand-gold text-[8px] font-black uppercase tracking-tighter">
                         {tag}
@@ -68,7 +103,7 @@ const ConversationListItem: React.FC<ConversationListItemProps> = ({ conversatio
             </div>
         )}
 
-        <p className="text-xs text-gray-400 truncate group-hover:text-gray-300 transition-colors opacity-80 mt-1"> {/* Adjusted margin-top */}
+        <p className="text-xs text-gray-400 truncate group-hover:text-gray-300 transition-colors opacity-80 mt-1">
           {conversation.isMuted ? (
               <span className="text-brand-gold font-bold uppercase text-[9px] mr-2 tracking-tighter">[Escalado]</span>
           ) : (

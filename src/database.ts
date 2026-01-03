@@ -1,5 +1,4 @@
 
-// ... (imports remain the same)
 import mongoose, { Schema, Model } from 'mongoose';
 import bcrypt from 'bcrypt';
 import { User, BotSettings, PromptArchetype, GlobalMetrics, GlobalTelemetry, Conversation, IntendedUse, LogEntry, Testimonial, SystemSettings, Campaign, RadarSignal, RadarSettings, GroupMarketMemory, DepthBoost, DepthLog, IntentSignal, ConnectionOpportunity, NetworkProfile, PermissionStatus } from './types.js';
@@ -7,7 +6,12 @@ import { v4 as uuidv4 } from 'uuid';
 import { MONGO_URI } from './env.js';
 import { clearBindedSession } from './whatsapp/mongoAuth.js';
 
-// ... (Schema definitions remain the same)
+// --- NEW SCHEMAS FOR RESILIENCE ---
+const ModelCooldownSchema = new Schema({
+    modelName: { type: String, required: true, unique: true },
+    cooldownUntil: { type: Number, required: true }
+});
+
 const NetworkProfileSchema = new Schema({
     networkEnabled: { type: Boolean, default: false },
     categoriesOfInterest: { type: [String], default: [] },
@@ -197,7 +201,10 @@ const UserSchema = new Schema({
         intensityValue: { type: Number, default: 3 },
         isWizardCompleted: { type: Boolean, default: false }, 
         ignoredJids: { type: [String], default: [] },
-        isNetworkEnabled: { type: Boolean, default: false }, 
+        isNetworkEnabled: { type: Boolean, default: false },
+        isAutonomousClosing: { type: Boolean, default: false }, // NEW: Autonomous Guard
+        useAdvancedModel: { type: Boolean, default: false }, // Modular Architecture
+        neuralConfig: { type: Schema.Types.Mixed },
     },
     radar: {
         isEnabled: { type: Boolean, default: false },
@@ -241,6 +248,7 @@ const DepthBoostModel = (mongoose.models.DepthBoost || mongoose.model('DepthBoos
 const DepthLogModel = (mongoose.models.DepthLog || mongoose.model('DepthLog', DepthLogSchema)) as Model<DepthLog>;
 const IntentSignalModel = (mongoose.models.IntentSignal || mongoose.model('IntentSignal', IntentSignalSchema)) as Model<IntentSignal>;
 const ConnectionOpportunityModel = (mongoose.models.ConnectionOpportunity || mongoose.model('ConnectionOpportunity', ConnectionOpportunitySchema)) as Model<ConnectionOpportunity>;
+const ModelCooldownModel = (mongoose.models.ModelCooldown || mongoose.model('ModelCooldown', ModelCooldownSchema)) as Model<any>;
 
 
 export const sanitizeKey = (key: string) => key.replace(/\./g, '_');
@@ -274,7 +282,7 @@ class Database {
           console.log("⏳ [DB] Conectando a MongoDB...");
           await mongoose.connect(MONGO_URI, { 
               serverSelectionTimeoutMS: 5000,
-              maxPoolSize: 10
+              maxPoolSize: 20 // Optimized for higher concurrency (100+ clients)
           });
           this.isInitialized = true;
           console.log(`✅ [DB] Conexión establecida a la base de datos: ${mongoose.connection.db.databaseName}`); 
@@ -337,6 +345,8 @@ class Database {
             isWizardCompleted: false, 
             ignoredJids: [],
             isNetworkEnabled: false, 
+            isAutonomousClosing: false, // Default OFF
+            useAdvancedModel: false
         },
         radar: { isEnabled: false, monitoredGroups: [], keywordsInclude: [], keywordsExclude: [] },
         conversations: {},
@@ -445,6 +455,16 @@ class Database {
       );
   }
 
+  async removeUserConversation(userId: string, jid: string) {
+      const safeId = sanitizeKey(jid);
+      const updateKey = `conversations.${safeId}`;
+      // PHYSICAL DELETE: Use $unset to completely remove the conversation object from the map
+      await UserModel.updateOne(
+          { id: userId },
+          { $unset: { [updateKey]: "" } }
+      );
+  }
+
   // NEW: BATCH SAVE
   async saveUserConversationsBatch(userId: string, conversations: Record<string, Conversation>) {
       const updatePayload: any = {};
@@ -469,6 +489,21 @@ class Database {
       return user?.settings;
   }
   
+  // --- PERSISTENT COOLDOWNS ---
+  async setModelCooldown(modelName: string, cooldownUntil: number) {
+      await ModelCooldownModel.findOneAndUpdate(
+          { modelName }, 
+          { cooldownUntil }, 
+          { upsert: true }
+      );
+  }
+
+  async getModelCooldown(modelName: string): Promise<number | null> {
+      const doc = await ModelCooldownModel.findOne({ modelName }).lean();
+      // FIX: Cast document to any to access cooldownUntil property
+      return doc ? (doc as any).cooldownUntil : null;
+  }
+
   // ... (rest of methods)
   async createLog(logEntry: Partial<LogEntry>) {
       await LogModel.create(logEntry);

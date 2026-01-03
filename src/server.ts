@@ -170,6 +170,7 @@ app.post('/api/connect', authenticateToken, apiController.handleConnect);
 app.get('/api/disconnect', authenticateToken, apiController.handleDisconnect);
 app.post('/api/send', authenticateToken, apiController.handleSendMessage);
 app.post('/api/conversation/update', authenticateToken, apiController.handleUpdateConversation);
+app.delete('/api/conversation/:id', authenticateToken, apiController.handleDeleteConversation); // NEW DELETE ROUTE
 app.post('/api/conversation/force-run', authenticateToken, apiController.handleForceAiRun); 
 app.get('/api/conversations', authenticateToken, apiController.handleGetConversations);
 
@@ -200,6 +201,7 @@ app.post('/api/network/signals', authenticateToken, apiController.handleCreateIn
 app.get('/api/network/signals', authenticateToken, apiController.handleGetIntentSignals);
 app.get('/api/network/opportunities', authenticateToken, apiController.handleGetConnectionOpportunities);
 app.post('/api/network/opportunities/:id/request-permission', authenticateToken, apiController.handleRequestPermission);
+// reveal contact is a GET as per current apiController
 app.get('/api/network/opportunities/:id/reveal-contact', authenticateToken, apiController.handleRevealContact);
 app.get('/api/network/profile', authenticateToken, apiController.handleGetNetworkProfile);
 app.post('/api/network/profile', authenticateToken, apiController.handleUpdateNetworkProfile);
@@ -280,7 +282,7 @@ app.use((err: any, req: any, res: any, next: any) => {
 
 
 app.listen(Number(PORT), '0.0.0.0', async () => {
-    console.log(`🦅 DOMINION BACKEND ACTIVO EN PUERTO ${PORT}`);
+    console.log(`\x1b[33m%s\x1b[0m`, `\n    🦅 DOMINION BACKEND ACTIVO EN PUERTO ${PORT}\n`);
     try {
         await db.init();
         logService.info('El sistema backend se ha iniciado correctamente.');

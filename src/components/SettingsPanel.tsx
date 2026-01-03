@@ -19,7 +19,7 @@ interface SettingsPanelProps {
 const ARCHETYPE_NAMES: { [key in PromptArchetype]: string } = {
     [PromptArchetype.CONSULTATIVE]: 'Venta Consultiva',
     [PromptArchetype.DIRECT_CLOSER]: 'Cierre Directo',
-    [PromptArchetype.SUPPORT]: 'Soporte Técnico',
+    [PromptArchetype.SUPPORT]: 'SOPORTE_TECNICO',
     [PromptArchetype.EMPATHIC]: 'Relacional Empático',
     [PromptArchetype.AGRESSIVE]: 'Cierre Agresivo',
     [PromptArchetype.ACADEMIC]: 'Informativo Detallado',
@@ -458,6 +458,18 @@ ${data.rules}
                                     <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transform transition-transform ${current.isActive ? 'translate-x-6' : 'translate-x-0.5'}`}></div>
                                 </div>
                             </div>
+
+                            {/* PROTOCOLO GUARDIA TACTICAL SWITCH */}
+                            <div className="bg-indigo-900/10 border border-indigo-500/20 p-4 rounded-2xl mb-6 flex items-center justify-between">
+                                <div>
+                                    <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Guardia Autónoma</h4>
+                                    <p className="text-[9px] text-gray-500 font-medium">La IA cierra ventas sin intervención.</p>
+                                </div>
+                                <div onClick={() => handleUpdate('isAutonomousClosing', !current.isAutonomousClosing)} className={`w-10 h-5 rounded-full relative cursor-pointer transition-colors ${current.isAutonomousClosing ? 'bg-indigo-500' : 'bg-gray-800'}`}>
+                                    <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-sm transform transition-transform ${current.isAutonomousClosing ? 'translate-x-5' : 'translate-x-0.5'}`}></div>
+                                </div>
+                            </div>
+
                             <div className="space-y-4">
                                 <div>
                                     <label className="block text-[9px] font-black text-brand-gold uppercase tracking-widest mb-1">Nombre Comercial</label>

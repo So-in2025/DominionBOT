@@ -10,8 +10,8 @@ import { db } from '../database.js';
 const aiResponseCache = new Map<string, { timestamp: number; data: any }>();
 const CACHE_DURATION_MS = 5 * 60 * 1000; // 5 minutes
 
-// --- BLACKLIST SYSTEM ---
-const modelCooldowns = new Map<string, number>();
+// --- BLACKLIST SYSTEM (PERSISTENT VIA DB) ---
+// const modelCooldowns = new Map<string, number>(); // REMOVED IN FAVOR OF DB
 const MODEL_COOLDOWN_MS = 60 * 60 * 1000; // 60 Minutes
 
 // Updated Priority List: 5-Tier Fallback Architecture for Maximum Availability
@@ -23,7 +23,6 @@ const MODEL_PRIORITY = [
     "gemini-3-pro-preview"
 ];
 
-// ... (rest of the file)
 export const generateBotResponse = async (
   conversation: Conversation,
   user: User,
@@ -88,14 +87,10 @@ export const generateBotResponse = async (
   const prompt = `## HISTORIAL DE SEÑALES (Profundidad: ${memoryLimit} msgs):\n${historyText}`;
 
   // 3. CONSTRUCT SYSTEM INSTRUCTION
-  // LOGIC BRANCH: ADVANCED MODULAR ROUTER VS LINEAL MONOLITH
-  
   let systemInstruction = "";
 
   if (settings.useAdvancedModel && settings.neuralConfig) {
       // --- ADVANCED MODULAR LOGIC ---
-      logService.info(`[AI-ROUTER] Usando Arquitectura Modular para ${user.username}`, user.id);
-      
       const modulesContext = settings.neuralConfig.modules.map(m => `
 --- MÓDULO EXPERTO: ${m.name} ---
 [PALABRAS CLAVE / INTENCIÓN]: ${m.triggerKeywords}
@@ -113,41 +108,24 @@ Tu Nivel de Profundidad Cognitiva es ${capabilities.depthLevel}.
 ${settings.neuralConfig.masterIdentity}
 
 ## MÓDULOS DE CONOCIMIENTO DISPONIBLES:
-Tienes acceso a los siguientes fragmentos de contexto especializados.
-TU TAREA ES CLASIFICAR LA INTENCIÓN DEL CLIENTE Y USAR EL MÓDULO CORRECTO.
-
 ${modulesContext}
 
 ## REGLAS DE ENRUTAMIENTO Y VERDAD:
-1. Analiza el último mensaje del cliente y el historial.
+1. Analiza el último mensaje del cliente and el historial.
 2. Si la intención coincide con un MÓDULO EXPERTO, ADOPTA ESA PERSONALIDAD TOTALMENTE.
-3. **CANDADO COGNITIVO (PRECIOS):** Tu única fuente de verdad para precios es el texto dentro del [CONTEXTO ESPECÍFICO] del módulo seleccionado.
-   - Si el módulo dice "USD 19/mes", ese es el precio.
-   - Si el módulo dice "A convenir", di eso.
-   - **PROHIBIDO:** Usar precios de tu entrenamiento general o inventar cifras que no estén explícitamente escritas en el módulo.
-4. Responde de forma fluida, sin mencionar "Módulo X". Simplemente SÉ el experto.
-
-## PARÁMETROS GLOBALES:
-- Link Cierre: ${settings.ctaLink}
-- Profundidad: ${capabilities.inferencePasses}
-- ${capabilities.canPredictTrends ? 'Análisis de intención latente ACTIVO.' : ''}
+3. **CANDADO COGNITIVO (PRECIOS):** Tu única fuente de verdad para precios es el texto dentro del [CONTEXTO ESPECÍFICO].
+4. Responde de forma fluida.
 `;
-
   } else {
       // --- CLASSIC LINEAL LOGIC ---
       systemInstruction = `
-# CONSTITUCIÓN DOMINION BOT v2.8 (ELITE - Depth Level ${capabilities.depthLevel})
+# CONSTITUCIÓN DOMINION BOT v2.9 (ELITE - Depth Level ${capabilities.depthLevel})
 Eres un Agente Comercial Autónomo operando en Mendoza, Argentina para "${settings.productName}".
-Tu misión: Atender consultas y, si el plan lo permite, calificar la intención de compra.
 
-## PARÁMETROS COGNITIVOS:
-- Profundidad de Razonamiento: ${capabilities.inferencePasses} (1=Rápido, 3=Profundo)
-- ${capabilities.canPredictTrends ? 'Activar análisis de intención latente.' : 'Análisis literal.'}
-
-## REGLAS DE ORO (SEGURIDAD):
-- Responde en Español Argentino Profesional (Voseo permitido).
-- PROHIBIDO: Emojis excesivos, lenguaje de 'coach', mencionar que eres una IA.
-- PROHIBIDO ALUCINAR PRECIOS: Tu única verdad sobre precios es: "${settings.priceText}". Si el usuario presiona por un número y el dato es "A convenir", NO INVENTES UNA CIFRA. En su lugar, explica que depende del proyecto y busca cerrar la reunión.
+## REGLAS DE ORO:
+- Responde en Español Argentino Profesional (Voseo).
+- PROHIBIDO: Emojis excesivos, mencionar que eres una IA.
+- PROHIBIDO ALUCINAR PRECIOS: Tu única verdad es: "${settings.priceText}".
 - Sé directo y eficiente.
 
 ## CONTEXTO DE PRODUCTO:
@@ -157,30 +135,37 @@ ${settings.productDescription}
 `;
   }
 
-  if (features.lead_scoring) {
-      systemInstruction += `
-## PROTOCOLO DE CALIFICACIÓN (PLAN PRO):
-Analiza el historial y determina el estado del lead (Frío, Tibio, Caliente).
-`;
-  }
+  // --- LOGICA DE ESTADOS SMARTER (Protocolo Intervención) ---
+  const hasHumanIntervened = conversation.tags.includes('HUMAN_TOUCH');
+  
+  systemInstruction += `
+## PROTOCOLO DE CALIFICACIÓN INTELIGENTE:
+- **FRÍO (COLD):** Consulta inicial o sin intención clara.
+- **TIBIO (WARM):** El cliente tiene dudas, pide detalles, pregunta "qué incluye" o muestra interés pero TIENE PREGUNTAS. 
+- **CALIENTE (HOT):** El cliente NO TIENE MÁS DUDAS. Está pidiendo el link de pago, el CBU, o confirmando que va a comprar AHORA MISMO.
 
+${hasHumanIntervened ? `
+### ATENCIÓN: INTERVENCIÓN HUMANA DETECTADA (HUMAN_TOUCH)
+Un Agente Humano ya participó en este chat. 
+TU NUEVA MISIÓN: Quédate en estado TIBIO (WARM) y responde CUALQUIER duda técnica o de confianza que surja. 
+NO actives el modo CALIENTE (HOT) a menos que el cliente esté 100% listo para el pago final y no tenga ninguna otra duda pendiente. 
+Tu prioridad es APOYAR al humano, no callarte prematuramente.
+` : ''}
+`;
+
+  // --- GUARDIA AUTÓNOMA VS SHADOW MODE ---
   if (features.close_assist) {
-      if (isSimulation) {
-          // --- SIMULATION OVERRIDE ---
-          // En simulación, queremos ver cómo la IA cerraría la venta, NO queremos silencio.
+      if (isSimulation || settings.isAutonomousClosing) {
           systemInstruction += `
-## MODO SIMULACIÓN ACTIVO:
-- SI EL LEAD ES CALIENTE: IGNORA el protocolo de silencio (Shadow Mode).
-- TU OBJETIVO: Asume el rol del MEJOR VENDEDOR HUMANO y cierra la venta con una respuesta directa y persuasiva ('responseText').
-- RECUERDA: Usa SOLO la información de precios disponible en tu contexto/módulo. Si falta, vende la reunión.
+## PROTOCOLO DE CIERRE AUTÓNOMO (GUARDIA ACTIVA - isAutonomousClosing=TRUE):
+- SI EL LEAD ES CALIENTE: Tienes permiso total para cerrar la venta de forma autónoma. NO te silencies. 
+- Genera una 'responseText' de cierre convincente.
+- Usa el precio exacto "${settings.priceText}" y el link "${settings.ctaLink}".
 `;
       } else {
-          // --- PRODUCTION BEHAVIOR ---
-          // En producción, silencio absoluto para proteger la venta.
           systemInstruction += `
-## PROTOCOLO "HOT-SHADOW" (PLAN PRO):
-- SI EL LEAD ES CALIENTE (listo para comprar): NO generes 'responseText'. En su lugar, genera 3 'suggestedReplies' para que el vendedor humano cierre.
-- TU OBJETIVO: Alertar al humano y apartarte.
+## PROTOCOLO "HOT-SHADOW" (MODO MANUAL - isAutonomousClosing=FALSE):
+- SI EL LEAD ES CALIENTE (y solo si está 100% para cerrar sin dudas): NO generes 'responseText'. Genera 3 'suggestedReplies' para que el humano las use.
 `;
       }
   }
@@ -207,61 +192,47 @@ ${JSON.stringify(Object.keys(responseSchema.properties))}
   
   const ai = new GoogleGenAI({ apiKey: cleanKey });
 
-  // EXECUTE FAILOVER LOOP
   for (const modelName of MODEL_PRIORITY) {
-    // 1. CHECK BLACKLIST
-    if (modelCooldowns.has(modelName)) {
-        const cooldownUntil = modelCooldowns.get(modelName)!;
-        if (Date.now() < cooldownUntil) {
-            logService.debug(`[AI-BLACKLIST] Skipping ${modelName} (Exhausted until ${new Date(cooldownUntil).toLocaleTimeString()})`, user.id);
-            continue; // Skip to next model
-        } else {
-            modelCooldowns.delete(modelName); // Cooldown expired, unblock
-        }
+    // CHECK PERSISTENT COOLDOWN
+    const cooldownUntil = await db.getModelCooldown(modelName);
+    if (cooldownUntil && Date.now() < cooldownUntil) {
+        // Skip silently, or log debug
+        continue;
     }
 
     try {
       const response = await ai.models.generateContent({
         model: modelName,
         contents: [{ parts: [{ text: prompt }] }],
-        config: { 
-          systemInstruction,
-          responseMimeType: "application/json", 
-          responseSchema 
-        }
+        config: { systemInstruction, responseMimeType: "application/json", responseSchema }
       });
       
       const jsonText = response.text;
-      if (!jsonText) throw new Error(`Respuesta vacía de la IA (${modelName}).`);
+      if (!jsonText) throw new Error(`Respuesta vacía`);
 
       const result = JSON.parse(jsonText.trim());
       if (!features.lead_scoring) result.newStatus = LeadStatus.WARM;
       if (!features.close_assist) result.suggestedReplies = undefined;
       
-      // --- START: Set Cache on Success ---
       if (lastMessage && (lastMessage.sender === 'user' || lastMessage.sender === 'elite_bot')) {
           const cacheKey = `${user.id}::${lastMessage.text.trim()}`;
           aiResponseCache.set(cacheKey, { timestamp: Date.now(), data: result });
-          logService.info(`[AI-CACHE] SET for user ${user.username} using ${modelName}`, user.id);
       }
-      // --- END: Set Cache ---
 
-      // Clear cooldown if it existed (just in case)
-      modelCooldowns.delete(modelName);
-
+      // Success? Clear cooldown just in case (optional, usually set on fail)
+      // await db.setModelCooldown(modelName, 0); // Not necessary if we rely on expiration
       return result;
+
     } catch (err: any) { 
-        logService.warn(`[AI FAILOVER] Fallo con ${modelName}. Activando BLACKLIST (60m).`, user.id, user.username, { error: err.message });
-        
-        // 2. ADD TO BLACKLIST ON FAILURE
-        modelCooldowns.set(modelName, Date.now() + MODEL_COOLDOWN_MS);
+        logService.warn(`[AI FAILOVER] Fallo con ${modelName}.`, user.id, user.username);
+        // SET PERSISTENT COOLDOWN
+        await db.setModelCooldown(modelName, Date.now() + MODEL_COOLDOWN_MS);
     }
   }
   
   return null;
 };
 
-// ... (rest of the file remains unchanged)
 export const regenerateSimulationScript = async (userId: string) => {
     try {
         const user = await db.getUser(userId);

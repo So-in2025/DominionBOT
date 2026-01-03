@@ -363,6 +363,7 @@ export interface BotSettings {
   ttsEnabled: boolean;
   ignoredJids: string[];
   isNetworkEnabled: boolean; // NEW: Network participation toggle
+  isAutonomousClosing: boolean; // NUEVO: Interruptor de Guardia Autónoma
   
   // NEW: Modular Architecture Switch
   useAdvancedModel?: boolean;

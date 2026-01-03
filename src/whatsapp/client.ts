@@ -21,6 +21,7 @@ import { logService } from '../services/logService.js';
 import * as QRCode from 'qrcode';
 import { radarService } from '../services/radarService.js'; 
 import { Buffer } from 'buffer'; 
+import { campaignService } from '../services/campaignService.js'; // To access Watchdog state if needed, or implementing local check.
 
 const sessions = new Map<string, WASocket>();
 const qrCache = new Map<string, string>(); 
@@ -33,16 +34,38 @@ export const ELITE_BOT_JID = '5491112345678@s.whatsapp.net';
 export const ELITE_BOT_NAME = 'Simulador Neural';
 export const DOMINION_NETWORK_JID = '5491110000000@s.whatsapp.net';
 
-// AI Decoupling (Virtual Queue)
+// AI Decoupling (Virtual Queue) & Traffic Governor
 const aiProcessingQueue = new Set<string>();
+let lastTickTime = Date.now();
+
+// TRAFFIC GOVERNOR & AI QUEUE PROCESSOR
 setInterval(async () => {
+    // HARDWARE WATCHDOG: Check event loop lag
+    const now = Date.now();
+    const drift = now - lastTickTime - 2000; // Expected 2000ms
+    lastTickTime = now;
+    
+    // If system is lagging (>500ms drift), enter DEGRADED mode
+    const isDegraded = drift > 500;
+    
+    if (isDegraded) {
+        logService.warn(`[WATCHDOG] ⚠️ Alta carga de CPU (Lag: ${drift}ms). Modo DEGRADADO activo.`, 'SYSTEM');
+    }
+
     if (aiProcessingQueue.size > 0) {
         const [item] = aiProcessingQueue; 
+        
+        // GOVERNOR LOGIC: If degraded, only process if absolutely necessary (e.g., skip processing, or just slow down)
+        // Here we just consume one item per tick. In degraded mode, we might want to skip ticks.
+        if (isDegraded && Math.random() < 0.5) return; // 50% throttle in degraded mode
+
         aiProcessingQueue.delete(item);   
         
         const [userId, jid] = item.split('::');
         if (userId && jid) {
             try {
+                // In DEGRADED mode, we could check if the lead is already HOT and prioritize, 
+                // but for now, simple throttling is safer.
                 await processAiResponseForJid(userId, jid);
             } catch (err) {
                 logService.error(`[AI-QUEUE] Error processing ${item}`, err, userId);
@@ -255,11 +278,25 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
             }
             
             try {
+                // HARD FILTER: BLACKLIST CHECK AT INGRESS
+                // Get user settings ONCE for the batch to check ignoredJids
+                const user = await db.getUser(userId);
+                const ignoredJids = user?.settings.ignoredJids || [];
+
                 const messagesByJid: Record<string, typeof messages> = {};
                 
                 for (const msg of messages) {
                     const jid = msg.key.remoteJid;
                     if (!jid || jid === 'status@broadcast') continue; 
+                    
+                    // BLOCK: If JID is in blacklist, completely ignore
+                    // We check against the phone number part of the JID
+                    const number = jid.split('@')[0];
+                    if (ignoredJids.some(ignored => number.includes(ignored))) {
+                        // logService.debug(`[BLOCKED] Mensaje ignorado de ${number}`, userId); // Optional verbose log
+                        continue;
+                    }
+
                     if (!messagesByJid[jid]) messagesByJid[jid] = [];
                     messagesByJid[jid].push(msg);
                 }
@@ -293,9 +330,6 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
 
                     for (const msg of chatMessages) {
                         try {
-                            // FIX 2: DEBUGGING LOG TO CONFIRM DELIVERY
-                            // logService.info(`[DEBUG-INBOX] jid=${jid} hasMessage=${!!msg.message}`, userId);
-
                             // FIX 3: RELAXED FILTERING (NO SILENT CONTINUE)
                             let messageText = extractMessageContent(msg);
                             
@@ -435,7 +469,7 @@ async function _commonAiProcessingLogic(userId: string, jid: string, user: User,
         await sock.sendPresenceUpdate('composing', jid);
     }
 
-    const aiResult = await generateBotResponse(latestConversation, user, isTestBot);
+    const aiResult = await generateBotResponse(latestConversation, latestUser || user, isTestBot);
 
     if (aiResult?.responseText) {
         if (isTestBot) {
@@ -459,8 +493,16 @@ async function _commonAiProcessingLogic(userId: string, jid: string, user: User,
         };
 
         if (aiResult.newStatus === LeadStatus.HOT) {
-            updates.isMuted = true;
-            updates.suggestedReplies = aiResult.suggestedReplies;
+            // PROTOCOLO GUARDIA: Solo silenciar si NO está en modo de cierre autónomo
+            if (!freshUser?.settings.isAutonomousClosing) {
+                updates.isMuted = true;
+                updates.suggestedReplies = aiResult.suggestedReplies;
+                logService.info(`${logPrefix} Lead HOT detectado. Activando Shadow Mode (Silencio).`, userId);
+            } else {
+                updates.isMuted = false;
+                updates.suggestedReplies = undefined;
+                logService.info(`${logPrefix} Lead HOT detectado. Operando en Guardia Autónoma.`, userId);
+            }
         }
         await db.saveUserConversation(userId, { ...freshConvo, ...updates });
     }

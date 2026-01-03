@@ -274,6 +274,9 @@ export function App() {
   const statusPollingIntervalRef = useRef<number | null>(null);
   const convoPollingIntervalRef = useRef<number | null>(null);
   const heartbeatIntervalRef = useRef<number | null>(null);
+  
+  // DELTA POLLING REF
+  const lastPollCursor = useRef<string | null>(null);
 
   const [visibleMessages, setVisibleMessages] = useState<any[]>([]);
   const [isSimTyping, setIsSimTyping] = useState(false);
@@ -347,6 +350,7 @@ export function App() {
       if (convoPollingIntervalRef.current) clearInterval(convoPollingIntervalRef.current);
       if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current);
       setBackendError(null); 
+      lastPollCursor.current = null; // Reset delta cursor
   };
 
   useEffect(() => {
@@ -365,36 +369,57 @@ export function App() {
   }, []);
 
   // Defined via useCallback for reuse
+  // DELTA POLLING IMPLEMENTATION
   const fetchConversations = useCallback(async () => {
     if (!token) return;
     try {
-        const res = await fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) });
+        const isDelta = !!lastPollCursor.current;
+        const endpoint = isDelta 
+            ? `${BACKEND_URL}/api/conversations?since=${lastPollCursor.current}`
+            : `${BACKEND_URL}/api/conversations`;
+
+        const res = await fetch(endpoint, { headers: getAuthHeaders(token) });
         if (res.ok) {
-            const latestConversations: Conversation[] = await res.json();
+            const incomingConversations: Conversation[] = await res.json();
             
-            setConversations(prev => {
-                const map = new Map(prev.map(c => [c.id, c]));
-                for (const incoming of latestConversations) {
-                    const existing = map.get(incoming.id);
-                    if (!existing) {
-                        map.set(incoming.id, incoming);
-                    } else {
-                        // MERGE STRATEGY:
-                        // Keep local if it has more messages (optimistic updates pending)
-                        // Otherwise sync with server (incoming)
-                        // Always take status/activity from server unless we just updated it locally (handled by optimistic setters)
-                        map.set(incoming.id, {
-                            ...incoming,
-                            messages: existing.messages.length > incoming.messages.length
-                                ? existing.messages 
-                                : incoming.messages
-                        });
+            // If delta request returned data, merge it.
+            // If initial load, it will be the full list.
+            if (incomingConversations.length > 0 || !isDelta) {
+                setConversations(prev => {
+                    // Create a map from current state for efficient merging
+                    const map = new Map(prev.map(c => [c.id, c]));
+                    
+                    for (const incoming of incomingConversations) {
+                        const existing = map.get(incoming.id);
+                        if (!existing) {
+                            // New conversation
+                            map.set(incoming.id, incoming);
+                        } else {
+                            // Merge updates
+                            // IMPORTANT: We preserve local message state if it's "ahead" (optimistic updates),
+                            // but usually the server is the source of truth for messages.
+                            // We merge properties.
+                            map.set(incoming.id, {
+                                ...incoming,
+                                // If the incoming update has fewer messages than local (rare race condition or optimistic add),
+                                // we might want to be careful. But generally server wins.
+                                // However, for optimistic UI, we might have added a message locally that server hasn't echoed yet.
+                                // A robust merge would dedup by ID. For now, server replacement is safer for consistency.
+                                messages: incoming.messages 
+                            });
+                        }
                     }
-                }
-                return Array.from(map.values()).sort((a, b) => 
-                    new Date(b.lastActivity || 0).getTime() - new Date(a.lastActivity || 0).getTime()
-                );
-            });
+                    
+                    // Convert back to array and sort
+                    return Array.from(map.values()).sort((a, b) => 
+                        new Date(b.lastActivity || 0).getTime() - new Date(a.lastActivity || 0).getTime()
+                    );
+                });
+            }
+            
+            // Update cursor to a safe time (server time ideally, but local time - buffer works for simple polling)
+            // Buffer of 5 seconds to overlap potential write latency
+            lastPollCursor.current = new Date(Date.now() - 5000).toISOString();
         }
     } catch (e) {}
   }, [token]);
@@ -402,6 +427,7 @@ export function App() {
   // AUTO-REFRESH HISTORY UPON CONNECTION
   useEffect(() => {
       if (connectionStatus === ConnectionStatus.CONNECTED) {
+          lastPollCursor.current = null; // Force full refresh
           fetchConversations();
           // showToast('Sincronizando historial...', 'info');
       }
@@ -423,7 +449,7 @@ export function App() {
     };
     
     fetchStatus();
-    fetchConversations();
+    fetchConversations(); // Initial load
     
     statusPollingIntervalRef.current = window.setInterval(fetchStatus, 15000);
     // Increased frequency for better responsiveness: 2000ms
@@ -641,6 +667,29 @@ export function App() {
       }
   };
 
+  // NUEVO: Handler para toggle de Guardia Autónoma
+  const handleToggleAutonomous = async () => {
+    if (!settings || !token) return;
+    const newStatus = !settings.isAutonomousClosing;
+    
+    // Optimistic Update
+    const updatedSettings = { ...settings, isAutonomousClosing: newStatus };
+    setSettings(updatedSettings);
+
+    try {
+        await fetch(`${BACKEND_URL}/api/settings`, { 
+            method: 'POST', 
+            headers: getAuthHeaders(token), 
+            body: JSON.stringify(updatedSettings) 
+        });
+        showToast(`Modo Guardia ${newStatus ? 'Activado' : 'Desactivado'}`, 'info');
+        audioService.play('action_success');
+    } catch (e) {
+        setSettings(settings); // Revert
+        showToast('Error al sincronizar modo guardia.', 'error');
+    }
+  };
+
   const renderClientView = () => {
       if (userRole === 'super_admin') return <AdminDashboard token={token!} backendUrl={BACKEND_URL} onAudit={(u) => { setAuditTarget(u); setCurrentView(View.AUDIT_MODE); }} showToast={showToast} onLogout={handleLogout} />;
       if (currentView === View.AUDIT_MODE && auditTarget) return <AuditView user={auditTarget} onClose={() => setCurrentView(View.ADMIN_GLOBAL)} onUpdate={(user) => setAuditTarget(user)} showToast={showToast} />;
@@ -713,6 +762,8 @@ export function App() {
               onLogoutClick={handleLogout} 
               isBotGloballyActive={isBotGloballyActive} 
               onToggleBot={() => setIsBotGloballyActive(!isBotGloballyActive)} 
+              isAutonomousClosing={settings?.isAutonomousClosing || false}
+              onToggleAutonomous={handleToggleAutonomous}
               currentView={currentView} 
               onNavigate={handleNavigate} 
               connectionStatus={connectionStatus}

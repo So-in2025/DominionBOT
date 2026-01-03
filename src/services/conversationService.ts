@@ -6,8 +6,21 @@ import { ELITE_BOT_JID } from '../whatsapp/client.js';
 
 class ConversationService {
   
-  async getConversations(userId: string): Promise<Conversation[]> {
-    return await db.getUserConversations(userId);
+  // OPTIMIZED DELTA POLLING: Accepts optional 'since' timestamp
+  async getConversations(userId: string, since?: string): Promise<Conversation[]> {
+    const allConversations = await db.getUserConversations(userId);
+    
+    if (!since) {
+        return allConversations;
+    }
+
+    const sinceTime = new Date(since).getTime();
+    
+    // Filter only conversations active AFTER the 'since' timestamp
+    return allConversations.filter(c => {
+        const lastActive = c.lastActivity ? new Date(c.lastActivity).getTime() : 0;
+        return lastActive > sinceTime;
+    });
   }
 
   /**
@@ -86,8 +99,6 @@ class ConversationService {
     const isEliteBotJid = jid === ELITE_BOT_JID;
     
     // FIX 1: Robust Timestamp Logic
-    // If it's a history import, rely on the message's original timestamp.
-    // If it's a real-time message, force NOW to ensure it jumps to the top of the inbox.
     const effectiveLastActivity = isHistoryImport 
         ? (message.timestamp instanceof Date ? message.timestamp.toISOString() : new Date(message.timestamp).toISOString()) 
         : new Date().toISOString();
@@ -133,45 +144,58 @@ class ConversationService {
     }
     
     // FIX 2: Blindaje de IDs (Message ID Safety)
-    // Ensure every message has a unique ID before attempting deduplication.
-    // This prevents losing messages that come with undefined IDs from Baileys.
     if (!message.id) {
         message.id = `${jid}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     }
 
-    // ATOMIC-LIKE APPEND:
-    // Check for duplicates
-    if (!conversation.messages.some(m => m.id === message.id)) {
-        conversation.messages.push(message);
-        
-        // Sort to maintain chronological order (crucial for display)
-        conversation.messages.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-        
-        // FIX 3: Update lastActivity logic to ensure visibility
-        // If it's a REAL user message (not history), force bump to top.
-        if (message.sender === 'user' && !isHistoryImport) {
-             conversation.lastActivity = new Date().toISOString();
-        } else {
-             // For history imports, respect effective timestamp but don't regress if already newer
-             const existingLast = new Date(conversation.lastActivity || 0).getTime();
-             const newLast = new Date(effectiveLastActivity).getTime();
-             if (newLast > existingLast) {
-                 conversation.lastActivity = effectiveLastActivity;
-             }
-        }
-    } 
+    // IDEMPOTENCY CHECK: STRICTLY PREVENT DUPLICATES
+    // Using a Map or simple scan. Since array is relatively small per chat (sharded/limit), .some() is acceptable.
+    if (conversation.messages.some(m => m.id === message.id)) {
+        // logService.debug(`[ConversationService] Ignorando mensaje duplicado (ID: ${message.id}) en ${jid}`, userId);
+        return; 
+    }
 
-    // FIX 4: Reactivate Bot on new Real User Message
-    // If a user writes in real-time, ensure the bot wakes up to handle it (unless explicitly muted)
+    // ATOMIC-LIKE APPEND:
+    conversation.messages.push(message);
+    
+    // Sort to maintain chronological order
+    conversation.messages.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    
+    // Update lastActivity logic
+    if (message.sender === 'user' && !isHistoryImport) {
+            conversation.lastActivity = new Date().toISOString();
+    } else {
+            const existingLast = new Date(conversation.lastActivity || 0).getTime();
+            const newLast = new Date(effectiveLastActivity).getTime();
+            if (newLast > existingLast) {
+                conversation.lastActivity = effectiveLastActivity;
+            }
+    }
+
+    // Protocolo de Reactivación y Degradación por Intervención Humana
+    if (message.sender === 'owner') {
+        // 1. Quitar silenciador manual
+        conversation.isMuted = false;
+        
+        // 2. MARCA DE INTERVENCIÓN: Añadimos HUMAN_TOUCH para que la IA sepa que debe ser "Asistente" y no "Sombra"
+        if (!conversation.tags.includes('HUMAN_TOUCH')) {
+            conversation.tags.push('HUMAN_TOUCH');
+        }
+
+        // 3. DEGRADACIÓN TÁCTICA: Si el humano interviene en un lead HOT, 
+        // asumimos que la emergencia terminó. Bajamos a WARM para que la IA 
+        // pueda retomar el seguimiento autónomo en el siguiente turno.
+        if (conversation.status === LeadStatus.HOT) {
+            conversation.status = LeadStatus.WARM;
+            logService.info(`[ConversationService] Lead degradado HOT -> WARM por intervención humana en ${jid}`, userId);
+        }
+    }
+
+    // Reactivate Bot on new Real User Message
     if (message.sender === 'user' && !isHistoryImport) {
         if (!conversation.isMuted && conversation.status !== LeadStatus.PERSONAL) {
              conversation.isBotActive = true;
         }
-    }
-
-    // Status Automation
-    if (message.sender === 'owner') {
-        conversation.isMuted = false;
     }
 
     if (message.sender === 'user' && conversation.status === LeadStatus.COLD && !isHistoryImport && !isEliteBotJid) {
