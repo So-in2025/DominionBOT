@@ -11,49 +11,65 @@ class ConversationService {
   }
 
   /**
-   * HYDRATION PROTOCOL: Creates a conversation entry just from the Chat List ID.
-   * This mimics WhatsApp Web loading the sidebar before messages arrive.
+   * BULK HYDRATION PROTOCOL (Optimized)
+   * Process multiple chats/contacts at once to avoid DB locking.
    */
-  async ensureConversationExists(userId: string, jid: string, name?: string, timestamp?: number) {
+  async ensureConversationsExist(userId: string, items: { jid: string; name?: string; timestamp?: number }[]) {
+      if (!items || items.length === 0) return;
+
       const user = await db.getUser(userId);
       if (!user) return;
 
-      const safeJid = sanitizeKey(jid);
       const conversations = user.conversations || {};
-      let conversation = conversations[safeJid] || conversations[jid];
+      const updates: Record<string, Conversation> = {};
+      let hasUpdates = false;
 
-      const leadIdentifier = jid.split('@')[0];
-      const isEliteBotJid = jid === ELITE_BOT_JID;
-      
-      // If conversation doesn't exist, create skeleton
-      if (!conversation) {
-          conversation = {
-            id: jid,
-            leadIdentifier: leadIdentifier,
-            leadName: name || (isEliteBotJid ? 'Simulador Neural' : leadIdentifier),
-            status: LeadStatus.COLD,
-            messages: [], // Empty initially, messages will append via history sync
-            isBotActive: isEliteBotJid, 
-            isMuted: false,
-            tags: ['HISTORY_IMPORT'],
-            internalNotes: [],
-            isAiSignalsEnabled: true,
-            isTestBotConversation: isEliteBotJid, 
-            lastActivity: timestamp ? new Date(timestamp * 1000).toISOString() : new Date().toISOString()
-          };
+      for (const item of items) {
+          if (item.jid === 'status@broadcast') continue;
           
-          await db.saveUserConversation(userId, conversation);
-          // console.log(`[DB-HYDRATION] Skeleton creado para ${jid}`);
-      } else {
-          // If exists, just update name if we found a better one
-          if (name && (!conversation.leadName || conversation.leadName === leadIdentifier)) {
-              conversation.leadName = name;
-              await db.saveUserConversation(userId, conversation);
+          const safeJid = sanitizeKey(item.jid);
+          let conversation = conversations[safeJid] || conversations[item.jid] || updates[safeJid];
+          
+          const leadIdentifier = item.jid.split('@')[0];
+          const isEliteBotJid = item.jid === ELITE_BOT_JID;
+
+          if (!conversation) {
+              conversation = {
+                id: item.jid,
+                leadIdentifier: leadIdentifier,
+                leadName: item.name || (isEliteBotJid ? 'Simulador Neural' : leadIdentifier),
+                status: LeadStatus.COLD,
+                messages: [],
+                isBotActive: isEliteBotJid, 
+                isMuted: false,
+                tags: ['HISTORY_IMPORT'],
+                internalNotes: [],
+                isAiSignalsEnabled: true,
+                isTestBotConversation: isEliteBotJid, 
+                lastActivity: item.timestamp ? new Date(item.timestamp * 1000).toISOString() : new Date().toISOString()
+              };
+              updates[safeJid] = conversation;
+              hasUpdates = true;
+          } else {
+              // Update name if better one provided
+              if (item.name && (!conversation.leadName || conversation.leadName === leadIdentifier)) {
+                  conversation.leadName = item.name;
+                  updates[safeJid] = conversation;
+                  hasUpdates = true;
+              }
           }
+      }
+
+      if (hasUpdates) {
+          await db.saveUserConversationsBatch(userId, updates);
       }
   }
 
-  // Updated signature to accept isHistoryImport flag
+  // Legacy single method (wraps bulk)
+  async ensureConversationExists(userId: string, jid: string, name?: string, timestamp?: number) {
+      return this.ensureConversationsExist(userId, [{ jid, name, timestamp }]);
+  }
+
   async addMessage(userId: string, jid: string, message: Message, leadName?: string, isHistoryImport: boolean = false) {
     // Retriev fresh user data to ensure we don't overwrite with stale state
     const user = await db.getUser(userId);
@@ -136,11 +152,6 @@ class ConversationService {
     
     // Save back to DB
     await db.saveUserConversation(userId, conversation);
-    
-    // TRACE LOG
-    if (!isHistoryImport && message.sender === 'user') {
-        // console.log(`[DB-SAVE] Guardado mensaje de ${conversation.leadName} (${jid})`);
-    }
   }
 }
 

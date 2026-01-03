@@ -83,8 +83,9 @@ function extractMessageContent(msg: proto.IWebMessageInfo | proto.IMessage): str
     
     // 5. Fallback for unknown types (Ensures visibility)
     if (Object.keys(message).length > 0) {
+        // Only ignore standard protocol overhead, otherwise assume content
         if (message.protocolMessage || message.reactionMessage || message.pollUpdateMessage || message.keepInChatMessage) {
-            return null; // Ignore protocol/meta messages
+            return null; 
         }
         return '[Contenido Desconocido]'; 
     }
@@ -146,12 +147,11 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
             generateHighQualityLinkPreview: true,
             shouldIgnoreJid: jid => jid?.endsWith('@broadcast'), 
             syncFullHistory: true,
-            markOnlineOnConnect: true, // Make sure we are online to receive messages
+            markOnlineOnConnect: true, 
             defaultQueryTimeoutMs: 60000, 
             keepAliveIntervalMs: 10000, 
             retryRequestDelayMs: 2000,
             connectTimeoutMs: 60000,
-            // IMPLEMENT getMessage to support retries and history sync robustness
             getMessage: async (key) => {
                 if (key.remoteJid) {
                     const conversations = await conversationService.getConversations(userId);
@@ -232,51 +232,36 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
             }
         });
 
-        // --- HISTORY HYDRATION PROTOCOL ---
-        // Listener for Chat List updates (Hydrates sidebar instantly)
+        // --- BULK HISTORY HYDRATION PROTOCOL ---
+        // Optimized Listener for Chat List updates
         sock.ev.on('chats.upsert', async (chats) => {
             if (!chats || chats.length === 0) return;
-            // console.log(`[HYDRATION] Recibidos ${chats.length} chats para hidratar.`, userId);
-            
-            for (const chat of chats) {
-                if (chat.id === 'status@broadcast') continue;
-                // Create skeleton conversation if it doesn't exist
-                await conversationService.ensureConversationExists(
-                    userId, 
-                    chat.id, 
-                    chat.name || undefined, 
-                    typeof chat.conversationTimestamp === 'number' ? chat.conversationTimestamp : undefined
-                );
-            }
+            const items = chats.map(c => ({
+                jid: c.id,
+                name: c.name || undefined,
+                timestamp: typeof c.conversationTimestamp === 'number' ? c.conversationTimestamp : undefined
+            }));
+            await conversationService.ensureConversationsExist(userId, items);
         });
 
-        // Listener for Contacts (Updates names)
+        // Optimized Listener for Contacts
         sock.ev.on('contacts.upsert', async (contacts) => {
             if (!contacts || contacts.length === 0) return;
-            // console.log(`[CONTACTS] Recibidos ${contacts.length} contactos.`, userId);
-            for (const contact of contacts) {
-                if (contact.name || contact.notify || contact.verifiedName) {
-                    const name = contact.name || contact.notify || contact.verifiedName;
-                    await conversationService.ensureConversationExists(userId, contact.id, name);
-                }
-            }
+            const items = contacts.map(c => ({
+                jid: c.id,
+                name: c.name || c.notify || c.verifiedName || undefined
+            })).filter(c => c.name); // Only update if name exists
+            await conversationService.ensureConversationsExist(userId, items);
         });
 
         sock.ev.on('messages.upsert', async ({ messages, type }) => {
             if (!messages || messages.length === 0) return;
             
-            // DEBUG: RAW LOGGING ENABLED FOR DIAGNOSTICS
-            // const sampleJid = messages[0].key.remoteJid;
-            // if (sampleJid !== 'status@broadcast') {
-            //    console.log(`[RAW-UPSERT] Recibidos ${messages.length} mensajes. Tipo: ${type}. De: ${sampleJid}`);
-            // }
-
             if (type === 'append' && messages.length > 20) {
                 logService.info(`[HISTORY] 📥 Sincronizando bloque de ${messages.length} mensajes antiguos...`, userId);
             }
             
             try {
-                // Group messages by JID to batch process
                 const messagesByJid: Record<string, typeof messages> = {};
                 
                 for (const msg of messages) {
@@ -293,7 +278,6 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
 
                     // --- GROUP LOGIC (RADAR ONLY) ---
                     if (isGroup) {
-                        // Only process Radar for new messages ('notify'), skip huge history chunks
                         if (type === 'notify') {
                             for (const msg of chatMessages) {
                                 if (msg.key.fromMe) continue; // Ignore my own group messages
@@ -308,14 +292,12 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                     }
 
                     // --- PRIVATE CHAT LOGIC (INBOX) ---
-                    // Process ALL messages (mine and theirs) for history
                     for (const msg of chatMessages) {
                         try {
                             const messageText = extractMessageContent(msg);
                             if (!messageText) continue; // Skip if no text/media found
 
                             const msgTimestamp = typeof msg.messageTimestamp === 'number' ? msg.messageTimestamp : (msg.messageTimestamp as any)?.low || Date.now() / 1000;
-                            // Check if old. Force 'old' logic if the upsert type is 'append' (history sync)
                             const isOldForAI = type === 'append' || (msgTimestamp < (Date.now() / 1000 - 300)); 
 
                             const userMessage: Message = {

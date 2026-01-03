@@ -1,4 +1,5 @@
 
+// ... (imports remain the same)
 import mongoose, { Schema, Model } from 'mongoose';
 import bcrypt from 'bcrypt';
 import { User, BotSettings, PromptArchetype, GlobalMetrics, GlobalTelemetry, Conversation, IntendedUse, LogEntry, Testimonial, SystemSettings, Campaign, RadarSignal, RadarSettings, GroupMarketMemory, DepthBoost, DepthLog, IntentSignal, ConnectionOpportunity, NetworkProfile, PermissionStatus } from './types.js';
@@ -6,8 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { MONGO_URI } from './env.js';
 import { clearBindedSession } from './whatsapp/mongoAuth.js';
 
-// --- SCHEMA DEFINITIONS ---
-
+// ... (Schema definitions remain the same)
 const NetworkProfileSchema = new Schema({
     networkEnabled: { type: Boolean, default: false },
     categoriesOfInterest: { type: [String], default: [] },
@@ -56,7 +56,7 @@ const CampaignSchema = new Schema({
     message: { type: String, required: true },
     imageUrl: { type: String },
     groups: { type: [String], default: [] },
-    status: { type: String, enum: ['DRAFT', 'ACTIVE', 'PAUSED', 'COMPLETED', 'ABORTED'], default: 'DRAFT' }, // Added ABORTED
+    status: { type: String, enum: ['DRAFT', 'ACTIVE', 'PAUSED', 'COMPLETED', 'ABORTED'], default: 'DRAFT' }, 
     schedule: {
         type: { type: String, enum: ['ONCE', 'DAILY', 'WEEKLY'], default: 'ONCE' },
         startDate: { type: String },
@@ -64,8 +64,8 @@ const CampaignSchema = new Schema({
         daysOfWeek: { type: [Number] }
     },
     config: {
-        minDelaySec: { type: Number, default: 30 }, // UPDATED: Safer default (Stealth Mode)
-        maxDelaySec: { type: Number, default: 60 }, // UPDATED: Safer default (Stealth Mode)
+        minDelaySec: { type: Number, default: 30 },
+        maxDelaySec: { type: Number, default: 60 },
         operatingWindow: {
             startHour: { type: Number },
             endHour: { type: Number }
@@ -186,7 +186,7 @@ const UserSchema = new Schema({
         productName: { type: String, default: 'Mi Producto' },
         productDescription: { type: String, default: 'Breve descripción...' },
         priceText: { type: String, default: 'Consultar' },
-        ticketValue: { type: Number, default: 0 }, // NEW: Default ticket value
+        ticketValue: { type: Number, default: 0 }, 
         ctaLink: { type: String, default: '#' },
         isActive: { type: Boolean, default: true },
         proxyUrl: { type: String, default: '' },
@@ -197,7 +197,7 @@ const UserSchema = new Schema({
         intensityValue: { type: Number, default: 3 },
         isWizardCompleted: { type: Boolean, default: false }, 
         ignoredJids: { type: [String], default: [] },
-        isNetworkEnabled: { type: Boolean, default: false }, // NEW: Default to false
+        isNetworkEnabled: { type: Boolean, default: false }, 
     },
     radar: {
         isEnabled: { type: Boolean, default: false },
@@ -224,9 +224,9 @@ const UserSchema = new Schema({
         experiments: { type: [Schema.Types.Mixed], default: [] },
         aggregatedScore: { type: Number, default: 0 },
         topFailurePatterns: { type: Schema.Types.Mixed, default: {} },
-        customScript: { type: [String], default: [] } // NEW: Campo para guardar el script personalizado
+        customScript: { type: [String], default: [] } 
     },
-    networkProfile: { type: NetworkProfileSchema, default: {} }, // NEW: Embedded Network Profile
+    networkProfile: { type: NetworkProfileSchema, default: {} }, 
 }, { minimize: false, timestamps: true });
 
 // --- MODELS ---
@@ -318,14 +318,14 @@ class Database {
         billing_start_date: new Date(Date.now()).toISOString(),
         billing_end_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), 
         trial_qualified_leads_count: 0,
-        is_founder: true, // NEW: Mark new users as founders
-        depthLevel: 1, // Default depth
+        is_founder: true, 
+        depthLevel: 1, 
         created_at: new Date().toISOString(),
         settings: { 
             productName: businessName,
             productDescription: '',
             priceText: 'A convenir',
-            ticketValue: 0, // NEW: Default ticket value
+            ticketValue: 0, 
             ctaLink: '',
             isActive: true, 
             proxyUrl: '',
@@ -336,7 +336,7 @@ class Database {
             intensityValue: 3,
             isWizardCompleted: false, 
             ignoredJids: [],
-            isNetworkEnabled: false, // NEW: Default to false
+            isNetworkEnabled: false, 
         },
         radar: { isEnabled: false, monitoredGroups: [], keywordsInclude: [], keywordsExclude: [] },
         conversations: {},
@@ -348,7 +348,7 @@ class Database {
             accountFlags: [] 
         },
         simulationLab: { experiments: [], aggregatedScore: 0, topFailurePatterns: {}, customScript: [] },
-        networkProfile: { // NEW: Default network profile
+        networkProfile: { 
             networkEnabled: false,
             categoriesOfInterest: [],
             contributionScore: 0,
@@ -445,6 +445,20 @@ class Database {
       );
   }
 
+  // NEW: BATCH SAVE
+  async saveUserConversationsBatch(userId: string, conversations: Record<string, Conversation>) {
+      const updatePayload: any = {};
+      for (const [key, convo] of Object.entries(conversations)) {
+          updatePayload[`conversations.${key}`] = convo;
+      }
+      updatePayload.last_activity_at = new Date().toISOString();
+      
+      await UserModel.updateOne(
+          { id: userId }, 
+          { $set: updatePayload }
+      );
+  }
+
   async updateUserSettings(userId: string, settings: Partial<BotSettings>) {
       const updatePayload: any = {};
       for (const [key, value] of Object.entries(settings)) {
@@ -455,6 +469,7 @@ class Database {
       return user?.settings;
   }
   
+  // ... (rest of methods)
   async createLog(logEntry: Partial<LogEntry>) {
       await LogModel.create(logEntry);
   }
@@ -463,7 +478,6 @@ class Database {
       return await LogModel.find().sort({ timestamp: -1 }).limit(limit).lean();
   }
 
-  // NEW: Get Radar Traces for User
   async getRadarTraceLogs(userId: string, limit = 20) {
       return await LogModel.find({ 
           userId, 
@@ -475,9 +489,8 @@ class Database {
   }
 
   async getGlobalMetrics(): Promise<GlobalMetrics> {
-      if (!this.isReady()) return { activeVendors: 0, onlineNodes: 0, totalSignalsProcessed: 0, activeHotLeads: 0, aiRequestsTotal: 0, riskAccountsCount: 0 }; // FIX: Updated default values for new metrics
+      if (!this.isReady()) return { activeVendors: 0, onlineNodes: 0, totalSignalsProcessed: 0, activeHotLeads: 0, aiRequestsTotal: 0, riskAccountsCount: 0 }; 
       const activeVendors = await UserModel.countDocuments({ role: 'client' });
-      // FIX: Add logic to calculate totalSignalsProcessed and activeHotLeads from the DB
       const totalSignalsProcessed = await IntentSignalModel.countDocuments();
       const activeHotLeads = await UserModel.aggregate([
           { $match: { 'conversations.$*.status': 'Caliente' } },
@@ -486,10 +499,10 @@ class Database {
 
       return {
           activeVendors,
-          onlineNodes: 1, // Placeholder for now
+          onlineNodes: 1, 
           totalSignalsProcessed,
           activeHotLeads,
-          aiRequestsTotal: 0, // Placeholder
+          aiRequestsTotal: 0, 
           riskAccountsCount: await UserModel.countDocuments({ 'governance.riskScore': { $gt: 50 } })
       };
   }
@@ -498,7 +511,7 @@ class Database {
       const newTestimonial = await TestimonialModel.create({
           userId,
           name,
-          location: 'Mendoza', // Default for new user posts
+          location: 'Mendoza', 
           text
       });
       return newTestimonial.toObject();
@@ -573,7 +586,6 @@ class Database {
 
   async getPendingCampaigns(): Promise<Campaign[]> {
       const now = new Date().toISOString();
-      // Use .lean() for faster reads and use the compound index
       return await CampaignModel.find({
           status: 'ACTIVE',
           'stats.nextRunAt': { $lte: now }
@@ -582,7 +594,6 @@ class Database {
 
   async getRadarSettings(userId: string): Promise<RadarSettings> {
       const user = await this.getUser(userId);
-      // FIX: Initialize calibration property in default object
       return user?.radar || { isEnabled: false, monitoredGroups: [], keywordsInclude: [], keywordsExclude: [], calibration: { opportunityDefinition: '', noiseDefinition: '', sensitivity: 5 } };
   }
 
@@ -597,7 +608,6 @@ class Database {
       return newRadar as RadarSettings;
   }
 
-  // FIX: Added getRadarSignal method for retrieving a single radar signal.
   async getRadarSignal(id: string): Promise<RadarSignal | null> {
       return await RadarSignalModel.findOne({ id }).lean();
   }
@@ -637,8 +647,6 @@ class Database {
       );
   }
 
-  // --- DEPTH ENGINE METHODS ---
-  
   async createDepthBoost(boost: DepthBoost): Promise<DepthBoost> {
       const newBoost = await DepthBoostModel.create(boost);
       return newBoost.toObject();
@@ -662,7 +670,6 @@ class Database {
       });
   }
 
-  // --- NEW NETWORK METHODS ---
   async createIntentSignal(signal: IntentSignal): Promise<IntentSignal> {
       const newSignal = await IntentSignalModel.create(signal);
       return newSignal.toObject();
@@ -677,26 +684,23 @@ class Database {
       return newOpportunity.toObject();
   }
 
-  // For a user, find potential opportunities from other users' signals
   async findPotentialConnectionOpportunities(
       receivedByUserId: string, 
       categoriesOfInterest: string[], 
-      excludeJidHashes: string[] = [] // Ensure not to match with own contributed signals
+      excludeJidHashes: string[] = [] 
   ): Promise<IntentSignal[]> {
       if (categoriesOfInterest.length === 0) return [];
       
       const now = new Date();
-      now.setDate(now.getDate() - 7); // Only consider signals from the last 7 days
+      now.setDate(now.getDate() - 7); 
 
-      // Find signals contributed by *other* users, that match categories of interest, 
-      // and haven't been acted upon by this user yet
       return await IntentSignalModel.find({
           userId: { $ne: receivedByUserId },
-          prospectIdentifierHash: { $nin: excludeJidHashes }, // Exclude signals already seen/acted upon by this user
+          prospectIdentifierHash: { $nin: excludeJidHashes }, 
           intentCategories: { $in: categoriesOfInterest },
-          signalScore: { $gte: 70 }, // Only high-quality signals
+          signalScore: { $gte: 70 }, 
           contributedAt: { $gte: now.toISOString() }
-      }).sort({ signalScore: -1, contributedAt: -1 }).limit(20).lean(); // Limit to 20 potential matches
+      }).sort({ signalScore: -1, contributedAt: -1 }).limit(20).lean(); 
   }
 
   async getConnectionOpportunities(receivedByUserId: string): Promise<ConnectionOpportunity[]> {
@@ -729,7 +733,6 @@ class Database {
       return await IntentSignalModel.findOne({ id }).lean();
   }
 
-  // --- ADMIN NETWORK METHODS ---
   async getNetworkStats() {
       const activeNodes = await UserModel.countDocuments({ 'networkProfile.networkEnabled': true });
       const totalSignals = await IntentSignalModel.countDocuments();
