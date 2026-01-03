@@ -194,7 +194,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClo
                                     <div className="mb-6 p-4 bg-green-500/10 border border-green-500/20 rounded-xl text-green-400 text-xs text-center font-bold animate-fade-in">{successMsg}</div>
                                 )}
 
-                                <form onSubmit={handleSubmit} className="space-y-4 md:space-y-5 pt-1"> {/* Reduced space-y */}
+                                <form id="auth-form" onSubmit={handleSubmit} className="space-y-4 md:space-y-5 pt-1"> {/* Reduced space-y */}
                                     <div className="space-y-1.5">
                                         <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">{mode === 'login' ? 'Número de WhatsApp' : 'Tu Número de WhatsApp'}</label>
                                         <div className="relative group">
@@ -294,6 +294,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClo
                             <div className="flex-shrink-0 pt-6 border-t border-white/5 mt-auto">
                                 <button
                                     type="submit"
+                                    form="auth-form"
                                     disabled={isSubmitDisabled}
                                     className={`w-full py-5 rounded-xl font-black text-xs uppercase tracking-[0.2em] transition-all duration-300 shadow-lg ${
                                         isSubmitDisabled
