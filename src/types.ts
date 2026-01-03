@@ -326,6 +326,21 @@ export interface Conversation {
   isTestBotConversation?: boolean; 
 }
 
+// --- NEW MODULAR ARCHITECTURE TYPES ---
+export interface ContextShard {
+    id: string;
+    name: string;
+    triggerKeywords: string; // Comma separated keywords
+    contextContent: string; // The specific prompt for this module
+}
+
+export interface NeuralRouterConfig {
+    masterIdentity: string; // Global persona/receptionist instructions
+    routingRules?: string; // Optional custom rules for routing
+    modules: ContextShard[];
+}
+// ---------------------------------------
+
 export interface BotSettings {
   productName: string;
   productDescription: string;
@@ -348,6 +363,10 @@ export interface BotSettings {
   ttsEnabled: boolean;
   ignoredJids: string[];
   isNetworkEnabled: boolean; // NEW: Network participation toggle
+  
+  // NEW: Modular Architecture Switch
+  useAdvancedModel?: boolean;
+  neuralConfig?: NeuralRouterConfig;
 }
 
 export interface User {

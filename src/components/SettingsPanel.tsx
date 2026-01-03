@@ -4,6 +4,7 @@ import { BotSettings, PromptArchetype } from '../types';
 import { GoogleGenAI, Type } from '@google/genai';
 import { audioService } from '../services/audioService';
 import { openSupportWhatsApp } from '../utils/textUtils';
+import AdvancedNeuralConfig from './Settings/AdvancedNeuralConfig';
 
 interface SettingsPanelProps {
   settings: BotSettings | null;
@@ -122,6 +123,7 @@ const SpeechRecognition = (window as any).SpeechRecognition || (window as any).w
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUpdateSettings, onOpenLegal, showToast }) => {
   const [current, setCurrent] = useState<BotSettings | null>(null);
+  const [isAdvancedMode, setIsAdvancedMode] = useState(false); // NEW STATE FOR TOGGLE
   
   // WIZARD STATE (Updated with API_SETUP)
   const [wizardStep, setWizardStep] = useState<'IDENTITY' | 'API_SETUP' | 'CONTEXT' | 'PATH' | 'LOADING'>('IDENTITY');
@@ -148,8 +150,18 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
         if (settings.geminiApiKey) {
             setWizApiKey(settings.geminiApiKey);
         }
+        // Init toggle based on settings
+        setIsAdvancedMode(settings.useAdvancedModel || false);
     }
   }, [settings]);
+
+  const handleToggleAdvancedMode = () => {
+      if (!current) return;
+      const newVal = !isAdvancedMode;
+      setIsAdvancedMode(newVal);
+      // Persist the mode preference
+      onUpdateSettings({ ...current, useAdvancedModel: newVal });
+  };
 
   // --- AUDIO RECORDING LOGIC ---
   const toggleRecording = () => {
@@ -386,78 +398,110 @@ ${data.rules}
       return (
         <div className="flex-1 bg-brand-black p-4 md:p-8 overflow-y-auto custom-scrollbar font-sans relative z-10 animate-fade-in">
             <div className="max-w-7xl mx-auto pb-32">
-                <div className="flex justify-between items-center mb-8 border-b border-white/5 pb-4">
-                    <h2 className="text-2xl font-black text-white uppercase tracking-tighter">Ajuste Fino</h2>
-                    <button onClick={() => { 
-                        if(confirm("¿Recalibrar todo el cerebro? Perderás los textos actuales.")) {
-                            const reset = {...current, isWizardCompleted: false};
-                            setCurrent(reset);
-                            onUpdateSettings(reset);
-                            setWizardStep('IDENTITY');
-                        }
-                    }} className="text-[10px] text-gray-500 hover:text-brand-gold font-bold uppercase tracking-widest border border-white/10 px-4 py-2 rounded-lg hover:border-brand-gold transition-all">
-                        Reiniciar Wizard
-                    </button>
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 border-b border-white/5 pb-6 gap-4">
+                    <div>
+                        <h2 className="text-2xl font-black text-white uppercase tracking-tighter">Ajuste Fino</h2>
+                        <p className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.3em] mt-1">Configuración del Cerebro</p>
+                    </div>
+                    
+                    <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-3 bg-black/40 px-4 py-2 rounded-xl border border-white/10">
+                            <span className={`text-[10px] font-black uppercase tracking-widest ${!isAdvancedMode ? 'text-white' : 'text-gray-500'}`}>Lineal</span>
+                            
+                            <button 
+                                onClick={handleToggleAdvancedMode}
+                                className={`w-12 h-6 rounded-full p-1 transition-all duration-300 relative ${isAdvancedMode ? 'bg-brand-gold' : 'bg-gray-700'}`}
+                            >
+                                <div className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform duration-300 ${isAdvancedMode ? 'translate-x-6' : 'translate-x-0'}`}></div>
+                            </button>
+                            
+                            <span className={`text-[10px] font-black uppercase tracking-widest ${isAdvancedMode ? 'text-brand-gold' : 'text-gray-500'}`}>Modular</span>
+                        </div>
+
+                        {!isAdvancedMode && (
+                            <button onClick={() => { 
+                                if(confirm("¿Recalibrar todo el cerebro? Perderás los textos actuales.")) {
+                                    const reset = {...current, isWizardCompleted: false};
+                                    setCurrent(reset);
+                                    onUpdateSettings(reset);
+                                    setWizardStep('IDENTITY');
+                                }
+                            }} className="text-[10px] text-gray-500 hover:text-red-400 font-bold uppercase tracking-widest border border-white/10 px-4 py-2 rounded-lg hover:border-red-500/30 transition-all">
+                                Reiniciar Wizard
+                            </button>
+                        )}
+                    </div>
                 </div>
                 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    {/* Manual Editor */}
-                    <div className="space-y-4">
-                        <label className="text-xs font-bold text-brand-gold uppercase tracking-widest">Prompt del Sistema (Solo Lectura / Edición Avanzada)</label>
-                        <textarea 
-                            value={current.productDescription} 
-                            onChange={(e) => handleUpdate('productDescription', e.target.value)}
-                            className="w-full h-[500px] bg-black/40 border border-white/10 rounded-xl p-4 text-gray-300 text-sm font-mono leading-relaxed focus:border-brand-gold outline-none custom-scrollbar"
-                        />
-                        <button onClick={() => onUpdateSettings(current)} className="w-full py-3 bg-brand-gold text-black font-black uppercase tracking-widest rounded-xl text-xs hover:scale-[1.01] transition-transform">Guardar Cambios Manuales</button>
-                    </div>
-
-                    {/* Controls */}
-                    <div className="space-y-6">
-                         {/* GEMINI PANEL */}
-                        <div className="bg-brand-surface border border-white/5 rounded-2xl p-6 shadow-lg">
-                            <h3 className="text-sm font-black text-white uppercase tracking-widest mb-4">Motor IA</h3>
-                            {/* Fake inputs to prevent password autofill */}
-                            <div style={{ height: 0, overflow: 'hidden', opacity: 0, position: 'absolute', pointerEvents: 'none' }}>
-                                <input type="text" name="fake_user_prevent_autofill" autoComplete="off" tabIndex={-1} />
-                                <input type="password" name="fake_password_prevent_autofill" autoComplete="off" tabIndex={-1} />
-                            </div>
-                            <input 
-                                type="password" 
-                                name="gemini_api_key_settings_v3"
-                                id="gemini_api_key_settings_v3"
-                                autoComplete="new-password"
-                                data-lpignore="true"
-                                readOnly={true}
-                                onFocus={(e) => e.target.readOnly = false}
-                                value={current.geminiApiKey || ''} 
-                                onChange={e => handleUpdate('geminiApiKey', e.target.value)}
-                                className="w-full bg-black/50 border border-white/10 rounded-xl p-3 text-white text-xs font-mono tracking-widest focus:border-brand-gold outline-none mb-2"
-                                placeholder="API KEY"
+                {isAdvancedMode ? (
+                    <AdvancedNeuralConfig 
+                        initialConfig={current.neuralConfig} 
+                        onChange={(neuralConfig) => {
+                            // Update local state without triggering full reload, persist on "Save" (which is implicit in parent)
+                            handleUpdate('neuralConfig', neuralConfig);
+                            onUpdateSettings({ ...current, neuralConfig });
+                        }}
+                    />
+                ) : (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-fade-in">
+                        {/* Manual Editor */}
+                        <div className="space-y-4">
+                            <label className="text-xs font-bold text-brand-gold uppercase tracking-widest">Prompt del Sistema (Solo Lectura / Edición Avanzada)</label>
+                            <textarea 
+                                value={current.productDescription} 
+                                onChange={(e) => handleUpdate('productDescription', e.target.value)}
+                                className="w-full h-[500px] bg-black/40 border border-white/10 rounded-xl p-4 text-gray-300 text-sm font-mono leading-relaxed focus:border-brand-gold outline-none custom-scrollbar"
                             />
-                            <button onClick={() => onUpdateSettings(current)} className="text-[10px] text-gray-500 hover:text-white font-bold uppercase">Actualizar Key</button>
+                            <button onClick={() => onUpdateSettings(current)} className="w-full py-3 bg-brand-gold text-black font-black uppercase tracking-widest rounded-xl text-xs hover:scale-[1.01] transition-transform">Guardar Cambios Manuales</button>
                         </div>
 
-                        {/* SLIDERS */}
-                        <div className="bg-brand-surface border border-white/5 rounded-2xl p-6 shadow-lg space-y-6">
-                            <h3 className="text-sm font-black text-white uppercase tracking-widest mb-2">Personalidad</h3>
-                            {[
-                                { label: 'Tono', val: current.toneValue, key: 'toneValue' },
-                                { label: 'Ritmo', val: current.rhythmValue, key: 'rhythmValue' },
-                                { label: 'Intensidad', val: current.intensityValue, key: 'intensityValue' }
-                            ].map((s) => (
-                                <div key={s.key}>
-                                    <div className="flex justify-between mb-1">
-                                        <label className="text-[10px] font-bold text-gray-400 uppercase">{s.label}</label>
-                                        <span className="text-[10px] text-brand-gold font-bold">{s.val}</span>
-                                    </div>
-                                    <input type="range" min="1" max="5" value={s.val} onChange={(e) => handleUpdate(s.key as any, parseInt(e.target.value))} className="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-brand-gold" />
+                        {/* Controls */}
+                        <div className="space-y-6">
+                             {/* GEMINI PANEL */}
+                            <div className="bg-brand-surface border border-white/5 rounded-2xl p-6 shadow-lg">
+                                <h3 className="text-sm font-black text-white uppercase tracking-widest mb-4">Motor IA</h3>
+                                {/* Fake inputs to prevent password autofill */}
+                                <div style={{ height: 0, overflow: 'hidden', opacity: 0, position: 'absolute', pointerEvents: 'none' }}>
+                                    <input type="text" name="fake_user_prevent_autofill" autoComplete="off" tabIndex={-1} />
+                                    <input type="password" name="fake_password_prevent_autofill" autoComplete="off" tabIndex={-1} />
                                 </div>
-                            ))}
-                            <button onClick={() => onUpdateSettings(current)} className="w-full py-2 bg-white/5 hover:bg-white/10 text-white font-bold uppercase tracking-widest rounded-lg text-[10px] transition-all">Aplicar Personalidad</button>
+                                <input 
+                                    type="password" 
+                                    name="gemini_api_key_settings_v3"
+                                    id="gemini_api_key_settings_v3"
+                                    autoComplete="new-password"
+                                    data-lpignore="true"
+                                    readOnly={true}
+                                    onFocus={(e) => e.target.readOnly = false}
+                                    value={current.geminiApiKey || ''} 
+                                    onChange={e => handleUpdate('geminiApiKey', e.target.value)}
+                                    className="w-full bg-black/50 border border-white/10 rounded-xl p-3 text-white text-xs font-mono tracking-widest focus:border-brand-gold outline-none mb-2"
+                                    placeholder="API KEY"
+                                />
+                                <button onClick={() => onUpdateSettings(current)} className="text-[10px] text-gray-500 hover:text-white font-bold uppercase">Actualizar Key</button>
+                            </div>
+
+                            {/* SLIDERS */}
+                            <div className="bg-brand-surface border border-white/5 rounded-2xl p-6 shadow-lg space-y-6">
+                                <h3 className="text-sm font-black text-white uppercase tracking-widest mb-2">Personalidad</h3>
+                                {[
+                                    { label: 'Tono', val: current.toneValue, key: 'toneValue' },
+                                    { label: 'Ritmo', val: current.rhythmValue, key: 'rhythmValue' },
+                                    { label: 'Intensidad', val: current.intensityValue, key: 'intensityValue' }
+                                ].map((s) => (
+                                    <div key={s.key}>
+                                        <div className="flex justify-between mb-1">
+                                            <label className="text-[10px] font-bold text-gray-400 uppercase">{s.label}</label>
+                                            <span className="text-[10px] text-brand-gold font-bold">{s.val}</span>
+                                        </div>
+                                        <input type="range" min="1" max="5" value={s.val} onChange={(e) => handleUpdate(s.key as any, parseInt(e.target.value))} className="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-brand-gold" />
+                                    </div>
+                                ))}
+                                <button onClick={() => onUpdateSettings(current)} className="w-full py-2 bg-white/5 hover:bg-white/10 text-white font-bold uppercase tracking-widest rounded-lg text-[10px] transition-all">Aplicar Personalidad</button>
+                            </div>
                         </div>
                     </div>
-                </div>
+                )}
             </div>
         </div>
       );
