@@ -303,7 +303,7 @@ export function App() {
   useEffect(() => {
     const fetchSystemSettings = async () => {
         try {
-            const res = await fetch(`${BACKEND_URL}/api/system/settings`);
+            const res = await fetch(`${BACKEND_URL}/api/system/settings`, { headers: API_HEADERS });
             if (res.ok) {
                 const contentType = res.headers.get("content-type");
                 if (contentType && contentType.indexOf("application/json") !== -1) {
