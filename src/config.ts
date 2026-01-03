@@ -87,7 +87,7 @@ if (typeof g.window !== 'undefined') {
     if (BACKEND_URL) {
         console.log(`%c API_TARGET: ${BACKEND_URL} `, 'color: #D4AF37; font-family: monospace;');
         // Detectar origen
-        const source = localStorage.getItem(STORAGE_KEY_BACKEND) ? 'DYNAMIC (Smart Link)' : 'STATIC (Config)';
+        const source = g.localStorage.getItem(STORAGE_KEY_BACKEND) ? 'DYNAMIC (Smart Link)' : 'STATIC (Config)';
         console.log(`%c 🔗 MODO ENLACE: ${source}`, 'background: #222; color: #aaa; font-size: 10px;');
     } else {
         console.warn(`%c ⚠️ ALERTA CRÍTICA: BACKEND_URL NO ESTÁ DEFINIDA.`, 'background: #FF0000; color: #FFFFFF; font-weight: bold; padding: 5px 10px; border-radius: 5px;');

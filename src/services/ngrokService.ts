@@ -21,7 +21,7 @@ class NgrokService {
 
             if (!response.ok) return null;
 
-            const data = await response.json();
+            const data: { tunnels?: any[] } = await response.json();
             const tunnels = data.tunnels;
 
             if (tunnels && tunnels.length > 0) {
