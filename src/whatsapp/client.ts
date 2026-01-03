@@ -24,8 +24,6 @@ import { Buffer } from 'buffer';
 const sessions = new Map<string, WASocket>();
 const qrCache = new Map<string, string>(); 
 const codeCache = new Map<string, string>(); 
-const connectionLocks = new Map<string, boolean>(); 
-const manualDisconnects = new Set<string>(); 
 
 const logger = pino({ level: 'silent' }); 
 
@@ -77,21 +75,14 @@ export function getSessionStatus(userId: string): { status: ConnectionStatus, qr
     const sock = sessions.get(userId);
     const qr = qrCache.get(userId);
     const code = codeCache.get(userId);
-    const isLocked = connectionLocks.get(userId);
 
     // Prioritize Connected state
     if (sock?.user) return { status: ConnectionStatus.CONNECTED };
     
-    // If locked (connecting/reconnecting), show Generating QR or Awaiting Scan based on if we have data
-    if (isLocked) {
-        if (code) return { status: ConnectionStatus.AWAITING_SCAN, pairingCode: code };
-        if (qr) return { status: ConnectionStatus.AWAITING_SCAN, qr };
-        return { status: ConnectionStatus.GENERATING_QR };
-    }
-
     if (code) return { status: ConnectionStatus.AWAITING_SCAN, pairingCode: code };
     if (qr) return { status: ConnectionStatus.AWAITING_SCAN, qr };
 
+    // If no socket but we are here, we are disconnected
     return { status: ConnectionStatus.DISCONNECTED };
 }
 
@@ -100,23 +91,28 @@ export function getSocket(userId: string): WASocket | undefined {
 }
 
 export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
-    // Reset manual disconnect flag on new attempt
-    manualDisconnects.delete(userId);
-
-    if (connectionLocks.get(userId)) {
-        logService.warn(`[WA-CLIENT] Conexión en proceso para ${userId}. Omitiendo duplicado.`, userId);
-        return;
+    // 1. FORCE CLEANUP WITH DELAY (Cool-down Protocol)
+    const oldSock = sessions.get(userId);
+    if (oldSock) {
+        try {
+            oldSock.end(undefined);
+            // @ts-ignore
+            oldSock.ws?.close(); 
+            oldSock.ev.removeAllListeners('connection.update');
+            oldSock.ev.removeAllListeners('creds.update');
+        } catch (e) {}
+        sessions.delete(userId);
     }
 
-    // Do NOT delete existing session immediately here if we are just retrying.
-    // Only cleanup if explicitly needed.
+    // Clear caches
+    qrCache.delete(userId);
+    codeCache.delete(userId);
 
-    connectionLocks.set(userId, true);
-    // Do NOT clear caches here immediately, it causes flickering. 
-    // Let the new socket generate new ones if needed.
+    // CRITICAL: Wait for socket cleanup to propagate (prevents collision)
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
     try {
-        logService.info(`[WA-CLIENT] Iniciando motor WhatsApp para: ${userId}`, userId);
+        logService.info(`[WA-CLIENT] Iniciando motor WhatsApp (Intento Limpio) para: ${userId}`, userId);
         const { state, saveCreds } = await useMongoDBAuthState(userId);
         const { version } = await fetchLatestBaileysVersion();
         
@@ -151,7 +147,24 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
             if (qr) {
                 logService.info(`[WA-CLIENT] QR generado.`, userId);
                 qrCache.set(userId, await QRCode.toDataURL(qr));
-                // Do NOT unlock yet, keep status as "Connecting/Scanning"
+                
+                // Pairing Code Logic: Only request if phone number is provided AND we are in QR state (socket ready)
+                if (phoneNumber && !codeCache.get(userId)) {
+                    logService.info(`[WA-CLIENT] Solicitando código de emparejamiento para ${phoneNumber}...`, userId);
+                    setTimeout(async () => {
+                        try {
+                            // Verify socket still exists and hasn't closed
+                            const currentSock = sessions.get(userId);
+                            if (currentSock && !currentSock.user) {
+                                const code = await currentSock.requestPairingCode(phoneNumber);
+                                codeCache.set(userId, code);
+                                logService.info(`[WA-CLIENT] Código generado: ${code}`, userId);
+                            }
+                        } catch (e) {
+                            logService.error("Error pidiendo código", e, userId);
+                        }
+                    }, 2000); // Wait 2s after QR availability to request code
+                }
             }
 
             if (newPairingCode) {
@@ -162,40 +175,27 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                 const disconnectError = lastDisconnect?.error as Boom;
                 const statusCode = disconnectError?.output?.statusCode;
                 
-                // If intentional manual disconnect
-                if (manualDisconnects.has(userId)) {
-                    logService.info(`[WA-CLIENT] Desconexión manual confirmada.`, userId);
-                    manualDisconnects.delete(userId);
-                    qrCache.delete(userId);
-                    codeCache.delete(userId);
-                    sessions.delete(userId);
-                    connectionLocks.delete(userId);
-                    return; 
+                const isLoggedOut = statusCode === DisconnectReason.loggedOut;
+
+                // CLEANUP MEMORY ALWAYS ON CLOSE
+                qrCache.delete(userId);
+                codeCache.delete(userId);
+                sessions.delete(userId);
+
+                if (isLoggedOut) {
+                    logService.warn(`[WA-CLIENT] ⚠️ Sesión cerrada por WhatsApp (401/LoggedOut). Purgando datos.`, userId);
+                    await clearBindedSession(userId); 
+                    // AUTO-RESTART with delay
+                    setTimeout(() => connectToWhatsApp(userId, phoneNumber), 2000);
+                } else {
+                    logService.warn(`[WA-CLIENT] Conexión interrumpida (Código: ${statusCode}). Reconectando en 3s...`, userId);
+                    setTimeout(() => connectToWhatsApp(userId, phoneNumber), 3000); 
                 }
 
-                const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-                
-                // CRITICAL FIX: If we are reconnecting (e.g. after scan), DO NOT WIPE SESSION/CACHE.
-                // Just retry connection.
-                if (shouldReconnect) {
-                    logService.warn(`[WA-CLIENT] Reconectando (Código: ${statusCode})...`, userId);
-                    // Retain lock to prevent UI form flipping to "Disconnected"
-                    connectionLocks.set(userId, true); 
-                    setTimeout(() => connectToWhatsApp(userId, phoneNumber), 2000); 
-                } else {
-                    // FATAL ERROR (Logout)
-                    logService.error(`[WA-CLIENT] 🚨 Desconectado permanentemente (Logged Out).`, disconnectError, userId);
-                    qrCache.delete(userId);
-                    codeCache.delete(userId);
-                    sessions.delete(userId); 
-                    connectionLocks.delete(userId); 
-                    await clearBindedSession(userId); 
-                }
             } else if (connection === 'open') {
                 logService.info(`[WA-CLIENT] ✅ CONEXIÓN ESTABLECIDA.`, userId);
                 qrCache.delete(userId);
                 codeCache.delete(userId);
-                connectionLocks.delete(userId); // Release lock now that we are stable
                 
                 if (isNewLogin) {
                     const user = await db.getUser(userId);
@@ -205,20 +205,6 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                 }
             }
         });
-
-        if (phoneNumber) {
-            setTimeout(async () => {
-                try {
-                    // Only request if not already connected
-                    if (!sock.user) {
-                        const code = await sock.requestPairingCode(phoneNumber);
-                        codeCache.set(userId, code);
-                    }
-                } catch(e) {
-                    logService.error("Error pidiendo código", e, userId);
-                }
-            }, 3000);
-        }
 
         sock.ev.on('messages.upsert', async ({ messages, type }) => {
             if (!messages || messages.length === 0) return;
@@ -285,22 +271,26 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
 
     } catch (error) {
         logService.error(`[WA-CLIENT] Fallo fatal al iniciar conexión`, error, userId);
-        connectionLocks.delete(userId);
     }
 }
 
 export async function disconnectWhatsApp(userId: string) {
     logService.info(`[WA-CLIENT] Ejecutando desconexión manual para ${userId}`, userId);
-    manualDisconnects.add(userId); 
     const sock = sessions.get(userId);
     if (sock) {
-        try { sock.end(undefined); } catch (e) {}
+        try { 
+            sock.end(undefined);
+            // @ts-ignore
+            sock.ws?.close();
+            sock.ev.removeAllListeners('connection.update');
+        } catch (e) {}
         sessions.delete(userId);
     }
     qrCache.delete(userId);
     codeCache.delete(userId);
-    connectionLocks.delete(userId);
     
+    // DELAY CLEANUP TO ENSURE DB LOCKS ARE FREE
+    await new Promise(resolve => setTimeout(resolve, 500));
     await clearBindedSession(userId); 
     await db.updateUser(userId, { whatsapp_number: '' });
     await db.updateUserSettings(userId, { isActive: false });
