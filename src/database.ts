@@ -1,101 +1,100 @@
-
-import bcrypt from 'bcrypt';
 import mongoose, { Schema, Model } from 'mongoose';
-// FIX: Import LogLevel to use in SystemSettings defaults
+import bcrypt from 'bcrypt';
 import { User, BotSettings, PromptArchetype, GlobalMetrics, GlobalTelemetry, Conversation, IntendedUse, LogEntry, Testimonial, SystemSettings, Campaign, RadarSignal, RadarSettings, GroupMarketMemory, DepthBoost, DepthLog, LogLevel, IntentSignal, ConnectionOpportunity, NetworkProfile, PermissionStatus } from './types.js';
 import { v4 as uuidv4 } from 'uuid';
 import { MONGO_URI } from './env.js';
-import { clearBindedSession } from './whatsapp/mongoAuth.js'; 
+import { clearBindedSession } from './whatsapp/mongoAuth.js';
+
+// --- SCHEMA DEFINITIONS ---
+
+const NetworkProfileSchema = new Schema({
+    networkEnabled: { type: Boolean, default: false },
+    categoriesOfInterest: { type: [String], default: [] },
+    contributionScore: { type: Number, default: 0 },
+    receptionScore: { type: Number, default: 0 },
+    lastActivity: { type: String }
+}, { _id: false });
 
 const LogSchema = new Schema({
-    timestamp: { type: String, required: true, index: true },
+    timestamp: { type: String, required: true },
     level: { type: String, required: true },
     message: { type: String, required: true },
-    userId: { type: String, index: true },
+    userId: { type: String },
     username: { type: String },
-    metadata: { type: Object }
+    metadata: { type: Schema.Types.Mixed }
 });
-
-// DEPTH ENGINE SCHEMAS
-const DepthBoostSchema = new Schema({
-    id: { type: String, required: true, unique: true },
-    userId: { type: String, required: true, index: true },
-    depthDelta: { type: Number, required: true },
-    reason: { type: String },
-    startsAt: { type: String, required: true },
-    endsAt: { type: String, required: true },
-    createdBy: { type: String }
-});
-
-const DepthLogSchema = new Schema({
-    timestamp: { type: String, required: true },
-    userId: { type: String, index: true },
-    eventType: { type: String, required: true },
-    details: { type: Object }
-}, { expires: 60 * 60 * 24 * 30 }); // Auto-expire after 30 days
 
 const TestimonialSchema = new Schema({
-    userId: { type: String, required: true, index: true },
-    name: { type: String, required: false }, // Made optional
-    location: { type: String, required: false }, // Made optional
+    userId: { type: String, required: true },
+    name: { type: String },
+    location: { type: String },
     text: { type: String, required: true },
-}, { timestamps: true });
+    createdAt: { type: String, default: () => new Date().toISOString() },
+    updatedAt: { type: String, default: () => new Date().toISOString() }
+});
 
 const SystemSettingsSchema = new Schema({
-    id: { type: String, default: 'global', unique: true },
+    id: { type: String, required: true, unique: true },
     supportWhatsappNumber: { type: String, default: '' },
-    // FIX: Add logLevel to schema to persist this setting
     logLevel: { type: String, default: 'INFO' },
-    dominionNetworkJid: { type: String, default: '5491110000000@s.whatsapp.net' } // NEW: Default Network JID
+    dominionNetworkJid: { type: String, default: '5491110000000@s.whatsapp.net' }
+});
+
+const CampaignSchema = new Schema({
+    id: { type: String, required: true, unique: true },
+    userId: { type: String, required: true },
+    name: { type: String, required: true },
+    message: { type: String, required: true },
+    imageUrl: { type: String },
+    groups: { type: [String], default: [] },
+    status: { type: String, enum: ['DRAFT', 'ACTIVE', 'PAUSED', 'COMPLETED'], default: 'DRAFT' },
+    schedule: {
+        type: { type: String, enum: ['ONCE', 'DAILY', 'WEEKLY'], default: 'ONCE' },
+        startDate: { type: String },
+        time: { type: String },
+        daysOfWeek: { type: [Number] }
+    },
+    config: {
+        minDelaySec: { type: Number, default: 5 },
+        maxDelaySec: { type: Number, default: 25 },
+        operatingWindow: {
+            startHour: { type: Number },
+            endHour: { type: Number }
+        },
+        useSpintax: { type: Boolean, default: true }
+    },
+    stats: {
+        totalSent: { type: Number, default: 0 },
+        totalFailed: { type: Number, default: 0 },
+        lastRunAt: { type: String },
+        nextRunAt: { type: String }
+    },
+    createdAt: { type: String, default: () => new Date().toISOString() }
 });
 
 const RadarSignalSchema = new Schema({
     id: { type: String, required: true, unique: true },
-    userId: { type: String, required: true, index: true },
+    userId: { type: String, required: true },
     groupJid: { type: String, required: true },
     groupName: { type: String },
     senderJid: { type: String, required: true },
     senderName: { type: String },
-    messageContent: { type: String },
-    timestamp: { type: String },
-    
-    // Core (v3)
+    messageContent: { type: String, required: true },
+    timestamp: { type: String, required: true },
     analysis: {
         score: { type: Number },
         category: { type: String },
-        intentType: { type: String, enum: ['SEARCH', 'COMPARISON', 'QUESTION', 'URGENT'] },
+        intentType: { type: String },
         reasoning: { type: String },
         suggestedAction: { type: String }
     },
-
-    // Predictive (v4)
-    strategicScore: { type: Number, default: 0 },
-    marketContext: {
-        momentum: String,
-        sentiment: String,
-        activeTopics: [String],
-        noiseLevel: Number
-    },
-    predictedWindow: {
-        confidenceScore: Number,
-        urgencyLevel: String,
-        delayRisk: String,
-        reasoning: String
-    },
-    hiddenSignals: [{
-        type: { type: String }, 
-        description: String,
-        intensity: Number
-    }],
-    actionIntelligence: {
-        suggestedEntryType: String,
-        communicationFraming: String,
-        spamRiskLevel: String,
-        recommendedWaitTimeSeconds: Number
-    },
-
+    marketContext: { type: Schema.Types.Mixed },
+    predictedWindow: { type: Schema.Types.Mixed },
+    hiddenSignals: { type: [Schema.Types.Mixed] },
+    actionIntelligence: { type: Schema.Types.Mixed },
+    strategicScore: { type: Number },
     status: { type: String, enum: ['NEW', 'ACTED', 'DISMISSED'], default: 'NEW' }
-}, { timestamps: true });
+});
 
 const GroupMarketMemorySchema = new Schema({
     groupJid: { type: String, required: true, unique: true },
@@ -105,72 +104,51 @@ const GroupMarketMemorySchema = new Schema({
     sentimentHistory: { type: [String], default: [] }
 });
 
-const CampaignSchema = new Schema({
-    id: { type: String, required: true, unique: true, index: true },
-    userId: { type: String, required: true, index: true }, // Index for fast retrieval by user
-    name: { type: String, required: true },
-    message: { type: String, required: true },
-    imageUrl: { type: String }, // NEW: Image Support
-    groups: { type: [String], default: [] },
-    status: { type: String, enum: ['DRAFT', 'ACTIVE', 'PAUSED', 'COMPLETED'], default: 'DRAFT', index: true }, // Index for scheduler
-    schedule: {
-        type: { type: String, enum: ['ONCE', 'DAILY', 'WEEKLY'], default: 'ONCE' },
-        startDate: { type: String },
-        time: { type: String }, // "HH:MM"
-        daysOfWeek: { type: [Number] }
-    },
-    config: {
-        minDelaySec: { type: Number, default: 10 },
-        maxDelaySec: { type: Number, default: 30 }
-    },
-    stats: {
-        totalSent: { type: Number, default: 0 },
-        totalFailed: { type: Number, default: 0 },
-        lastRunAt: { type: String },
-        nextRunAt: { type: String, index: true } // Index for scheduler
-    }
-}, { timestamps: true });
+const DepthBoostSchema = new Schema({
+    id: { type: String, required: true, unique: true },
+    userId: { type: String, required: true },
+    depthDelta: { type: Number, required: true },
+    reason: { type: String },
+    startsAt: { type: String, required: true },
+    endsAt: { type: String, required: true },
+    createdBy: { type: String }
+});
 
-// Create Compound Index for Scheduler Efficiency
-CampaignSchema.index({ status: 1, 'stats.nextRunAt': 1 });
+const DepthLogSchema = new Schema({
+    timestamp: { type: String, required: true },
+    userId: { type: String, required: true },
+    eventType: { type: String, required: true },
+    details: { type: Schema.Types.Mixed }
+});
 
-// --- NEW NETWORK SCHEMAS ---
 const IntentSignalSchema = new Schema({
-    id: { type: String, required: true, unique: true, index: true },
-    userId: { type: String, required: true, index: true },
-    prospectJid: { type: String, required: true }, // Original JID
-    prospectName: { type: String, required: true },
-    prospectIdentifierHash: { type: String, required: true, index: true }, // For matching privacy
-    intentCategories: { type: [String], default: [], index: true },
-    intentDescription: { type: String, required: true },
-    signalScore: { type: Number, required: true },
-    contributedAt: { type: String, default: () => new Date().toISOString() },
-}, { timestamps: true });
-
-const ConnectionOpportunitySchema = new Schema({
-    id: { type: String, required: true, unique: true, index: true },
-    contributedByUserId: { type: String, required: true, index: true },
-    receivedByUserId: { type: String, required: true, index: true },
-    intentSignalId: { type: String, required: true, index: true },
-    prospectOriginalJid: { type: String }, // Only revealed after consent
-    prospectName: { type: String }, // Only revealed after consent
+    id: { type: String, required: true, unique: true },
+    userId: { type: String, required: true },
+    prospectJid: { type: String, required: true },
+    prospectName: { type: String },
+    prospectIdentifierHash: { type: String, required: true },
     intentCategories: { type: [String], default: [] },
     intentDescription: { type: String },
-    opportunityScore: { type: Number, default: 0 },
+    signalScore: { type: Number },
+    contributedAt: { type: String, required: true }
+});
+
+const ConnectionOpportunitySchema = new Schema({
+    id: { type: String, required: true, unique: true },
+    contributedByUserId: { type: String, required: true },
+    receivedByUserId: { type: String, required: true },
+    intentSignalId: { type: String, required: true },
+    prospectOriginalJid: { type: String },
+    prospectName: { type: String },
+    intentCategories: { type: [String], default: [] },
+    intentDescription: { type: String },
+    opportunityScore: { type: Number },
     permissionStatus: { type: String, enum: ['PENDING', 'GRANTED', 'DENIED', 'NOT_REQUESTED'], default: 'NOT_REQUESTED' },
     requestedAt: { type: String },
     respondedAt: { type: String },
     connectionMadeAt: { type: String },
-    createdAt: { type: String, default: () => new Date().toISOString() },
-}, { timestamps: true });
-
-const NetworkProfileSchema = new Schema({
-    networkEnabled: { type: Boolean, default: false },
-    categoriesOfInterest: { type: [String], default: [] },
-    contributionScore: { type: Number, default: 0 },
-    receptionScore: { type: Number, default: 0 },
-    lastActivity: { type: String, default: () => new Date().toISOString() },
-}, { _id: false }); // No separate _id, embedded in User
+    createdAt: { type: String, required: true }
+});
 
 const UserSchema = new Schema({
     id: { type: String, required: true, unique: true, index: true },
@@ -209,7 +187,7 @@ const UserSchema = new Schema({
         rhythmValue: { type: Number, default: 3 },
         intensityValue: { type: Number, default: 3 },
         isWizardCompleted: { type: Boolean, default: false }, 
-        ignoredJids: { type: Array, default: [] },
+        ignoredJids: { type: [String], default: [] },
         isNetworkEnabled: { type: Boolean, default: false }, // NEW: Default to false
     },
     radar: {
@@ -229,18 +207,20 @@ const UserSchema = new Schema({
         systemState: { type: String, enum: ['ACTIVE', 'WARNING', 'LIMITED', 'SUSPENDED'], default: 'ACTIVE' },
         riskScore: { type: Number, default: 0 },
         updatedAt: { type: String, default: () => new Date().toISOString() },
-        auditLogs: { type: Array, default: [] },
-        accountFlags: { type: Array, default: [] },
+        auditLogs: { type: [Schema.Types.Mixed], default: [] },
+        accountFlags: { type: [String], default: [] },
         humanDeviationScore: { type: Number, default: 0 }
     },
     simulationLab: {
-        experiments: { type: Array, default: [] },
+        experiments: { type: [Schema.Types.Mixed], default: [] },
         aggregatedScore: { type: Number, default: 0 },
-        topFailurePatterns: { type: Object, default: {} }
+        topFailurePatterns: { type: Schema.Types.Mixed, default: {} },
+        customScript: { type: [String], default: [] } // NEW: Campo para guardar el script personalizado
     },
     networkProfile: { type: NetworkProfileSchema, default: {} }, // NEW: Embedded Network Profile
 }, { minimize: false, timestamps: true });
 
+// --- MODELS ---
 const UserModel = (mongoose.models.SaaSUser || mongoose.model('SaaSUser', UserSchema)) as Model<any>;
 const LogModel = (mongoose.models.LogEntry || mongoose.model('LogEntry', LogSchema)) as Model<LogEntry>;
 const TestimonialModel = (mongoose.models.Testimonial || mongoose.model('Testimonial', TestimonialSchema)) as Model<Testimonial>;
@@ -358,7 +338,7 @@ class Database {
             auditLogs: [],
             accountFlags: [] 
         },
-        simulationLab: { experiments: [], aggregatedScore: 0, topFailurePatterns: {} },
+        simulationLab: { experiments: [], aggregatedScore: 0, topFailurePatterns: {}, customScript: [] },
         networkProfile: { // NEW: Default network profile
             networkEnabled: false,
             categoriesOfInterest: [],

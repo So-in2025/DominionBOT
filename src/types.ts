@@ -1,5 +1,18 @@
 
+export interface SimulationLab {
+    experiments: SimulationRun[];
+    aggregatedScore: number;
+    topFailurePatterns: Record<string, number>;
+    customScript?: string[]; // NEW: Script personalizado generado autónomamente
+}
 
+export interface Message {
+  id: string;
+  text: string;
+  sender: 'user' | 'bot' | 'owner' | 'elite_bot'; 
+  timestamp: Date | string; 
+}
+// ... (rest of the file remains unchanged, showing context only for SimulationLab)
 export enum LeadStatus {
   COLD = 'Frío',
   WARM = 'Tibio',
@@ -285,13 +298,7 @@ export interface SimulationLab {
     experiments: SimulationRun[];
     aggregatedScore: number;
     topFailurePatterns: Record<string, number>;
-}
-
-export interface Message {
-  id: string;
-  text: string;
-  sender: 'user' | 'bot' | 'owner' | 'elite_bot'; 
-  timestamp: Date | string; 
+    customScript?: string[]; // NEW: Auto-generated script specific to the user's business
 }
 
 export interface InternalNote {

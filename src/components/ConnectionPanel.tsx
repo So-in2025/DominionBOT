@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { ConnectionStatus, User } from '../types';
 
@@ -60,7 +61,7 @@ const ConnectionPanel: React.FC<ConnectionPanelProps> = ({ status, qrCode, pairi
     };
 
     const forceWipe = () => {
-        if(confirm("¿Deseas resetear el motor de conexión? Esto borrará sesiones corruptas para permitir un nuevo enlace.")) {
+        if(confirm("⚠️ HARD RESET: Esto eliminará todas las credenciales de sesión en el servidor y te obligará a escanear de nuevo.\n\nÚsalo SOLO si no recibes mensajes o la conexión está 'bugeada'.")) {
             onWipe();
         }
     };
@@ -120,9 +121,12 @@ const ConnectionPanel: React.FC<ConnectionPanelProps> = ({ status, qrCode, pairi
                             {isLoading ? 'Iniciando Motor...' : 'Vincular Ahora'}
                         </button>
                         
-                        <button onClick={forceWipe} className="text-[9px] text-gray-600 hover:text-red-400 font-bold uppercase tracking-widest block mx-auto">
-                            Limpiar rastro de sesión
-                        </button>
+                        <div className="pt-6 border-t border-white/5">
+                            <p className="text-[9px] text-gray-500 mb-2">¿Problemas recurrentes?</p>
+                            <button onClick={forceWipe} className="text-[9px] text-red-400 hover:text-red-300 font-bold uppercase tracking-widest border-b border-red-500/30 pb-0.5">
+                                Limpiar caché de sesión antigua
+                            </button>
+                        </div>
                     </div>
                 );
             case ConnectionStatus.GENERATING_QR:
@@ -188,14 +192,27 @@ const ConnectionPanel: React.FC<ConnectionPanelProps> = ({ status, qrCode, pairi
             case ConnectionStatus.CONNECTED:
                 return (
                     <div className="text-center py-6 animate-fade-in space-y-8">
-                         <div className="w-24 h-24 bg-green-500/10 rounded-full flex items-center justify-center mx-auto border border-green-500/30">
+                         <div className="w-24 h-24 bg-green-500/10 rounded-full flex items-center justify-center mx-auto border border-green-500/30 shadow-[0_0_30px_rgba(34,197,94,0.2)]">
                             <svg className="w-12 h-12 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                          </div>
                         <div>
                             <h3 className="text-2xl font-black text-white uppercase tracking-tighter">Nodo Sincronizado</h3>
                             <p className="text-gray-500 mt-2 text-xs font-medium">Todo listo. La IA ya puede operar sobre tu cuenta.</p>
                         </div>
-                        <button onClick={onDisconnect} className="w-full py-4 bg-red-500/10 text-red-400 border border-red-500/20 font-black text-xs uppercase tracking-[0.2em] rounded-xl hover:bg-red-500 hover:text-white transition-all">Terminar Sesión</button>
+                        
+                        <div className="pt-6 border-t border-white/5 space-y-4">
+                            <button onClick={onDisconnect} className="w-full py-4 bg-white/5 text-gray-400 border border-white/10 font-black text-xs uppercase tracking-[0.2em] rounded-xl hover:bg-white/10 hover:text-white transition-all">
+                                Pausar Conexión
+                            </button>
+
+                            {/* EMERGENCY RESYNC BUTTON */}
+                            <div className="bg-red-900/10 border border-red-500/20 p-4 rounded-xl">
+                                <p className="text-[9px] text-red-300 mb-3 font-bold uppercase tracking-wide">¿No recibes mensajes aunque estás conectado?</p>
+                                <button onClick={forceWipe} className="w-full py-3 bg-red-600 text-white font-black text-[10px] uppercase tracking-[0.2em] rounded-lg hover:bg-red-500 shadow-lg shadow-red-600/20 transition-all">
+                                    Forzar Resincronización
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 );
         }

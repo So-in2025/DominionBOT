@@ -10,6 +10,7 @@ interface CampaignsPanelProps {
 }
 
 const DAYS_OF_WEEK = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
+const FULL_DAYS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 
 const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, showToast }) => {
     const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -35,7 +36,51 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
     const [endHour, setEndHour] = useState(20);
     const [useSpintax, setUseSpintax] = useState(true);
 
-    // Conflict Detection Logic (Client Side - Uses Local Time, assuming user is in ARG or compatible)
+    // --- SMART CALCULATOR (CLIENT SIDE PREVIEW) ---
+    const nextRunPreview = useMemo(() => {
+        if (!startDate || !scheduledTime) return null;
+        
+        const [h, m] = scheduledTime.split(':').map(Number);
+        // Create a local date object representing start criteria
+        const baseDate = new Date(startDate);
+        baseDate.setHours(h, m, 0, 0); // Local time setup
+        
+        const now = new Date();
+        
+        // Clone for calculation
+        let checkDate = new Date(baseDate);
+        if (checkDate < now) {
+            // If the combined StartDate+Time is in the past, move checkDate to "Now" to start searching forward
+            checkDate = new Date();
+            checkDate.setHours(h, m, 0, 0);
+            if (checkDate < now) {
+                checkDate.setDate(checkDate.getDate() + 1); // Move to tomorrow if time passed today
+            }
+        }
+
+        let foundDate: Date | null = null;
+
+        if (scheduleType === 'ONCE') {
+            foundDate = baseDate > now ? baseDate : null; // Only valid if future
+        } else if (scheduleType === 'DAILY') {
+            foundDate = checkDate;
+        } else if (scheduleType === 'WEEKLY') {
+            if (selectedDays.length === 0) return null;
+            // Search next 14 days
+            for(let i=0; i<14; i++) {
+                if (selectedDays.includes(checkDate.getDay()) && checkDate > now) {
+                    foundDate = new Date(checkDate);
+                    break;
+                }
+                checkDate.setDate(checkDate.getDate() + 1);
+            }
+        }
+
+        return foundDate;
+    }, [startDate, scheduledTime, scheduleType, selectedDays]);
+    // ----------------------------------------------
+
+    // Conflict Detection Logic
     const timeConflict = useMemo(() => {
         if (!scheduledTime) return null;
         const hour = parseInt(scheduledTime.split(':')[0]);
@@ -91,9 +136,7 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
         setScheduleType(campaign.schedule.type);
         setImage(campaign.imageUrl || null);
         
-        // Parse dates
         if (campaign.schedule.startDate) {
-            // Keep ISO substring for date input
             setStartDate(campaign.schedule.startDate.split('T')[0]);
         }
         setScheduledTime(campaign.schedule.time || '09:00');
@@ -180,7 +223,7 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
                     operatingWindow: { startHour, endHour },
                     useSpintax
                 },
-                status: 'ACTIVE' // Explicitly set to ACTIVE to trigger rescheduling on backend
+                status: 'ACTIVE' 
             };
 
             let res;
@@ -199,7 +242,7 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
             }
 
             if (res.ok) {
-                showToast(editingId ? 'Campaña actualizada y reprogramada.' : 'Campaña programada exitosamente.', 'success');
+                showToast(editingId ? 'Campaña actualizada.' : 'Campaña programada exitosamente.', 'success');
                 setView('LIST');
                 fetchCampaigns();
                 resetForm();
@@ -240,7 +283,7 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
             
             if (res.ok) {
                 showToast('🚀 Ejecución forzada iniciada.', 'success');
-                fetchCampaigns(); // Refresh stats
+                fetchCampaigns(); 
             } else {
                 showToast('Error al forzar ejecución.', 'error');
             }
@@ -373,6 +416,20 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
                                                 </div>
                                             </div>
                                         )}
+
+                                        {/* SMART NEXT RUN PREVIEW */}
+                                        <div className="mt-4 p-3 bg-brand-gold/5 border border-brand-gold/20 rounded-xl flex items-center gap-3">
+                                            <span className="text-xl">📅</span>
+                                            <div>
+                                                <span className="text-[9px] font-bold text-gray-500 uppercase tracking-widest block">Próxima Ejecución Estimada</span>
+                                                <span className="text-xs font-black text-white">
+                                                    {nextRunPreview 
+                                                        ? `${nextRunPreview.toLocaleDateString()} a las ${nextRunPreview.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}` 
+                                                        : <span className="text-gray-600">Configura la fecha y hora...</span>
+                                                    }
+                                                </span>
+                                            </div>
+                                        </div>
                                     </div>
 
                                     {/* OPERATING WINDOW */}

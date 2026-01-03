@@ -286,57 +286,102 @@ class CampaignService {
         }
     }
 
-    // FIX: Changed calculateNextRun from private to public.
+    /**
+     * SMART NEXT RUN CALCULATOR v2
+     * Corrects the logic error where campaigns triggered immediately if StartDate was today,
+     * ignoring the actual day of week requested.
+     */
     public calculateNextRun(campaign: Campaign): string {
         const nowArg = this.getArgentinaDate();
         const type = campaign.schedule.type;
 
+        // --- ONCE: Simple logic ---
         if (type === 'ONCE') {
-            return ''; // An empty nextRunAt for a ONCE campaign effectively stops it.
+            // If it's ONCE, strictly follow the startDate + time provided.
+            if (!campaign.schedule.startDate) return ''; 
+            
+            const [hour, minute] = (campaign.schedule.time || "09:00").split(':').map(Number);
+            const targetDate = new Date(campaign.schedule.startDate); // StartDate string from UI
+            
+            // Fix timezone offset issues from UI string to local object
+            // Create a date object in ARG time with the specific components
+            const scheduledRun = new Date(nowArg);
+            scheduledRun.setFullYear(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
+            scheduledRun.setHours(hour, minute, 0, 0);
+
+            // If the time has passed, it shouldn't run again if it was 'ONCE'. 
+            // But if it's being created now for the past, maybe run immediately? 
+            // Logic: If scheduled for past, it won't run.
+            return this.convertToUTC(scheduledRun);
         }
 
+        // --- RECURRING (DAILY / WEEKLY) ---
         const [targetHour, targetMinute] = (campaign.schedule.time || "09:00").split(':').map(Number);
+        
+        // 1. Determine the baseline start date. 
+        // It must be at least the user-provided startDate, OR "now" if startDate is old.
+        const uiStartDate = new Date(campaign.schedule.startDate || nowArg.toISOString());
+        
+        // Align baseline to ARG timezone components
+        let baseline = new Date(nowArg);
+        baseline.setFullYear(uiStartDate.getFullYear(), uiStartDate.getMonth(), uiStartDate.getDate());
+        baseline.setHours(targetHour, targetMinute, 0, 0);
 
-        let nextDate = new Date(nowArg);
-        nextDate.setHours(targetHour, targetMinute, 0, 0);
-
-        if (type === 'DAILY') {
-            // If the calculated time for today is already in the past, schedule for tomorrow.
-            if (nextDate <= nowArg) {
-                nextDate.setDate(nextDate.getDate() + 1);
-            }
-        } else if (type === 'WEEKLY' && campaign.schedule.daysOfWeek && campaign.schedule.daysOfWeek.length > 0) {
-            let nextRunFound = false;
-            // Loop for up to 7 days to find the next valid day in the future.
-            for (let i = 0; i < 8; i++) {
-                const potentialNextDate = new Date(nowArg);
-                potentialNextDate.setDate(nowArg.getDate() + i);
-                potentialNextDate.setHours(targetHour, targetMinute, 0, 0);
-                
-                // Check if this day is a scheduled day AND if the time is in the future.
-                if (campaign.schedule.daysOfWeek.includes(potentialNextDate.getDay()) && potentialNextDate > nowArg) {
-                    nextDate = potentialNextDate;
-                    nextRunFound = true;
-                    break; // Found the next valid run time.
-                }
-            }
-
-            // Fallback if no date was found (shouldn't happen with correct logic, but safe).
-            if (!nextRunFound) {
-                nextDate.setDate(nextDate.getDate() + 7);
-            }
+        // If the user picked a date in the past relative to "now", bring baseline to "now".
+        // But keep the time component.
+        if (baseline < nowArg) {
+            // If the time for today has passed, move baseline to tomorrow?
+            // Actually, let the loop find the next valid slot.
+            // Reset baseline to "Today at TargetTime"
+            baseline = new Date(nowArg);
+            baseline.setHours(targetHour, targetMinute, 0, 0);
         }
 
-        const year = nextDate.getFullYear();
-        const month = nextDate.getMonth();
-        const day = nextDate.getDate();
-        const hour = nextDate.getHours();
-        const min = nextDate.getMinutes();
+        // 2. Find the first valid slot starting from baseline
+        let nextDate = new Date(baseline);
+        let validDateFound = false;
+
+        // Search up to 14 days ahead to be safe
+        for (let i = 0; i < 14; i++) {
+            // Check if this date is valid (in future AND correct day of week)
+            const isFuture = nextDate > nowArg;
+            
+            let isCorrectDay = true;
+            if (type === 'WEEKLY' && campaign.schedule.daysOfWeek && campaign.schedule.daysOfWeek.length > 0) {
+                isCorrectDay = campaign.schedule.daysOfWeek.includes(nextDate.getDay());
+            }
+
+            if (isFuture && isCorrectDay) {
+                validDateFound = true;
+                break;
+            }
+
+            // Move to next day
+            nextDate.setDate(nextDate.getDate() + 1);
+            // Ensure time is preserved (DST safety)
+            nextDate.setHours(targetHour, targetMinute, 0, 0);
+        }
+
+        if (!validDateFound) {
+            // Fallback: Just add 24h to now to prevent infinite loops or immediate firing
+            const safeFallback = new Date(nowArg);
+            safeFallback.setDate(safeFallback.getDate() + 1);
+            return this.convertToUTC(safeFallback);
+        }
+
+        return this.convertToUTC(nextDate);
+    }
+
+    private convertToUTC(argDate: Date): string {
+        const year = argDate.getFullYear();
+        const month = argDate.getMonth();
+        const day = argDate.getDate();
+        const hour = argDate.getHours();
+        const min = argDate.getMinutes();
         
-        // Argentina is UTC-3. We must add 3 hours to the local Argentina time to get the correct UTC time.
-        const utcDate = new Date(Date.UTC(year, month, day, hour + 3, min, 0));
-        
-        return utcDate.toISOString();
+        // Argentina is UTC-3. Add 3 hours to get UTC.
+        // NOTE: This assumes the input argDate object represents Local ARG Time values
+        return new Date(Date.UTC(year, month, day, hour + 3, min, 0)).toISOString();
     }
 }
 

@@ -162,14 +162,23 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                 const isConflict = disconnectError?.message === 'Stream Errored' && disconnectError?.data === 'conflict';
                 const isCorrupt428 = statusCode === 428; 
                 const isLoggedOut = statusCode === DisconnectReason.loggedOut;
+                // NEW: Detect Bad MAC or Crypto errors loosely by code 401/500/generic or specific error messages
+                const isCryptoError = statusCode === 401 || disconnectError?.message?.includes('Bad MAC') || disconnectError?.message?.includes('decryption');
 
-                if (isConflict || isCorrupt428) {
-                    logService.error(`[WA-CLIENT] 🚨 ERROR CRÍTICO (${statusCode}). Sesión corrupta.`, disconnectError, userId);
+                if (isConflict || isCorrupt428 || isCryptoError) {
+                    logService.error(`[WA-CLIENT] 🚨 ERROR CRÍTICO DE SESIÓN (${statusCode} / ${disconnectError?.message}). Purgando.`, disconnectError, userId);
+                    
+                    // AGGRESSIVE CLEANUP
+                    try {
+                        sessions.get(userId)?.end(undefined);
+                    } catch(e) {}
+                    
                     sessions.delete(userId);
                     qrCache.delete(userId);
                     codeCache.delete(userId);
                     connectionLocks.delete(userId);
-                    await clearBindedSession(userId); 
+                    
+                    await clearBindedSession(userId); // NUKE DATABASE SESSION
                     return; 
                 }
 
@@ -290,6 +299,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
 }
 
 export async function disconnectWhatsApp(userId: string) {
+    logService.info(`[WA-CLIENT] Ejecutando desconexión manual para ${userId}`, userId);
     const sock = sessions.get(userId);
     if (sock) {
         try { sock.end(undefined); } catch (e) {}
@@ -298,6 +308,7 @@ export async function disconnectWhatsApp(userId: string) {
     qrCache.delete(userId);
     codeCache.delete(userId);
     connectionLocks.delete(userId);
+    // CRITICAL: Ensure full DB wipe on manual disconnect to solve syncing issues
     await clearBindedSession(userId); 
     await db.updateUser(userId, { whatsapp_number: '' });
     await db.updateUserSettings(userId, { isActive: false });

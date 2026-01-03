@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { BotSettings, PromptArchetype } from '../types';
 import { GoogleGenAI, Type } from '@google/genai';
 import { audioService } from '../services/audioService';
+import { openSupportWhatsApp } from '../utils/textUtils';
 
 interface SettingsPanelProps {
   settings: BotSettings | null;
@@ -34,90 +35,74 @@ const ARCHETYPE_MAPPING = {
     [PromptArchetype.CUSTOM]: { toneValue: 3, rhythmValue: 3, intensityValue: 3 },
 };
 
-// --- HIGH-LEVEL INDUSTRY TEMPLATES (ELITE LEVEL) ---
-const INDUSTRY_TEMPLATES: Record<string, { label: string, data: Partial<WizardState & { priceText: string }> }> = {
+// --- ELITE TEMPLATES ---
+const INDUSTRY_TEMPLATES: Record<string, { label: string, icon: string, desc: string, data: Partial<WizardState & { priceText: string, ctaLink: string }> }> = {
     'AGENCY': {
-        label: 'Agencia de Marketing High-Ticket',
+        label: 'Agencia High-Ticket',
+        icon: '🚀',
+        desc: 'Para agencias de marketing, desarrollo o consultoría.',
         data: {
-            mission: 'Actúo como el Director de Crecimiento Estratégico de [TU AGENCIA]. Mi imperativo es identificar y cualificar empresas con capacidad de inversión listas para escalar su facturación mediante ecosistemas de publicidad digital.',
-            idealCustomer: 'CEOs y Fundadores de empresas de servicios o E-commerce facturando +$10k USD/mes, que valoran el tiempo sobre el dinero y buscan delegar la adquisición de clientes en expertos.',
-            detailedDescription: 'Implementamos una infraestructura de adquisición "Done-For-You" validada. No vendemos leads, vendemos facturación predecible. Nuestro sistema garantiza un flujo constante de citas cualificadas o devolvemos la inversión (ROI Garantizado).',
-            priceText: 'Inversión desde $2,000 USD/mes',
+            mission: 'Soy el Consultor Senior de [NOMBRE_EMPRESA]. Mi objetivo es auditar la situación del cliente y ofrecer la solución exacta.',
+            idealCustomer: 'Dueños de negocio que buscan escalar, tienen presupuesto y valoran la calidad sobre el precio.',
+            detailedDescription: 'Servicios premium de [CONTEXTO_EMPRESA]. Nos enfocamos en el ROI y resultados tangibles. No vendemos horas, vendemos transformación.',
+            priceText: 'A convenir según proyecto',
+            ctaLink: '',
             objections: [
-                { id: 1, objection: 'Es muy costoso', response: 'Entiendo que el precio sea un factor. Sin embargo, no somos un gasto operativo, somos una inversión de capital con retorno medible. Si nuestro sistema genera $5 por cada $1 invertido, ¿el costo sigue siendo relevante?' },
-                { id: 2, objection: 'Ya trabajé con agencias y fallaron', response: 'Es común. La mayoría vende "humo" o métricas vanidosas (likes). Nosotros nos enfocamos exclusivamente en el ROI y facturación. ¿Estarías dispuesto a ver una auditoría de por qué falló tu estrategia anterior?' }
+                { id: 1, objection: 'Es costoso', response: 'Lo costoso es no tener resultados. Nuestra solución se paga sola con el primer cliente que cierres gracias a esto.' },
+                { id: 2, objection: '¿Cómo empezamos?', response: 'El primer paso es una auditoría breve para ver si calificas. ¿Te parece bien?' }
             ],
-            rules: '- NUNCA revelar la estrategia completa por chat, el objetivo es la llamada.\n- Mantener autoridad y marco profesional (Frame Control).\n- Descalificar rápido si no tienen presupuesto.'
+            rules: '- NO dar precios exactos sin calificar primero.\n- Mantener postura de autoridad.\n- Filtrar clientes sin presupuesto.'
         }
     },
     'REAL_ESTATE': {
-        label: 'Inversiones Inmobiliarias Premium',
+        label: 'Real Estate / Inmobiliaria',
+        icon: '🏙️',
+        desc: 'Venta y alquiler de propiedades, terrenos y desarrollos.',
         data: {
-            mission: 'Soy el Consultor de Activos Inmobiliarios de [TU NOMBRE/EMPRESA]. Mi función es filtrar el mercado para conectar inversores de capital con oportunidades "Off-Market" de alta plusvalía y revalorización asegurada.',
-            idealCustomer: 'Inversores patrimoniales, Family Offices o particulares con liquidez inmediata superior a $200k USD, buscando diversificación y seguridad jurídica.',
-            detailedDescription: 'Acceso exclusivo a desarrollos en preventa y propiedades subvaluadas antes de su salida al mercado masivo. Ofrecemos gestión integral: legal, fiscal y administración de renta posterior.',
-            priceText: 'Tickets desde $150,000 USD',
+            mission: 'Soy el Asesor Inmobiliario de [NOMBRE_EMPRESA]. Conecto personas con oportunidades de inversión o su hogar ideal.',
+            idealCustomer: 'Compradores o inversores calificados buscando seguridad jurídica y revalorización.',
+            detailedDescription: 'Cartera exclusiva de propiedades en [CONTEXTO_EMPRESA]. Gestión integral y asesoramiento legal incluido.',
+            priceText: 'Consultar valor',
+            ctaLink: '',
             objections: [
-                { id: 1, objection: 'Solo estoy viendo opciones', response: 'Perfecto. El mercado inmobiliario es dinámico y las mejores oportunidades duran horas. Para no hacerte perder tiempo enviando fichas irrelevantes, ¿qué rentabilidad anual estás buscando?' },
-                { id: 2, objection: 'La comisión es alta', response: 'Nuestros honorarios se pagan solos con la negociación de precio que logramos. Un 10% de descuento en la compra cubre nuestra comisión y te deja ganancia inmediata. ¿Buscás precio o rentabilidad?' }
+                { id: 1, objection: 'Solo quiero ver fotos', response: 'Entiendo. Para enviarte las fichas correctas y no hacerte perder tiempo, ¿qué presupuesto aproximado estás manejando?' },
+                { id: 2, objection: 'La ubicación exacta', response: 'Por seguridad y privacidad de los propietarios, coordinamos una visita presencial para revelar la ubicación exacta.' }
             ],
-            rules: '- NO enviar ubicaciones exactas sin registro previo (KYC).\n- Calificar solvencia antes de agendar visita.\n- Proyectar exclusividad y escasez.'
+            rules: '- Calificar solvencia antes de agendar visita.\n- Proyectar exclusividad.'
         }
     },
     'ECOMMERCE': {
-        label: 'E-commerce / Retail Exclusivo',
+        label: 'E-commerce / Retail',
+        icon: '🛍️',
+        desc: 'Tiendas online, productos físicos, moda y accesorios.',
         data: {
-            mission: 'Soy el Concierge de Compras de [TU MARCA]. Mi objetivo es brindar una experiencia de compra asistida, eliminando dudas y guiando al cliente hacia el producto que elevará su estilo de vida.',
-            idealCustomer: 'Compradores exigentes que valoran la calidad, la exclusividad y la inmediatez. Buscan una experiencia de unboxing superior y soporte post-venta garantizado.',
-            detailedDescription: 'Curaduría de productos [NICHO] de diseño exclusivo. Logística prioritaria (24hs) y política de "Satisfacción Total o Devolución Inmediata". No vendemos productos, vendemos estatus y solución.',
-            priceText: 'Catálogo Premium (Varía)',
+            mission: 'Soy el Asistente de Compras de [NOMBRE_EMPRESA]. Ayudo a elegir el producto perfecto y resolver dudas de envío.',
+            idealCustomer: 'Compradores que valoran la calidad, el diseño y la rapidez en la entrega.',
+            detailedDescription: 'Venta de [CONTEXTO_EMPRESA]. Envíos a todo el país. Garantía de satisfacción.',
+            priceText: 'Ver catálogo',
+            ctaLink: '',
             objections: [
-                { id: 1, objection: 'El envío me parece caro', response: 'Utilizamos logística blindada para asegurar que tu producto llegue impecable en 24hs. Además, bonificamos el envío en compras superiores a $X. ¿Te gustaría agregar un accesorio para aprovecharlo?' },
-                { id: 2, objection: '¿Tienen garantía real?', response: 'Absolutamente. Ofrecemos 30 días de garantía incondicional. Si no te enamora al abrir la caja, gestionamos el retiro y reembolso sin preguntas.' }
+                { id: 1, objection: 'Precio del envío', response: 'El envío es rápido y seguro. Además, si tu compra supera cierto monto, ¡es gratis!' },
+                { id: 2, objection: '¿Tienen garantía?', response: 'Sí, garantía total de cambio directo si no estás conforme con el producto.' }
             ],
-            rules: '- Respuestas concisas, estéticas y rápidas.\n- Usar gatillos mentales de urgencia (stock limitado).\n- Sugerir siempre un complemento (Upsell).'
+            rules: '- Respuestas cortas y amables.\n- Fomentar la compra impulsiva.'
         }
     },
-    'COACHING': {
-        label: 'Mentoria / Coaching High-Ticket',
+    'SERVICES': {
+        label: 'Servicios Profesionales',
+        icon: '⚖️',
+        desc: 'Abogados, Contadores, Arquitectos, Salud.',
         data: {
-            mission: 'Soy el Asesor de Admisiones de [TU PROGRAMA]. Mi responsabilidad es auditar si el candidato tiene el perfil, el compromiso y la capacidad para ser un caso de éxito en nuestra mentoría.',
-            idealCustomer: 'Profesionales o emprendedores estancados que son conscientes de que necesitan una nueva metodología para romper su techo de cristal y están dispuestos a invertir en sí mismos.',
-            detailedDescription: 'Un protocolo de transformación de 12 semanas. No es un "cursito grabado", es un acompañamiento 1 a 1 con acceso directo al mentor, comunidad de élite y plan de acción a medida.',
-            priceText: 'Inversión: $3,000 USD',
+            mission: 'Soy el Asistente de [NOMBRE_EMPRESA]. Gestiono citas y filtro consultas para optimizar el tiempo de los profesionales.',
+            idealCustomer: 'Personas con una necesidad específica o urgencia que requieren solución profesional.',
+            detailedDescription: 'Estudio/Consultorio especializado en [CONTEXTO_EMPRESA]. Atención personalizada y confidencialidad.',
+            priceText: 'Honorarios según caso',
+            ctaLink: '',
             objections: [
-                { id: 1, objection: 'No tengo tiempo ahora', response: 'El programa está diseñado para ejecutivos ocupados. Si no tenés 4 horas a la semana para construir tu futuro, el problema no es el tiempo, es la prioridad. ¿Es este cambio una prioridad hoy?' },
-                { id: 2, objection: 'Es mucho dinero', response: 'Es dinero si lo ves como gasto. Es "gratis" si lo ves como inversión. Si este programa te ayuda a generar $10k extra al mes, ¿te parecería caro invertir $3k una sola vez?' }
+                { id: 1, objection: 'Precio de la consulta', response: 'Cada caso es único. Ofrecemos una primera evaluación para determinar la viabilidad y el costo exacto.' },
+                { id: 2, objection: 'Necesito hablar urgente', response: 'Entendido. Por favor, descríbeme brevemente la urgencia para priorizar tu caso con el especialista.' }
             ],
-            rules: '- Postura de autoridad (Tú calificas al cliente, no al revés).\n- NO rogar. Si no califican, retiramos la oferta.\n- Enfocarse en el dolor actual y la visión futura.'
-        }
-    },
-    'SOFTWARE': {
-        label: 'SaaS B2B Enterprise',
-        data: {
-            mission: 'Soy el Especialista de Soluciones de [TU SOFTWARE]. Ayudo a directores de operaciones a visualizar cómo nuestra tecnología puede automatizar sus flujos de trabajo y reducir costos operativos.',
-            idealCustomer: 'Empresas tecnológicas o agencias con equipos de +10 personas que sufren de caos operativo y procesos manuales ineficientes.',
-            detailedDescription: 'Suite integral de gestión empresarial. Centraliza CRM, Project Management y Facturación en un solo dashboard. Reduce el tiempo administrativo en un 40% garantizado durante el primer mes.',
-            priceText: 'Planes desde $99/mo',
-            objections: [
-                { id: 1, objection: 'La migración es difícil', response: 'Es una preocupación válida. Por eso incluimos un equipo de "Concierge Onboarding" que migra todos tus datos gratis en 48hs. No tenés que mover un dedo.' },
-                { id: 2, objection: 'Es más caro que X', response: 'Correcto. X es una herramienta básica. Nosotros somos un sistema operativo completo. Al usarnos, podés cancelar X, Y y Z, ahorrando dinero total a fin de mes.' }
-            ],
-            rules: '- Lenguaje técnico preciso pero accesible.\n- Enfocarse en el costo de inacción (cuánto pierden hoy).\n- Objetivo: Demo técnica.'
-        }
-    },
-    'LEGAL': {
-        label: 'Estudio Jurídico Corporativo',
-        data: {
-            mission: 'Soy el Asistente Legal Senior de [TU ESTUDIO]. Realizo el triaje inicial para identificar casos de alta viabilidad y derivarlos a nuestros socios especialistas.',
-            idealCustomer: 'Empresas o particulares con conflictos legales activos que requieren representación agresiva y estratégica inmediata.',
-            detailedDescription: 'Defensa legal de alto perfil en derecho comercial y laboral. No cobramos consultas, cobramos soluciones. Historial de éxito del 92% en litigios complejos.',
-            priceText: 'Honorarios según complejidad',
-            objections: [
-                { id: 1, objection: '¿Cuánto sale la consulta?', response: 'La evaluación de viabilidad inicial es sin cargo. Si tomamos el caso, trabajamos con un esquema de honorarios transparente y pre-acordado. Lo costoso es no tener una buena defensa.' },
-                { id: 2, objection: 'Necesito garantía de ganar', response: 'En derecho, garantizar resultados es anti-ético. Garantizamos la mejor estrategia posible y dedicación total. Nuestro track record habla por sí mismo.' }
-            ],
-            rules: '- Tono extremadamente formal, sobrio y distante.\n- Nunca dar consejo legal específico por chat.\n- Filtrar casos pequeños o sin sustento.'
+            rules: '- Tono formal y empático.\n- Priorizar el agendamiento de citas.'
         }
     }
 };
@@ -132,76 +117,80 @@ interface WizardState {
     rules: string;
 }
 
-const parseProductDescription = (description: string): WizardState => {
-    const sections: Record<string, string> = {};
-    const sectionHeaders = [
-        "## MISIÓN PRINCIPAL",
-        "## CLIENTE IDEAL",
-        "## DESCRIPCIÓN DETALLADA DEL SERVICIO",
-        "## MANEJO DE OBJECIONES FRECUENTES",
-        "## REGLAS DE ORO Y LÍMITES"
-    ];
-
-    let currentSection: string | null = null;
-    let currentContent: string[] = [];
-
-    const lines = description.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-
-    for (const line of lines) {
-        if (sectionHeaders.includes(line)) {
-            if (currentSection) {
-                sections[currentSection] = currentContent.join('\n').trim();
-            }
-            currentSection = line;
-            currentContent = [];
-        } else {
-            currentContent.push(line);
-        }
-    }
-    if (currentSection) {
-        sections[currentSection] = currentContent.join('\n').trim();
-    }
-
-    const objectionsRaw = sections["## MANEJO DE OBJECIONES FRECUENTES"] || '';
-    const objections: { id: number; objection: string; response: string }[] = [];
-    const objectionLines = objectionsRaw.split('\n').filter(line => line.startsWith('- Sobre "'));
-
-    objectionLines.forEach((line, index) => {
-        const match = line.match(/- Sobre "(.*?)": Respondo: "(.*?)"/);
-        if (match && match[1] && match[2]) {
-            objections.push({ id: index, objection: match[1], response: match[2] });
-        }
-    });
-
-    return {
-        mission: sections["## MISIÓN PRINCIPAL"] || '',
-        idealCustomer: sections["## CLIENTE IDEAL"] || '',
-        detailedDescription: sections["## DESCRIPCIÓN DETALLADA DEL SERVICIO"] || '',
-        objections: objections.length > 0 ? objections : [{ id: 1, objection: '', response: '' }],
-        rules: sections["## REGLAS DE ORO Y LÍMITES"] || ''
-    };
-};
+// Polyfill simple para SpeechRecognition
+const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUpdateSettings, onOpenLegal, showToast }) => {
   const [current, setCurrent] = useState<BotSettings | null>(null);
+  
+  // WIZARD STATE
+  const [wizardStep, setWizardStep] = useState<'IDENTITY' | 'CONTEXT' | 'PATH' | 'LOADING'>('IDENTITY');
+  
+  // DATA STATE
+  const [wizIdentity, setWizIdentity] = useState({ name: '', website: '' });
+  const [wizContext, setWizContext] = useState('');
+  const [isRecording, setIsRecording] = useState(false);
+  const [showWebTooltip, setShowWebTooltip] = useState(false);
+  
+  const [isProcessing, setIsProcessing] = useState(false);
   const [wizardState, setWizardState] = useState<WizardState>({
       mission: '', idealCustomer: '', detailedDescription: '',
       objections: [{ id: 1, objection: '', response: '' }], rules: ''
   });
-  const [step, setStep] = useState(0); 
-  const [isMagicFilling, setIsMagicFilling] = useState(false);
-  const [isSavingApiKey, setIsSavingApiKey] = useState(false);
-  const [isWizardCompleted, setIsWizardCompleted] = useState(false);
+
+  const recognitionRef = useRef<any>(null);
 
   useEffect(() => {
     if (settings) {
         setCurrent({ ...settings, ignoredJids: settings.ignoredJids || [] });
-        setIsWizardCompleted(settings.isWizardCompleted || false);
-        if (settings.productDescription) {
-            setWizardState(parseProductDescription(settings.productDescription));
+        // Si ya está completado, parseamos para mostrar en modo manual si se quiere editar luego
+        if (settings.isWizardCompleted) {
+            // Logic to populate manual fields if needed
+        } else {
+            // Pre-fill name if available
+            // setWizIdentity(prev => ({...prev, name: settings.productName || ''}));
         }
     }
   }, [settings]);
+
+  // --- AUDIO RECORDING LOGIC ---
+  const toggleRecording = () => {
+      if (isRecording) {
+          recognitionRef.current?.stop();
+          setIsRecording(false);
+      } else {
+          if (!SpeechRecognition) {
+              showToast('Tu navegador no soporta entrada de voz. Usa Chrome.', 'error');
+              return;
+          }
+          const recognition = new SpeechRecognition();
+          recognition.lang = 'es-ES';
+          recognition.continuous = true;
+          recognition.interimResults = true;
+
+          recognition.onresult = (event: any) => {
+              let finalTranscript = '';
+              for (let i = event.resultIndex; i < event.results.length; ++i) {
+                  if (event.results[i].isFinal) {
+                      finalTranscript += event.results[i][0].transcript;
+                  }
+              }
+              if (finalTranscript) {
+                  setWizContext(prev => prev + ' ' + finalTranscript);
+              }
+          };
+
+          recognition.onerror = (event: any) => {
+              console.error(event.error);
+              setIsRecording(false);
+          };
+
+          recognition.start();
+          recognitionRef.current = recognition;
+          setIsRecording(true);
+          showToast('Escuchando... Habla sobre tu negocio.', 'info');
+      }
+  };
 
   const handleUpdate = (field: keyof BotSettings, value: any) => {
     if (!current) return;
@@ -209,108 +198,43 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
     setCurrent(newSettings);
   };
 
-  const handleArchetypeSelect = (archetype: PromptArchetype) => {
-      if (!current) return;
-      const mapping = ARCHETYPE_MAPPING[archetype];
-      const newSettings = { 
-          ...current, 
-          archetype,
-          toneValue: mapping.toneValue,
-          rhythmValue: mapping.rhythmValue,
-          intensityValue: mapping.intensityValue
-      };
-      setCurrent(newSettings);
-      onUpdateSettings(newSettings);
-  };
-
-  // Restablecer valores de personalidad a los defaults del arquetipo seleccionado
-  const resetPersonality = () => {
-      if (!current) return;
-      const mapping = ARCHETYPE_MAPPING[current.archetype];
-      const newSettings = {
-          ...current,
-          toneValue: mapping.toneValue,
-          rhythmValue: mapping.rhythmValue,
-          intensityValue: mapping.intensityValue
-      };
-      setCurrent(newSettings);
-      showToast('Ajustes restablecidos al arquetipo base.', 'info');
-  };
-
-  // Guardar explícitamente los ajustes de personalidad
-  const savePersonalitySettings = () => {
-      if (!current) return;
-      onUpdateSettings(current);
-      showToast('Ajustes de personalidad guardados.', 'success');
-      audioService.play('action_success');
-  };
-
-  const saveWizardToSettings = () => {
-      if (!current) return;
-      const compiledDescription = `
-## MISIÓN PRINCIPAL
-${wizardState.mission}
-
-## CLIENTE IDEAL
-${wizardState.idealCustomer}
-
-## DESCRIPCIÓN DETALLADA DEL SERVICIO
-${wizardState.detailedDescription}
-
-## MANEJO DE OBJECIONES FRECUENTES
-${wizardState.objections.map(obj => `- Sobre "${obj.objection}": Respondo: "${obj.response}"`).join('\n')}
-
-## REGLAS DE ORO Y LÍMITES
-${wizardState.rules}
-      `;
-      
-      const newSettings = { 
-          ...current, 
-          productDescription: compiledDescription,
-          isWizardCompleted: true
-      };
-      setCurrent(newSettings);
-      onUpdateSettings(newSettings);
-      setIsWizardCompleted(true);
-      showToast('Cerebro sincronizado y activado.', 'success');
-      audioService.play('action_success');
-  };
-
-  // --- MAGIC AI AUTOCOMPLETE & REFINEMENT ---
-  const handleMagicFill = async () => {
+  // --- PATH A: AI AUTOCOMPLETE ---
+  const executeNeuralPath = async () => {
       if (!current?.geminiApiKey) {
-          showToast('Configura tu API Key de Gemini en el panel derecho primero.', 'error');
+          showToast('Falta la API Key de Gemini. Configúrala en el panel derecho.', 'error');
           return;
       }
-      if (!wizardState.mission || !wizardState.idealCustomer) {
-          showToast('Ingresa una idea base de Misión y Cliente para que la IA pueda trabajar.', 'info');
+      if (!wizContext || wizContext.length < 10) {
+          showToast('El contexto es muy corto. Escribe o dicta más detalles.', 'error');
           return;
       }
 
-      setIsMagicFilling(true);
+      setWizardStep('LOADING');
+      setIsProcessing(true);
+
       try {
           const ai = new GoogleGenAI({ apiKey: current.geminiApiKey });
-          
-          // Enhanced Prompt: Ask AI to REFINE the inputs first, then generate the rest.
           const prompt = `
-            Actúa como un Consultor de Negocios de Élite y Copywriter Senior.
+            ACTÚA COMO: Consultor de Negocios de Élite.
             
-            Tengo estos borradores iniciales de un usuario:
-            Misión Base: "${wizardState.mission}"
-            Cliente Base: "${wizardState.idealCustomer}"
+            INPUT DEL USUARIO:
+            Nombre Negocio: "${wizIdentity.name}"
+            Web: "${wizIdentity.website}"
+            Contexto/Descripción: "${wizContext}"
 
             TU TAREA:
-            1. MEJORA PROFESIONALMENTE la "Misión" y el "Cliente Ideal". Reescríbelos para que suenen autoritarios, persuasivos y de alto nivel (High-Ticket).
-            2. BASADO EN ESO, genera el resto de la configuración del bot.
+            Genera la configuración estratégica completa para un Chatbot de Ventas (Dominion Bot) basado en los datos anteriores.
+            Deduce el arquetipo de personalidad ideal.
 
-            Output JSON Schema:
+            FORMATO JSON REQUERIDO:
             {
-                "refinedMission": string, // La misión mejorada
-                "refinedIdealCustomer": string, // El cliente mejorado
-                "detailedDescription": string, // Descripción irresistible de la oferta
-                "priceText": string, // Sugerencia de precio/anchor
-                "objections": [{ "objection": string, "response": string }], // 3 objeciones probables y respuestas ganadoras
-                "rules": string // 3 reglas de oro de comportamiento
+                "mission": "...", // Misión principal del bot (1a persona)
+                "idealCustomer": "...", // Quién es el cliente ideal
+                "detailedDescription": "...", // Descripción persuasiva de la oferta
+                "priceText": "...", // Texto sugerido para precios (ej: Desde $100)
+                "objections": [{ "objection": "...", "response": "..." }], // 2 objeciones comunes y manejo
+                "rules": "...", // 3 reglas de comportamiento críticas
+                "archetype": "..." // Uno de: VENTA_CONSULTIVA, CIERRE_DIRECTO, SOPORTE_TECNICO, RELACIONAL_EMPATICO
             }
           `;
 
@@ -322,406 +246,358 @@ ${wizardState.rules}
 
           const data = JSON.parse(res.text || '{}');
           
-          if (data.detailedDescription) {
-              setWizardState(prev => ({
-                  ...prev,
-                  // Replace inputs with the AI-refined versions
-                  mission: data.refinedMission || prev.mission,
-                  idealCustomer: data.refinedIdealCustomer || prev.idealCustomer,
-                  
-                  detailedDescription: data.detailedDescription,
-                  objections: data.objections.map((o: any, i: number) => ({ id: Date.now() + i, ...o })),
-                  rules: data.rules
-              }));
-              handleUpdate('priceText', data.priceText || '');
-              showToast('✨ Estrategia mejorada y generada por IA.', 'success');
-              audioService.play('action_success');
-              // Auto-advance to next step to show the magic
-              setStep(1); 
-          }
+          // Apply Logic
+          finishWizard(data, 'AI');
+
       } catch (e) {
           console.error(e);
-          showToast('Error al generar contenido mágico. Verifica tu API Key.', 'error');
-      } finally {
-          setIsMagicFilling(false);
+          showToast('Error en la generación neural. Intenta de nuevo.', 'error');
+          setWizardStep('CONTEXT'); // Go back
+          setIsProcessing(false);
       }
   };
 
-  const applyTemplate = (key: string) => {
-      const t = INDUSTRY_TEMPLATES[key];
-      if (t) {
-          setWizardState(prev => ({
-              ...prev,
-              mission: t.data.mission || '',
-              idealCustomer: t.data.idealCustomer || '',
-              detailedDescription: t.data.detailedDescription || '',
-              objections: t.data.objections || [],
-              rules: t.data.rules || ''
-          }));
-          if (t.data.priceText) handleUpdate('priceText', t.data.priceText);
-          showToast(`Plantilla cargada: ${t.label}`, 'info');
-      }
+  // --- PATH B: TEMPLATES ---
+  const executeTemplatePath = (templateKey: string) => {
+      const t = INDUSTRY_TEMPLATES[templateKey];
+      if (!t) return;
+
+      // Inject User Data into Template
+      const inject = (text: string = '') => {
+          return text
+            .replace(/\[NOMBRE_EMPRESA\]/g, wizIdentity.name)
+            .replace(/\[CONTEXTO_EMPRESA\]/g, wizContext || 'nuestro rubro');
+      };
+
+      const finalData = {
+          mission: inject(t.data.mission),
+          idealCustomer: t.data.idealCustomer,
+          detailedDescription: inject(t.data.detailedDescription),
+          priceText: t.data.priceText,
+          objections: t.data.objections,
+          rules: t.data.rules,
+          archetype: 'VENTA_CONSULTIVA' // Default good one
+      };
+
+      finishWizard(finalData, 'TEMPLATE');
   };
 
-  const verifyAndSaveKey = async () => {
-      if (!current?.geminiApiKey) return;
-      setIsSavingApiKey(true);
-      try {
-          const ai = new GoogleGenAI({ apiKey: current.geminiApiKey });
-          await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: [{ parts: [{ text: 'ping' }] }] });
-          onUpdateSettings(current);
-          showToast('API Key verificada y guardada.', 'success');
-          audioService.play('action_success');
-      } catch (e) {
-          showToast('API Key inválida o modelo no disponible.', 'error');
-          audioService.play('alert_error_apikey');
-      } finally {
-          setIsSavingApiKey(false);
-      }
+  const finishWizard = (data: any, source: 'AI' | 'TEMPLATE') => {
+      if (!current) return;
+
+      const compiledDescription = `
+## MISIÓN PRINCIPAL
+${data.mission}
+
+## CLIENTE IDEAL
+${data.idealCustomer || ''}
+
+## DESCRIPCIÓN DETALLADA DEL SERVICIO
+${data.detailedDescription}
+
+## MANEJO DE OBJECIONES FRECUENTES
+${(data.objections || []).map((obj: any) => `- Sobre "${obj.objection}": Respondo: "${obj.response}"`).join('\n')}
+
+## REGLAS DE ORO Y LÍMITES
+${data.rules}
+      `;
+
+      // Determine Personality from AI or Default
+      const arch = (data.archetype as PromptArchetype) || PromptArchetype.CONSULTATIVE;
+      const mapping = ARCHETYPE_MAPPING[arch] || ARCHETYPE_MAPPING[PromptArchetype.CONSULTATIVE];
+
+      const newSettings = {
+          ...current,
+          productName: wizIdentity.name,
+          ctaLink: wizIdentity.website || current.ctaLink,
+          productDescription: compiledDescription,
+          priceText: data.priceText || current.priceText,
+          archetype: arch,
+          toneValue: mapping.toneValue,
+          rhythmValue: mapping.rhythmValue,
+          intensityValue: mapping.intensityValue,
+          isWizardCompleted: true
+      };
+
+      onUpdateSettings(newSettings);
+      showToast(source === 'AI' ? '🧠 Cerebro Generado y Sincronizado.' : '📂 Plantilla Aplicada Exitosamente.', 'success');
+      audioService.play('action_success');
+      // No need to change state here manually, parent prop update will trigger re-render showing the main dashboard
   };
 
-  if (isLoading || !current) return <div className="p-10 text-center text-gray-500 animate-pulse uppercase font-black tracking-widest">Cargando Neuro-Configuración...</div>;
+  // --- RENDER HELPERS ---
+  
+  if (isLoading || !current) return <div className="p-10 text-center text-gray-500 animate-pulse font-black uppercase tracking-widest">Cargando Núcleo...</div>;
 
-  return (
-    <div className="flex-1 bg-brand-black p-4 md:p-8 overflow-y-auto custom-scrollbar font-sans relative z-10 animate-fade-in">
-        <div className="max-w-7xl mx-auto pb-32">
-            
-            {/* --- LAYOUT GRID --- */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                
-                {/* --- LEFT COLUMN: CALIBRATION WIZARD (7 Cols) --- */}
-                <div className="lg:col-span-7 space-y-6 relative">
-                    
-                    {/* BRAIN CONFIGURED OVERLAY */}
-                    {isWizardCompleted && (
-                        <div className="absolute inset-0 z-20 bg-brand-black/90 backdrop-blur-md rounded-[32px] flex flex-col items-center justify-center border border-brand-gold/30 shadow-[0_0_80px_rgba(212,175,55,0.15)] animate-fade-in">
-                            <div className="w-24 h-24 rounded-full bg-brand-gold/10 border border-brand-gold/30 flex items-center justify-center mb-6 animate-pulse shadow-[0_0_30px_rgba(212,175,55,0.2)]">
-                                <svg className="w-12 h-12 text-brand-gold" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
-                            </div>
-                            <h2 className="text-3xl font-black text-white uppercase tracking-tighter mb-2">Cerebro Configurado</h2>
-                            <p className="text-sm text-gray-400 font-medium mb-8 max-w-md text-center leading-relaxed">La red neuronal está operativa y lista para procesar señales. El protocolo de calibración ha finalizado exitosamente.</p>
-                            <button 
-                                onClick={() => setIsWizardCompleted(false)}
-                                className="px-8 py-3 bg-white/5 border border-white/10 text-white rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-white/10 hover:border-brand-gold/50 transition-all hover:scale-105"
-                            >
-                                Recalibrar Parámetros
-                            </button>
-                        </div>
-                    )}
-
-                    <div className={`bg-brand-surface border border-white/5 rounded-[32px] p-8 shadow-2xl relative overflow-hidden h-full flex flex-col transition-all duration-500 ${isWizardCompleted ? 'blur-sm opacity-20' : ''}`}>
-                        
-                        {/* WIZARD HEADER */}
-                        <div className="flex justify-between items-center mb-8 border-b border-white/5 pb-6">
-                            <div>
-                                <div className="flex items-center gap-3 mb-1">
-                                    <span className="bg-brand-gold/20 text-brand-gold px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider">IA</span>
-                                    <h3 className="text-xl font-black text-white uppercase tracking-tighter">Protocolo de Calibración</h3>
-                                </div>
-                                <div className="flex gap-1 mt-3">
-                                    {[0, 1, 2].map(i => (
-                                        <div key={i} className={`h-1 w-8 rounded-full transition-colors ${i <= step ? 'bg-brand-gold' : 'bg-white/10'}`}></div>
-                                    ))}
-                                </div>
-                            </div>
-                            <div className="text-right">
-                                <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest block">Fase {step + 1} / 3</span>
-                                <span className="text-xs font-black text-white uppercase tracking-widest">
-                                    {step === 0 ? 'La Misión' : (step === 1 ? 'El Arsenal' : 'El Playbook')}
-                                </span>
-                            </div>
-                        </div>
-
-                        {/* PHASE 1: MISSION */}
-                        {step === 0 && (
-                            <div className="space-y-6 animate-slide-in-right flex-1">
-                                <div className="flex justify-between items-start">
-                                    <div>
-                                        <h4 className="text-lg font-black text-white">Identidad y Objetivo</h4>
-                                        <p className="text-xs text-gray-400 mt-1">Define quién es la IA y a quién sirve.</p>
-                                    </div>
-                                    <div className="flex gap-2">
-                                        {/* FIX: Improved Select Styling for visibility with bg-brand-black on options */}
-                                        <select onChange={(e) => applyTemplate(e.target.value)} className="bg-brand-surface border border-white/20 text-white text-[9px] font-bold uppercase rounded-lg px-3 py-2 outline-none focus:border-brand-gold cursor-pointer hover:bg-white/5 transition-colors shadow-lg">
-                                            <option value="" className="bg-brand-black text-gray-400">⚡ Cargar Plantilla...</option>
-                                            {Object.entries(INDUSTRY_TEMPLATES).map(([k, v]) => (
-                                                <option key={k} value={k} className="bg-brand-black text-white py-2">{v.label}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <label className="text-[10px] font-black text-brand-gold uppercase tracking-widest">Misión (SOIN)</label>
-                                    <textarea 
-                                        value={wizardState.mission} 
-                                        onChange={e => setWizardState({...wizardState, mission: e.target.value})}
-                                        className="w-full bg-black/40 border border-white/10 rounded-xl p-4 text-white text-sm focus:border-brand-gold outline-none h-32 resize-none placeholder-gray-700 transition-all focus:bg-black/60"
-                                        placeholder="Ej: Soy el Asistente de [Tu Negocio]. Mi objetivo es calificar clientes interesados en..."
-                                    />
-                                </div>
-
-                                <div className="space-y-2">
-                                    <label className="text-[10px] font-black text-brand-gold uppercase tracking-widest">Cliente Ideal</label>
-                                    <textarea 
-                                        value={wizardState.idealCustomer} 
-                                        onChange={e => setWizardState({...wizardState, idealCustomer: e.target.value})}
-                                        className="w-full bg-black/40 border border-white/10 rounded-xl p-4 text-white text-sm focus:border-brand-gold outline-none h-32 resize-none placeholder-gray-700 transition-all focus:bg-black/60"
-                                        placeholder="Ej: Dueños de negocio que buscan escalar sus ventas..."
-                                    />
-                                </div>
-
-                                <button 
-                                    onClick={handleMagicFill} 
-                                    disabled={isMagicFilling}
-                                    className="w-full py-4 bg-gradient-to-r from-purple-900/40 to-blue-900/40 border border-white/10 rounded-xl text-xs font-black uppercase tracking-widest text-white hover:border-brand-gold/50 transition-all flex items-center justify-center gap-2 group shadow-lg hover:shadow-brand-gold/10"
-                                >
-                                    {isMagicFilling ? (
-                                        <span className="animate-pulse">Analizando y Refinando Estrategia...</span>
-                                    ) : (
-                                        <>
-                                            <span className="text-lg group-hover:rotate-12 transition-transform">✨</span> 
-                                            <span className="group-hover:text-brand-gold transition-colors">Mejorar y Autocompletar con IA</span>
-                                        </>
-                                    )}
-                                </button>
-                            </div>
-                        )}
-
-                        {/* PHASE 2: ARSENAL */}
-                        {step === 1 && (
-                            <div className="space-y-6 animate-slide-in-right flex-1">
-                                <div className="space-y-2">
-                                    <h4 className="text-lg font-black text-white">Oferta y Valor</h4>
-                                    <p className="text-xs text-gray-400 mt-1">¿Qué vendes y por qué deberían comprarte?</p>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <label className="text-[10px] font-black text-brand-gold uppercase tracking-widest">Descripción del Servicio</label>
-                                    <textarea 
-                                        value={wizardState.detailedDescription} 
-                                        onChange={e => setWizardState({...wizardState, detailedDescription: e.target.value})}
-                                        className="w-full bg-black/40 border border-white/10 rounded-xl p-4 text-white text-sm focus:border-brand-gold outline-none h-40 resize-none placeholder-gray-700 transition-all focus:bg-black/60"
-                                        placeholder="Ofrecemos X que logra Y en Z tiempo..."
-                                    />
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="text-[10px] font-black text-brand-gold uppercase tracking-widest block mb-2">Precio (Texto)</label>
-                                        <input 
-                                            type="text" value={current.priceText} onChange={e => handleUpdate('priceText', e.target.value)}
-                                            className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white text-sm focus:border-brand-gold outline-none"
-                                            placeholder="Desde $500 USD"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="text-[10px] font-black text-brand-gold uppercase tracking-widest block mb-2">Valor Promedio (Métricas)</label>
-                                        <input 
-                                            type="number" value={current.ticketValue || ''} onChange={e => handleUpdate('ticketValue', parseFloat(e.target.value))}
-                                            className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white text-sm focus:border-brand-gold outline-none"
-                                            placeholder="Ej: 150 (en USD)"
-                                        />
-                                        <span className="text-[9px] text-gray-500">Usado para calcular el ROIE real.</span>
-                                    </div>
-                                </div>
-                                
-                                <div>
-                                    <label className="text-[10px] font-black text-brand-gold uppercase tracking-widest block mb-2">Link de Cierre</label>
-                                    <input 
-                                        type="text" value={current.ctaLink} onChange={e => handleUpdate('ctaLink', e.target.value)}
-                                        className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white text-sm focus:border-brand-gold outline-none"
-                                        placeholder="https://calendly.com/..."
-                                    />
-                                </div>
-                            </div>
-                        )}
-
-                        {/* PHASE 3: PLAYBOOK */}
-                        {step === 2 && (
-                            <div className="space-y-6 animate-slide-in-right flex-1">
-                                <div className="space-y-2">
-                                    <h4 className="text-lg font-black text-white">Reglas de Combate</h4>
-                                    <p className="text-xs text-gray-400 mt-1">Instrucciones críticas para el manejo de la conversación.</p>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <label className="text-[10px] font-black text-brand-gold uppercase tracking-widest">Reglas de Oro</label>
-                                    <textarea 
-                                        value={wizardState.rules} 
-                                        onChange={e => setWizardState({...wizardState, rules: e.target.value})}
-                                        className="w-full bg-black/40 border border-white/10 rounded-xl p-4 text-white text-sm focus:border-brand-gold outline-none h-32 resize-none placeholder-gray-700 transition-all focus:bg-black/60"
-                                        placeholder="- NO usar emojis.\n- NO dar precios sin calificar antes."
-                                    />
-                                </div>
-
-                                <div className="bg-black/40 rounded-xl p-4 border border-white/5">
-                                    <div className="flex justify-between items-center mb-3">
-                                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Objeciones</label>
-                                        <button onClick={() => setWizardState(prev => ({...prev, objections: [...prev.objections, { id: Date.now(), objection: '', response: '' }]}))} className="text-[9px] bg-white/10 px-2 py-1 rounded text-white hover:bg-brand-gold hover:text-black transition-all font-bold">+ AGREGAR</button>
-                                    </div>
-                                    <div className="space-y-3 max-h-40 overflow-y-auto custom-scrollbar">
-                                        {wizardState.objections.map((obj, idx) => (
-                                            <div key={obj.id} className="grid grid-cols-1 gap-2 border-b border-white/5 pb-2">
-                                                <input 
-                                                    placeholder="Ej: Es muy caro" 
-                                                    value={obj.objection}
-                                                    onChange={e => {
-                                                        const newObjs = [...wizardState.objections];
-                                                        newObjs[idx].objection = e.target.value;
-                                                        setWizardState({...wizardState, objections: newObjs});
-                                                    }}
-                                                    className="bg-transparent text-xs text-white placeholder-gray-600 outline-none font-bold"
-                                                />
-                                                <input 
-                                                    placeholder="Respuesta: Es una inversión..." 
-                                                    value={obj.response}
-                                                    onChange={e => {
-                                                        const newObjs = [...wizardState.objections];
-                                                        newObjs[idx].response = e.target.value;
-                                                        setWizardState({...wizardState, objections: newObjs});
-                                                    }}
-                                                    className="bg-transparent text-xs text-gray-400 placeholder-gray-700 outline-none"
-                                                />
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* WIZARD NAVIGATION */}
-                        <div className="mt-8 pt-6 border-t border-white/5 flex justify-between items-center">
-                            {step > 0 ? (
-                                <button onClick={() => setStep(step - 1)} className="text-xs font-bold text-gray-500 hover:text-white uppercase tracking-widest transition-colors">ANTERIOR</button>
-                            ) : <div></div>}
-                            
-                            {step < 2 ? (
-                                <button onClick={() => setStep(step + 1)} className="px-8 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl font-black text-xs uppercase tracking-widest transition-all">
-                                    SIGUIENTE &rarr;
-                                </button>
-                            ) : (
-                                <button onClick={saveWizardToSettings} className="px-8 py-3 bg-brand-gold text-black rounded-xl font-black text-xs uppercase tracking-widest shadow-lg shadow-brand-gold/20 hover:scale-105 transition-all">
-                                    SINCRONIZAR CEREBRO
-                                </button>
-                            )}
-                        </div>
-                    </div>
+  // VIEW: MAIN SETTINGS (If Wizard Completed)
+  if (current.isWizardCompleted) {
+      return (
+        <div className="flex-1 bg-brand-black p-4 md:p-8 overflow-y-auto custom-scrollbar font-sans relative z-10 animate-fade-in">
+            <div className="max-w-7xl mx-auto pb-32">
+                <div className="flex justify-between items-center mb-8 border-b border-white/5 pb-4">
+                    <h2 className="text-2xl font-black text-white uppercase tracking-tighter">Ajuste Fino</h2>
+                    <button onClick={() => { 
+                        if(confirm("¿Recalibrar todo el cerebro? Perderás los textos actuales.")) {
+                            const reset = {...current, isWizardCompleted: false};
+                            setCurrent(reset);
+                            onUpdateSettings(reset);
+                            setWizardStep('IDENTITY');
+                        }
+                    }} className="text-[10px] text-gray-500 hover:text-brand-gold font-bold uppercase tracking-widest border border-white/10 px-4 py-2 rounded-lg hover:border-brand-gold transition-all">
+                        Reiniciar Wizard
+                    </button>
                 </div>
-
-                {/* --- RIGHT COLUMN: PERSONALITY & CONFIG (5 Cols) --- */}
-                <div className="lg:col-span-5 space-y-4">
-                    
-                    {/* PERSONALITY SETTINGS */}
-                    <div className="bg-brand-surface border border-white/5 rounded-[32px] p-6 shadow-2xl relative overflow-hidden flex flex-col">
-                        <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/5 rounded-full blur-3xl pointer-events-none"></div>
-                        
-                        <h3 className="text-sm font-black text-white uppercase tracking-widest mb-4">Ajustes de Personalidad</h3>
-
-                        {/* Archetype Grid */}
-                        <div className="grid grid-cols-2 gap-2 mb-6">
-                            {Object.values(PromptArchetype).filter(a => a !== PromptArchetype.CUSTOM).map(arch => (
-                                <button
-                                    key={arch}
-                                    onClick={() => handleArchetypeSelect(arch)}
-                                    className={`px-3 py-2 rounded-lg text-[9px] font-black uppercase tracking-wider border transition-all ${current.archetype === arch ? 'bg-brand-gold text-black border-brand-gold' : 'bg-black/40 text-gray-500 border-white/10 hover:border-white/30'}`}
-                                >
-                                    {ARCHETYPE_NAMES[arch]}
-                                </button>
-                            ))}
-                        </div>
-
-                        {/* Sliders */}
-                        <div className="space-y-5">
-                            {[
-                                { label: 'Tono de Voz', val: current.toneValue, key: 'toneValue', minLabel: 'Agresivo', maxLabel: 'Amigable' },
-                                { label: 'Ritmo de Chat', val: current.rhythmValue, key: 'rhythmValue', minLabel: 'Rápido', maxLabel: 'Pausado' },
-                                { label: 'Intensidad de Venta', val: current.intensityValue, key: 'intensityValue', minLabel: 'Pasivo', maxLabel: 'Closer' }
-                            ].map((slider) => (
-                                <div key={slider.key}>
-                                    <div className="flex justify-between items-end mb-2">
-                                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{slider.label}</label>
-                                        <span className="text-[10px] font-bold text-brand-gold bg-brand-gold/10 px-2 py-0.5 rounded border border-brand-gold/20">Nivel {slider.val}</span>
-                                    </div>
-                                    <input 
-                                        type="range" min="1" max="5" 
-                                        value={slider.val} 
-                                        onChange={(e) => handleUpdate(slider.key as keyof BotSettings, parseInt(e.target.value))}
-                                        className="w-full h-1.5 bg-black/50 rounded-lg appearance-none cursor-pointer accent-brand-gold"
-                                    />
-                                    <div className="flex justify-between mt-1">
-                                        <span className="text-[8px] text-gray-600 uppercase">{slider.minLabel}</span>
-                                        <span className="text-[8px] text-gray-600 uppercase">{slider.maxLabel}</span>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-
-                        {/* PERSONALITY ACTIONS FOOTER (ADDED) */}
-                        <div className="mt-6 pt-6 border-t border-white/5 flex gap-3">
-                            <button 
-                                onClick={resetPersonality} 
-                                className="flex-1 py-3 bg-white/5 text-gray-400 hover:text-white border border-white/10 rounded-xl font-black text-[9px] uppercase tracking-widest transition-all"
-                            >
-                                Restablecer
-                            </button>
-                            <button 
-                                onClick={savePersonalitySettings} 
-                                className="flex-1 py-3 bg-brand-gold/10 text-brand-gold border border-brand-gold/30 rounded-xl font-black text-[9px] uppercase tracking-widest hover:bg-brand-gold hover:text-black transition-all"
-                            >
-                                Guardar Ajustes
-                            </button>
-                        </div>
+                
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    {/* Manual Editor (Simplified) */}
+                    <div className="space-y-4">
+                        <label className="text-xs font-bold text-brand-gold uppercase tracking-widest">Prompt del Sistema (Solo Lectura / Edición Avanzada)</label>
+                        <textarea 
+                            value={current.productDescription} 
+                            onChange={(e) => handleUpdate('productDescription', e.target.value)}
+                            className="w-full h-[500px] bg-black/40 border border-white/10 rounded-xl p-4 text-gray-300 text-sm font-mono leading-relaxed focus:border-brand-gold outline-none custom-scrollbar"
+                        />
+                        <button onClick={() => onUpdateSettings(current)} className="w-full py-3 bg-brand-gold text-black font-black uppercase tracking-widest rounded-xl text-xs hover:scale-[1.01] transition-transform">Guardar Cambios Manuales</button>
                     </div>
 
-                    {/* GEMINI PANEL */}
-                    <div className="bg-brand-surface border border-white/5 rounded-[32px] p-6 shadow-2xl relative overflow-hidden">
-                        <h3 className="text-sm font-black text-white uppercase tracking-widest mb-2">Panel de Control Gemini</h3>
-                        <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest mb-6">El motor neural de la IA. <a href="https://aistudio.google.com/app/apikey" target="_blank" className="text-brand-gold underline hover:text-white">Obtener Key Aquí</a>.</p>
-                        
-                        <div className="space-y-4">
+                    {/* Controls */}
+                    <div className="space-y-6">
+                         {/* GEMINI PANEL (Mini) */}
+                        <div className="bg-brand-surface border border-white/5 rounded-2xl p-6 shadow-lg">
+                            <h3 className="text-sm font-black text-white uppercase tracking-widest mb-4">Motor IA</h3>
                             <input 
                                 type="password" 
                                 value={current.geminiApiKey || ''} 
                                 onChange={e => handleUpdate('geminiApiKey', e.target.value)}
-                                className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-xs font-mono tracking-widest focus:border-brand-gold outline-none transition-all placeholder-gray-700"
-                                placeholder="••••••••••••••••"
+                                className="w-full bg-black/50 border border-white/10 rounded-xl p-3 text-white text-xs font-mono tracking-widest focus:border-brand-gold outline-none mb-2"
+                                placeholder="API KEY"
                             />
+                            <button onClick={() => onUpdateSettings(current)} className="text-[10px] text-gray-500 hover:text-white font-bold uppercase">Actualizar Key</button>
+                        </div>
+
+                        {/* SLIDERS (Personality) */}
+                        <div className="bg-brand-surface border border-white/5 rounded-2xl p-6 shadow-lg space-y-6">
+                            <h3 className="text-sm font-black text-white uppercase tracking-widest mb-2">Personalidad</h3>
+                            {[
+                                { label: 'Tono', val: current.toneValue, key: 'toneValue' },
+                                { label: 'Ritmo', val: current.rhythmValue, key: 'rhythmValue' },
+                                { label: 'Intensidad', val: current.intensityValue, key: 'intensityValue' }
+                            ].map((s) => (
+                                <div key={s.key}>
+                                    <div className="flex justify-between mb-1">
+                                        <label className="text-[10px] font-bold text-gray-400 uppercase">{s.label}</label>
+                                        <span className="text-[10px] text-brand-gold font-bold">{s.val}</span>
+                                    </div>
+                                    <input type="range" min="1" max="5" value={s.val} onChange={(e) => handleUpdate(s.key as any, parseInt(e.target.value))} className="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-brand-gold" />
+                                </div>
+                            ))}
+                            <button onClick={() => onUpdateSettings(current)} className="w-full py-2 bg-white/5 hover:bg-white/10 text-white font-bold uppercase tracking-widest rounded-lg text-[10px] transition-all">Aplicar Personalidad</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+      );
+  }
+
+  // VIEW: WIZARD
+  return (
+    <div className="flex-1 bg-brand-black flex flex-col items-center justify-center p-6 relative overflow-hidden font-sans">
+        {/* Background Ambient */}
+        <div className="absolute top-0 left-0 w-full h-full bg-noise opacity-5 pointer-events-none"></div>
+        <div className="absolute -top-20 -right-20 w-96 h-96 bg-brand-gold/5 rounded-full blur-[100px] pointer-events-none"></div>
+
+        <div className="w-full max-w-2xl relative z-10">
+            
+            {/* PROGRESS HEADER */}
+            <div className="mb-10 text-center">
+                <h2 className="text-3xl md:text-4xl font-black text-white uppercase tracking-tighter mb-2">
+                    Configuración <span className="text-brand-gold">Neural</span>
+                </h2>
+                <div className="flex justify-center gap-2 mt-4">
+                    {['IDENTITY', 'CONTEXT', 'PATH'].map((s, idx) => {
+                        const steps = ['IDENTITY', 'CONTEXT', 'PATH'];
+                        const currIdx = steps.indexOf(wizardStep);
+                        const isActive = idx <= currIdx;
+                        return (
+                            <div key={s} className={`h-1.5 w-12 rounded-full transition-all duration-500 ${isActive ? 'bg-brand-gold shadow-[0_0_10px_rgba(212,175,55,0.5)]' : 'bg-white/10'}`}></div>
+                        );
+                    })}
+                </div>
+            </div>
+
+            <div className="bg-brand-surface border border-white/10 rounded-[32px] p-8 md:p-12 shadow-2xl relative backdrop-blur-sm">
+                
+                {/* STEP 1: IDENTITY */}
+                {wizardStep === 'IDENTITY' && (
+                    <div className="space-y-8 animate-fade-in">
+                        <div className="text-center">
+                            <h3 className="text-xl font-black text-white uppercase tracking-widest">Identidad Digital</h3>
+                            <p className="text-xs text-gray-400 mt-2 font-medium">¿Quién eres ante el mundo?</p>
+                        </div>
+
+                        <div className="space-y-6">
+                            <div>
+                                <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2 ml-1">Nombre del Negocio</label>
+                                <input 
+                                    type="text" 
+                                    value={wizIdentity.name}
+                                    onChange={(e) => setWizIdentity({...wizIdentity, name: e.target.value})}
+                                    placeholder="Ej: Agencia Alpha, Inmobiliaria Sur..."
+                                    className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-lg font-bold focus:border-brand-gold outline-none transition-all placeholder-gray-700"
+                                    autoFocus
+                                />
+                            </div>
+
+                            <div className="relative">
+                                <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2 ml-1">Sitio Web (Opcional)</label>
+                                <input 
+                                    type="text" 
+                                    value={wizIdentity.website}
+                                    onChange={(e) => setWizIdentity({...wizIdentity, website: e.target.value})}
+                                    onBlur={() => { if(!wizIdentity.website) setShowWebTooltip(true); }}
+                                    placeholder="www.tu-negocio.com"
+                                    className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm focus:border-brand-gold outline-none transition-all placeholder-gray-700"
+                                />
+                                {/* VALUE TRAP TOOLTIP */}
+                                {showWebTooltip && !wizIdentity.website && (
+                                    <div className="absolute top-0 right-0 -mt-10 md:-mr-4 bg-brand-gold text-black p-3 rounded-xl shadow-lg border border-white/20 animate-bounce cursor-pointer z-20 max-w-[200px]" onClick={() => openSupportWhatsApp('Hola, estoy configurando mi bot y vi que necesito una web profesional. ¿Me das info?')}>
+                                        <div className="relative">
+                                            <p className="text-[9px] font-black leading-tight uppercase">¿Sin web? Pierdes el 40% de confianza. <span className="underline">Hablemos.</span></p>
+                                            <div className="absolute bottom-[-18px] right-4 w-3 h-3 bg-brand-gold rotate-45 transform"></div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        <button 
+                            onClick={() => { if(wizIdentity.name) setWizardStep('CONTEXT'); else showToast('El nombre es obligatorio.', 'error'); }}
+                            className="w-full py-4 bg-white/10 hover:bg-white/20 text-white border border-white/10 rounded-xl font-black text-xs uppercase tracking-[0.2em] transition-all hover:scale-[1.02] mt-4"
+                        >
+                            Siguiente &rarr;
+                        </button>
+                    </div>
+                )}
+
+                {/* STEP 2: CONTEXT (HYBRID) */}
+                {wizardStep === 'CONTEXT' && (
+                    <div className="space-y-6 animate-fade-in">
+                        <div className="text-center">
+                            <h3 className="text-xl font-black text-white uppercase tracking-widest">Contexto Operativo</h3>
+                            <p className="text-xs text-gray-400 mt-2 font-medium">Cuéntale a la IA qué vendes y cómo. Escribe o dicta.</p>
+                        </div>
+
+                        <div className="relative group">
+                            <textarea 
+                                value={wizContext}
+                                onChange={(e) => setWizContext(e.target.value)}
+                                className="w-full h-48 bg-black/50 border border-white/10 rounded-xl p-5 text-white text-sm leading-relaxed focus:border-brand-gold outline-none resize-none custom-scrollbar placeholder-gray-700 transition-all"
+                                placeholder={`Ej: Soy una agencia de marketing. Vendemos gestión de redes desde $300 USD. Quiero que el bot sea agresivo en el cierre. Si preguntan por descuentos, diles que no, pero que ofrecemos garantía.`}
+                            />
+                            {/* EDUCATIONAL OVERLAY (Fades out when typing) */}
+                            {!wizContext && !isRecording && (
+                                <div className="absolute inset-0 p-5 pointer-events-none flex flex-col justify-center items-center text-center opacity-30">
+                                    <p className="text-sm font-bold text-gray-400 mb-2">💡 Tip de Calibración</p>
+                                    <p className="text-xs text-gray-500 max-w-xs">Incluye: Qué vendes, precios base, tu diferencial y reglas que el bot no debe romper nunca.</p>
+                                </div>
+                            )}
+                            
+                            {/* MIC BUTTON */}
                             <button 
-                                onClick={verifyAndSaveKey} 
-                                disabled={isSavingApiKey}
-                                className="w-full py-3 bg-brand-gold text-black rounded-xl font-black text-[10px] uppercase tracking-[0.2em] hover:scale-[1.02] transition-all disabled:opacity-50"
+                                onClick={toggleRecording}
+                                className={`absolute bottom-4 right-4 p-3 rounded-full shadow-lg transition-all ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-brand-gold text-black hover:scale-110'}`}
+                                title="Dictar por voz"
                             >
-                                {isSavingApiKey ? 'Verificando...' : 'Guardar Key'}
+                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
+                            </button>
+                        </div>
+
+                        <div className="flex gap-4 pt-2">
+                            <button onClick={() => setWizardStep('IDENTITY')} className="px-6 py-3 text-gray-500 font-bold text-xs uppercase hover:text-white transition-colors">Atrás</button>
+                            <button 
+                                onClick={() => { if(wizContext.length > 5) setWizardStep('PATH'); else showToast('Danos un poco más de contexto.', 'error'); }}
+                                className="flex-1 py-3 bg-white/10 hover:bg-white/20 text-white border border-white/10 rounded-xl font-black text-xs uppercase tracking-[0.2em] transition-all hover:scale-[1.02]"
+                            >
+                                Siguiente &rarr;
                             </button>
                         </div>
                     </div>
+                )}
 
-                    {/* NETWORK CARD (Simplified) */}
-                    <div className="bg-brand-surface border border-white/5 rounded-[32px] p-5 shadow-2xl flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                            <div className="p-3 bg-blue-500/10 rounded-full text-blue-500 border border-blue-500/20">
-                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9V3m0 18a9 9 0 009-9m-9 9a9 9 0 00-9-9" /></svg>
-                            </div>
-                            <div>
-                                <h3 className="text-xs font-black text-white uppercase tracking-widest">Red Dominion</h3>
-                                <p className="text-[9px] text-gray-500">Participación en ecosistema colaborativo.</p>
+                {/* STEP 3: THE FORK (CHOICE) */}
+                {wizardStep === 'PATH' && (
+                    <div className="space-y-8 animate-fade-in">
+                        <div className="text-center mb-8">
+                            <h3 className="text-xl font-black text-white uppercase tracking-widest">Elije tu Estrategia</h3>
+                            <p className="text-xs text-gray-400 mt-2 font-medium">¿Cómo quieres construir el cerebro?</p>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            {/* OPTION A: AI AUTO */}
+                            <button 
+                                onClick={executeNeuralPath}
+                                className="group relative bg-[#0a0a0a] border border-brand-gold/30 hover:border-brand-gold hover:bg-brand-gold/5 rounded-2xl p-6 text-left transition-all duration-300 hover:-translate-y-1 shadow-[0_0_30px_rgba(0,0,0,0.5)]"
+                            >
+                                <div className="absolute top-4 right-4 text-2xl group-hover:scale-125 transition-transform">⚡</div>
+                                <h4 className="text-lg font-black text-white mb-2 group-hover:text-brand-gold transition-colors">Auto-Completado Neural</h4>
+                                <p className="text-xs text-gray-400 leading-relaxed group-hover:text-gray-300">
+                                    La IA analiza tu contexto y deduce automáticamente tu Misión, Reglas y Manejo de Objeciones.
+                                </p>
+                                <div className="mt-6 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-brand-gold/70 group-hover:text-brand-gold">
+                                    <span>Recomendado</span> &rarr;
+                                </div>
+                            </button>
+
+                            {/* OPTION B: TEMPLATES */}
+                            <div className="bg-[#0a0a0a] border border-white/10 rounded-2xl p-6 text-left relative overflow-hidden">
+                                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-gray-800 to-gray-600"></div>
+                                <h4 className="text-lg font-black text-white mb-4">Biblioteca Táctica</h4>
+                                <div className="grid grid-cols-1 gap-2 max-h-[180px] overflow-y-auto custom-scrollbar pr-2">
+                                    {Object.entries(INDUSTRY_TEMPLATES).map(([key, tpl]) => (
+                                        <button 
+                                            key={key}
+                                            onClick={() => executeTemplatePath(key)}
+                                            className="flex items-center gap-3 p-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/20 transition-all text-left group"
+                                        >
+                                            <span className="text-xl group-hover:scale-110 transition-transform">{tpl.icon}</span>
+                                            <div>
+                                                <p className="text-xs font-bold text-white uppercase tracking-tight">{tpl.label}</p>
+                                                <p className="text-[9px] text-gray-500 truncate max-w-[120px]">{tpl.desc}</p>
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
                             </div>
                         </div>
+                        
+                        <div className="text-center pt-4">
+                            <button onClick={() => setWizardStep('CONTEXT')} className="text-gray-500 font-bold text-xs uppercase hover:text-white transition-colors">Atrás</button>
+                        </div>
+                    </div>
+                )}
+
+                {/* LOADING STATE */}
+                {wizardStep === 'LOADING' && (
+                    <div className="py-20 text-center animate-fade-in flex flex-col items-center">
+                        <div className="w-20 h-20 border-4 border-brand-gold/20 border-t-brand-gold rounded-full animate-spin mb-8 shadow-[0_0_40px_rgba(212,175,55,0.2)]"></div>
+                        <h3 className="text-xl font-black text-white uppercase tracking-widest animate-pulse">Estructurando Red Neural</h3>
+                        <p className="text-xs text-gray-500 mt-3 font-mono">Aplicando arquitectura Elite++...</p>
+                    </div>
+                )}
+
+                {/* SOS / AUDIT BUTTON */}
+                {wizardStep !== 'LOADING' && (
+                    <div className="mt-8 pt-6 border-t border-white/5 flex justify-center animate-fade-in">
                         <button 
-                            onClick={() => {
-                                const newVal = !current.isNetworkEnabled;
-                                handleUpdate('isNetworkEnabled', newVal);
-                                onUpdateSettings({...current, isNetworkEnabled: newVal});
-                                showToast(`Red ${newVal ? 'Activada' : 'Desactivada'}`, 'info');
-                            }} 
-                            className={`w-10 h-5 rounded-full relative transition-colors ${current.isNetworkEnabled ? 'bg-blue-500' : 'bg-gray-700'}`}
+                            onClick={() => openSupportWhatsApp('Hola, estoy trabado en la configuración del Cerebro. ¿Me ayudan con una auditoría?')} 
+                            className="text-[9px] text-gray-500 hover:text-brand-gold font-bold uppercase tracking-widest flex items-center gap-2 transition-colors group"
                         >
-                            <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-transform ${current.isNetworkEnabled ? 'translate-x-6' : 'translate-x-1'}`}></div>
+                            <span className="grayscale group-hover:grayscale-0 transition-all">🆘</span> ¿Te sientes abrumado? Solicitar Auditoría Humana (Gratis)
                         </button>
                     </div>
+                )}
 
-                </div>
             </div>
         </div>
     </div>

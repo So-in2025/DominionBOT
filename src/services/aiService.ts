@@ -1,10 +1,12 @@
 
+// ... (imports remain the same)
 import { GoogleGenAI, Type } from "@google/genai";
 import { Message, LeadStatus, User, PromptArchetype, Conversation } from '../types.js';
 import { planService } from './planService.js';
 import { logService } from './logService.js';
 import { capabilityResolver } from './capabilityResolver.js';
 import { depthEngine } from './depthEngine.js';
+import { db } from '../database.js';
 
 const aiResponseCache = new Map<string, { timestamp: number; data: any }>();
 const CACHE_DURATION_MS = 5 * 60 * 1000; // 5 minutes
@@ -12,6 +14,7 @@ const CACHE_DURATION_MS = 5 * 60 * 1000; // 5 minutes
 // Updated Priority List: Try new preview, then stable flash exp, then lite.
 const MODEL_PRIORITY = ["gemini-3-flash-preview", "gemini-2.0-flash-exp", "gemini-flash-lite-latest"];
 
+// ... (generateBotResponse function remains unchanged)
 export const generateBotResponse = async (
   conversation: Conversation,
   user: User,
@@ -166,4 +169,65 @@ ${JSON.stringify(Object.keys(responseSchema.properties))}
   }
   
   return null;
+};
+
+// --- NEW FUNCTION: Autonomous Script Generator ---
+export const regenerateSimulationScript = async (userId: string) => {
+    try {
+        const user = await db.getUser(userId);
+        if (!user || !user.settings.geminiApiKey) return;
+
+        logService.info(`[SIM-LAB] Generando script de estrés para ${user.username}...`, userId);
+
+        const ai = new GoogleGenAI({ apiKey: user.settings.geminiApiKey });
+        
+        const prompt = `
+        ACT AS: Un cliente potencial escéptico y directo.
+        
+        CONTEXTO DE NEGOCIO (Lo que estás evaluando comprar):
+        "${user.settings.productDescription}"
+        
+        TU TAREA:
+        Genera una secuencia de 5 a 7 mensajes cronológicos que simulen una interacción de compra natural y desafiante.
+        Debes empezar desde un "Hola" frío, pasar por preguntas sobre el producto, objeciones de precio, y terminar preguntando cómo comprar (o dudando).
+        
+        REGLAS:
+        - Idioma: Español Argentino (Natural, coloquial pero serio).
+        - Mensajes cortos (como en WhatsApp).
+        - Incluye al menos 1 pregunta difícil u objeción.
+        
+        OUTPUT FORMAT (JSON):
+        {
+            "script": ["Mensaje 1", "Mensaje 2", ...]
+        }
+        `;
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: [{ parts: [{ text: prompt }] }],
+            config: { 
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        script: { type: Type.ARRAY, items: { type: Type.STRING } }
+                    }
+                }
+            }
+        });
+
+        const json = JSON.parse(response.text || '{}');
+        if (json.script && Array.isArray(json.script) && json.script.length > 0) {
+            
+            // Save to User Simulation Lab
+            const currentLab = user.simulationLab || { experiments: [], aggregatedScore: 0, topFailurePatterns: {} };
+            const updatedLab = { ...currentLab, customScript: json.script };
+            
+            await db.updateUser(userId, { simulationLab: updatedLab });
+            logService.info(`[SIM-LAB] Script personalizado guardado (${json.script.length} msgs).`, userId);
+        }
+
+    } catch (e: any) {
+        logService.error(`[SIM-LAB] Fallo al generar script.`, e, userId);
+    }
 };

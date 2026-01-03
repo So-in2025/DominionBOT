@@ -75,7 +75,7 @@ const TestBotSimulator: React.FC<TestBotSimulatorProps> = ({ token, backendUrl, 
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 8000); // UPDATED: 8s interval
+    const interval = setInterval(fetchData, 8000); 
     return () => clearInterval(interval);
   }, [fetchData]);
 
@@ -145,6 +145,9 @@ const TestBotSimulator: React.FC<TestBotSimulatorProps> = ({ token, backendUrl, 
       if (score >= 50) return 'text-yellow-400';
       return 'text-red-400';
   };
+
+  // CHECK IF CUSTOM SCRIPT IS AVAILABLE
+  const hasCustomScript = labData?.customScript && labData.customScript.length > 0;
 
   const renderVault = () => {
       const experiments = (labData?.experiments || []) as SimulationRun[];
@@ -253,7 +256,6 @@ const TestBotSimulator: React.FC<TestBotSimulatorProps> = ({ token, backendUrl, 
         </div>
 
         {activeTab === 'VAULT' ? renderVault() : (
-            // FIX: Set fixed height AND relative positioning context
             <div className="grid grid-cols-1 lg:grid-cols-2 h-[600px] relative z-10">
                 {/* Controls Overlay (Mobile optimized) */}
                 <div className="lg:hidden p-4 border-b border-white/5 bg-black/40">
@@ -273,7 +275,6 @@ const TestBotSimulator: React.FC<TestBotSimulatorProps> = ({ token, backendUrl, 
                 </div>
 
                 {/* LEFT: Chat Interface */}
-                {/* FIX: added min-h-0 to allow flex child scrolling */}
                 <div className="bg-[#050505] border-r border-white/5 p-6 flex flex-col relative h-full min-h-0">
                     <div className="absolute top-0 left-0 right-0 h-16 bg-gradient-to-b from-[#050505] to-transparent z-10 pointer-events-none"></div>
                     
@@ -288,6 +289,14 @@ const TestBotSimulator: React.FC<TestBotSimulatorProps> = ({ token, backendUrl, 
                             >
                                 {SCENARIOS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
                             </select>
+                            
+                            {/* INDICADOR DE SCRIPT PERSONALIZADO */}
+                            {selectedScenario === 'STANDARD_FLOW' && hasCustomScript && (
+                                <div className="flex items-center gap-1.5 px-3 py-1 bg-purple-500/10 border border-purple-500/30 rounded-lg animate-fade-in" title="Usando script generado dinámicamente basado en tu Misión y Producto">
+                                    <span className="text-[8px] font-black text-purple-400 uppercase tracking-widest">Script Neural</span>
+                                    <span className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-pulse"></span>
+                                </div>
+                            )}
                          </div>
                          <div className="flex gap-2">
                             <button onClick={handleClear} className="px-3 py-2 bg-white/5 text-gray-500 border border-white/10 rounded-lg font-black text-[10px] uppercase tracking-widest hover:bg-white/10 hover:text-white transition-all" title="Limpiar Chat">↺</button>
@@ -303,7 +312,6 @@ const TestBotSimulator: React.FC<TestBotSimulatorProps> = ({ token, backendUrl, 
                          </div>
                     </div>
 
-                    {/* FIX: added min-h-0 to allow scrolling inside flex container */}
                     <div className="flex-1 overflow-y-auto custom-scrollbar space-y-4 pt-4 pb-20 min-h-0" ref={scrollRef}>
                         {messages.length === 0 ? (
                             <div className="h-full flex flex-col items-center justify-center opacity-30 gap-4">
@@ -325,7 +333,6 @@ const TestBotSimulator: React.FC<TestBotSimulatorProps> = ({ token, backendUrl, 
                 </div>
 
                 {/* RIGHT: Neural Telemetry & Evaluation */}
-                {/* FIX: added min-h-0 */}
                 <div className="bg-[#0a0a0a] p-6 flex flex-col h-full min-h-0">
                     <div className="flex justify-between items-center mb-6 border-b border-white/5 pb-2 flex-shrink-0">
                         <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500">Telemetría en Vivo</h4>
@@ -360,9 +367,7 @@ const TestBotSimulator: React.FC<TestBotSimulatorProps> = ({ token, backendUrl, 
                     </div>
 
                     {/* Live Log */}
-                    {/* FIX: added min-h-0 to flex child */}
                     <div className="flex-1 bg-black/60 rounded-2xl border border-white/5 p-4 overflow-hidden flex flex-col mb-4 min-h-0">
-                        {/* FIX: added flex-1 and min-h-0 to scroll container */}
                         <div className="flex-1 overflow-y-auto custom-scrollbar space-y-3 pr-2 min-h-0" ref={logScrollRef}>
                             {messages.map((msg, i) => (
                                 <div key={i} className="animate-fade-in">
