@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect } from 'react';
 import { IntendedUse } from '../types';
 import { BACKEND_URL, API_HEADERS } from '../config';
@@ -204,6 +203,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClo
                                             </div>
                                             <input 
                                                 type="tel" 
+                                                name={mode === 'login' ? 'username' : 'new-username'}
+                                                autoComplete={mode === 'login' ? 'username' : 'off'}
                                                 value={whatsappNumber} 
                                                 onChange={handlePhoneChange}
                                                 className="w-full pl-[4.5rem] pr-5 py-3 md:py-3.5 bg-black/40 border border-white/5 rounded-xl text-white focus:border-brand-gold outline-none transition-all placeholder-gray-700 font-mono text-sm group-hover:border-white/10" 
@@ -222,7 +223,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClo
                                     {mode !== 'recovery' && (
                                         <div className="space-y-1.5">
                                             <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Clave de Acceso</label>
-                                            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full px-5 py-3 md:py-3.5 bg-black/40 border border-white/5 rounded-xl text-white focus:border-brand-gold outline-none placeholder-gray-800" placeholder="••••••••" required />
+                                            <input 
+                                                type="password" 
+                                                name={mode === 'login' ? 'current-password' : 'new-password'}
+                                                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                                                value={password} 
+                                                onChange={(e) => setPassword(e.target.value)} 
+                                                className="w-full px-5 py-3 md:py-3.5 bg-black/40 border border-white/5 rounded-xl text-white focus:border-brand-gold outline-none placeholder-gray-800" 
+                                                placeholder="••••••••" 
+                                                required 
+                                            />
                                         </div>
                                     )}
 
@@ -247,7 +257,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClo
                                             </div>
                                             <div className="space-y-1.5">
                                                 <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Nueva Clave</label>
-                                                <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full px-5 py-3 md:py-3.5 bg-black/40 border border-white/5 rounded-xl text-white focus:border-brand-gold outline-none placeholder-gray-800" placeholder="••••••••" required />
+                                                <input type="password" name="new-password" autoComplete="new-password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full px-5 py-3 md:py-3.5 bg-black/40 border border-white/5 rounded-xl text-white focus:border-brand-gold outline-none placeholder-gray-800" placeholder="••••••••" required />
                                             </div>
                                         </div>
                                     )}

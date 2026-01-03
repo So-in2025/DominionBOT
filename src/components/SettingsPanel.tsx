@@ -208,18 +208,23 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
       try {
           const cleanKey = wizApiKey.trim(); 
           const ai = new GoogleGenAI({ apiKey: cleanKey }); 
+          
+          // REFINED PROMPT: MORE SALES ORIENTED, LESS DESCRIPTIVE
           const prompt = `
             Analiza el sitio web: ${wizIdentity.website}
             
-            Tu objetivo es extraer el "Contexto Operativo" para configurar un vendedor de IA.
+            TU OBJETIVO: Configurar la "Personalidad de Venta" de una IA.
             
-            Extrae y redacta en primera persona ("Somos...", "Ofrecemos..."):
-            1. Qué productos/servicios venden.
-            2. Quién es el cliente ideal (inferido).
-            3. Propuesta de valor única.
-            4. Información de precios si es pública.
+            Redacta en PRIMERA PERSONA ("Soy el asistente de...", "Ofrezco...").
+            NO hagas un resumen corporativo aburrido.
             
-            Mantén la respuesta concisa (max 150 palabras) y lista para ser usada como contexto base.
+            ESTRUCTURA REQUERIDA:
+            1. ROL Y OFERTA: "Soy el especialista en [Rubro]. Mi meta es vender [Productos principales]..."
+            2. PRECIOS Y PLANES: Lista los precios exactos encontrados (ej: "$180.000 ARS"). Si no hay, di "A cotizar".
+            3. GANCHO COMERCIAL: 2 o 3 frases cortas sobre por qué elegirnos (Valor Único). Convierte características en beneficios.
+            4. CLIENTE OBJETIVO: A quién le estoy vendiendo.
+            
+            IMPORTANTE: Si mencionan herramientas de competencia (ej: Chatfuel, ManyChat), omítelas o cámbialas por "Nuestras soluciones de IA", a menos que sea un servicio de implementación de esas herramientas.
           `;
 
           // UPDATED MODEL to gemini-2.5-flash as requested
@@ -412,12 +417,19 @@ ${data.rules}
                          {/* GEMINI PANEL */}
                         <div className="bg-brand-surface border border-white/5 rounded-2xl p-6 shadow-lg">
                             <h3 className="text-sm font-black text-white uppercase tracking-widest mb-4">Motor IA</h3>
+                            {/* Fake inputs to prevent password autofill */}
+                            <div style={{ height: 0, overflow: 'hidden', opacity: 0, position: 'absolute', pointerEvents: 'none' }}>
+                                <input type="text" name="fake_user_prevent_autofill" autoComplete="off" tabIndex={-1} />
+                                <input type="password" name="fake_password_prevent_autofill" autoComplete="off" tabIndex={-1} />
+                            </div>
                             <input 
                                 type="password" 
-                                name="gemini_api_key_field"
-                                id="gemini_api_key_field"
+                                name="gemini_api_key_settings_v3"
+                                id="gemini_api_key_settings_v3"
                                 autoComplete="new-password"
                                 data-lpignore="true"
+                                readOnly={true}
+                                onFocus={(e) => e.target.readOnly = false}
                                 value={current.geminiApiKey || ''} 
                                 onChange={e => handleUpdate('geminiApiKey', e.target.value)}
                                 className="w-full bg-black/50 border border-white/10 rounded-xl p-3 text-white text-xs font-mono tracking-widest focus:border-brand-gold outline-none mb-2"
@@ -544,12 +556,19 @@ ${data.rules}
                         <div className="bg-black/30 border border-brand-gold/20 p-6 rounded-2xl space-y-4">
                             <div>
                                 <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2 ml-1">Gemini API Key</label>
+                                {/* Fake inputs to confuse browser password manager */}
+                                <div style={{ height: 0, overflow: 'hidden', opacity: 0, position: 'absolute', pointerEvents: 'none' }}>
+                                    <input type="text" name="fake_user_prevent_autofill_wiz" autoComplete="off" tabIndex={-1} />
+                                    <input type="password" name="fake_password_prevent_autofill_wiz" autoComplete="off" tabIndex={-1} />
+                                </div>
                                 <input 
                                     type="password"
-                                    name="gemini_api_key_setup"
-                                    id="gemini_api_key_setup"
+                                    name="gemini_api_key_setup_v3"
+                                    id="gemini_api_key_setup_v3"
                                     autoComplete="new-password"
                                     data-lpignore="true"
+                                    readOnly={true}
+                                    onFocus={(e) => e.target.readOnly = false}
                                     value={wizApiKey}
                                     onChange={(e) => setWizApiKey(e.target.value)}
                                     placeholder="Pegar AI Studio Key aquí..."
