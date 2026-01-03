@@ -583,12 +583,14 @@ ${data.rules}
 
   // VIEW: WIZARD
   return (
-    <div className="flex-1 bg-brand-black flex flex-col items-center justify-center p-6 relative overflow-hidden font-sans">
+    // FIX: Changed from 'h-screen overflow-hidden' to 'overflow-y-auto' for responsiveness.
+    // Also added 'min-h-full' to ensure it takes at least the full height.
+    <div className="flex-1 bg-brand-black flex flex-col items-center justify-start md:justify-center p-6 md:py-10 relative overflow-y-auto font-sans min-h-full">
         {/* Background Ambient */}
-        <div className="absolute top-0 left-0 w-full h-full bg-noise opacity-5 pointer-events-none"></div>
-        <div className="absolute -top-20 -right-20 w-96 h-96 bg-brand-gold/5 rounded-full blur-[100px] pointer-events-none"></div>
+        <div className="absolute top-0 left-0 w-full h-full bg-noise opacity-5 pointer-events-none fixed"></div>
+        <div className="absolute -top-20 -right-20 w-96 h-96 bg-brand-gold/5 rounded-full blur-[100px] pointer-events-none fixed"></div>
 
-        <div className="w-full max-w-2xl relative z-10">
+        <div className="w-full max-w-2xl relative z-10 my-auto">
             
             {/* PROGRESS HEADER */}
             <div className="mb-10 text-center">
@@ -607,7 +609,7 @@ ${data.rules}
                 </div>
             </div>
 
-            <div className={`bg-brand-surface border border-white/10 rounded-[32px] p-8 md:p-12 shadow-2xl relative backdrop-blur-sm transition-all duration-500 ${isAdvancedMode && wizardStep === 'CONTEXT' ? 'max-w-4xl w-full' : ''}`}>
+            <div className={`bg-brand-surface border border-white/10 rounded-[32px] p-8 md:p-12 shadow-2xl relative backdrop-blur-sm transition-all duration-500 ${isAdvancedMode && wizardStep === 'CONTEXT' ? 'max-w-4xl w-full mx-auto' : ''}`}>
                 
                 {/* STEP 1: IDENTITY */}
                 {wizardStep === 'IDENTITY' && (
@@ -775,11 +777,12 @@ ${data.rules}
                         </div>
 
                         {isAdvancedMode ? (
-                            // ADVANCED MODULAR INTERFACE INSIDE WIZARD
-                            <div className="max-h-[500px] overflow-y-auto custom-scrollbar pr-2 border border-white/5 rounded-2xl p-4 bg-black/20">
+                            // ADVANCED MODULAR INTERFACE INSIDE WIZARD - FIX: Removed max-h scroll container
+                            <div className="pr-2 p-1">
                                 <AdvancedNeuralConfig 
                                     initialConfig={wizNeuralConfig}
                                     onChange={(cfg) => setWizNeuralConfig(cfg)}
+                                    mode="WIZARD" // FIX: Passed mode prop
                                 />
                             </div>
                         ) : (
