@@ -434,6 +434,19 @@ ${data.rules}
     showToast('Módulos actualizados.', 'success');
   }
 
+  const handleSwitchArchitecture = () => {
+    if (confirm("Vas a volver al selector de modelo de negocio. Tu configuración actual guardada no se modificará a menos que completes y guardes un nuevo modelo. ¿Deseas continuar?")) {
+        setCurrent(prev => {
+            if (!prev) return null;
+            return {
+                ...prev,
+                isWizardCompleted: false,
+                brainArchitecture: undefined
+            };
+        });
+    }
+  };
+
   const selectedModule = modules.find(m => m.id === selectedModuleId);
 
   if (isLoading || !current) return <div className="p-10 text-center text-gray-500 animate-pulse font-black uppercase tracking-widest">Cargando Núcleo...</div>;
@@ -542,7 +555,7 @@ ${data.rules}
         <div className="flex-1 bg-brand-black flex flex-col p-6 md:p-10 animate-fade-in">
             <div className="flex justify-between items-center mb-8 border-b border-white/5 pb-4">
                 <h2 className="text-2xl font-black text-white uppercase tracking-tighter">Ajuste Fino (Modular)</h2>
-                <button onClick={() => { if(confirm("¿Recalibrar todo? Perderás la arquitectura modular.")) { onUpdateSettings({ ...current, isWizardCompleted: false, brainArchitecture: undefined }); }}} className="text-[10px] text-gray-500 hover:text-brand-gold font-bold uppercase tracking-widest border border-white/10 px-4 py-2 rounded-lg">Reiniciar Wizard</button>
+                <button onClick={handleSwitchArchitecture} className="text-[10px] text-gray-500 hover:text-brand-gold font-bold uppercase tracking-widest border border-white/10 px-4 py-2 rounded-lg">Cambiar Modelo</button>
             </div>
             <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 bg-brand-surface border border-white/5 rounded-2xl p-6 min-h-0">
                 {/* Left: Module List */}
@@ -600,14 +613,8 @@ ${data.rules}
         <div className="max-w-7xl mx-auto pb-32">
             <div className="flex justify-between items-center mb-8 border-b border-white/5 pb-4">
                 <h2 className="text-2xl font-black text-white uppercase tracking-tighter">Ajuste Fino</h2>
-                <button onClick={() => { 
-                    if(confirm("¿Recalibrar todo el cerebro? Perderás los textos actuales.")) {
-                        const reset = {...current, isWizardCompleted: false, brainArchitecture: undefined };
-                        setCurrent(reset);
-                        onUpdateSettings(reset);
-                    }
-                }} className="text-[10px] text-gray-500 hover:text-brand-gold font-bold uppercase tracking-widest border border-white/10 px-4 py-2 rounded-lg hover:border-brand-gold transition-all">
-                    Reiniciar Wizard
+                <button onClick={handleSwitchArchitecture} className="text-[10px] text-gray-500 hover:text-brand-gold font-bold uppercase tracking-widest border border-white/10 px-4 py-2 rounded-lg hover:border-brand-gold transition-all">
+                    Cambiar Modelo
                 </button>
             </div>
             
