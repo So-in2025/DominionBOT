@@ -6,7 +6,8 @@ import makeWASocket, {
   fetchLatestBaileysVersion,
   Browsers,
   proto,
-  GroupMetadata
+  GroupMetadata,
+  Contact
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import pino from 'pino';
@@ -25,6 +26,7 @@ const sessions = new Map<string, WASocket>();
 const qrCache = new Map<string, string>(); 
 const codeCache = new Map<string, string>(); 
 
+// Set level to info to see internal baileys logs if needed, or stick to silent to rely on our own logs
 const logger = pino({ level: 'silent' }); 
 
 export const ELITE_BOT_JID = '5491112345678@s.whatsapp.net';
@@ -79,10 +81,12 @@ function extractMessageContent(msg: proto.IWebMessageInfo | proto.IMessage): str
     if (message.contactMessage) return '👤 [Contacto]';
     if (message.locationMessage) return '📍 [Ubicación]';
     
-    // 5. Fallback for unknown types (don't return null unless empty)
-    // This ensures we at least see *something* in the chat list
-    if (Object.keys(message).length > 0 && !message.protocolMessage && !message.reactionMessage && !message.pollUpdateMessage) {
-        return 'Unknown Message Type';
+    // 5. Fallback for unknown types (Ensures visibility)
+    if (Object.keys(message).length > 0) {
+        if (message.protocolMessage || message.reactionMessage || message.pollUpdateMessage || message.keepInChatMessage) {
+            return null; // Ignore protocol/meta messages
+        }
+        return '[Contenido Desconocido]'; 
     }
 
     return null;
@@ -140,13 +144,27 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
             browser: Browsers.macOS('Chrome'),
             agent: user?.settings?.proxyUrl ? new HttpsProxyAgent(user.settings.proxyUrl) as any : undefined,
             generateHighQualityLinkPreview: true,
-            // CRITICAL FIX: Do NOT ignore @lid. WhatsApp uses LIDs for many private chats now.
             shouldIgnoreJid: jid => jid?.endsWith('@broadcast'), 
-            syncFullHistory: true, 
+            syncFullHistory: true,
+            markOnlineOnConnect: true, // Make sure we are online to receive messages
             defaultQueryTimeoutMs: 60000, 
             keepAliveIntervalMs: 10000, 
             retryRequestDelayMs: 2000,
             connectTimeoutMs: 60000,
+            // IMPLEMENT getMessage to support retries and history sync robustness
+            getMessage: async (key) => {
+                if (key.remoteJid) {
+                    const conversations = await conversationService.getConversations(userId);
+                    const convo = conversations.find(c => c.id === key.remoteJid);
+                    if (convo) {
+                        const msg = convo.messages.find(m => m.id === key.id);
+                        if (msg) {
+                            return { conversation: msg.text };
+                        }
+                    }
+                }
+                return { conversation: 'hello' };
+            }
         });
 
         sessions.set(userId, sock);
@@ -214,50 +232,91 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
             }
         });
 
+        // --- HISTORY HYDRATION PROTOCOL ---
+        // Listener for Chat List updates (Hydrates sidebar instantly)
+        sock.ev.on('chats.upsert', async (chats) => {
+            if (!chats || chats.length === 0) return;
+            // console.log(`[HYDRATION] Recibidos ${chats.length} chats para hidratar.`, userId);
+            
+            for (const chat of chats) {
+                if (chat.id === 'status@broadcast') continue;
+                // Create skeleton conversation if it doesn't exist
+                await conversationService.ensureConversationExists(
+                    userId, 
+                    chat.id, 
+                    chat.name || undefined, 
+                    typeof chat.conversationTimestamp === 'number' ? chat.conversationTimestamp : undefined
+                );
+            }
+        });
+
+        // Listener for Contacts (Updates names)
+        sock.ev.on('contacts.upsert', async (contacts) => {
+            if (!contacts || contacts.length === 0) return;
+            // console.log(`[CONTACTS] Recibidos ${contacts.length} contactos.`, userId);
+            for (const contact of contacts) {
+                if (contact.name || contact.notify || contact.verifiedName) {
+                    const name = contact.name || contact.notify || contact.verifiedName;
+                    await conversationService.ensureConversationExists(userId, contact.id, name);
+                }
+            }
+        });
+
         sock.ev.on('messages.upsert', async ({ messages, type }) => {
             if (!messages || messages.length === 0) return;
             
-            try {
-                // DEBUG LOG: See exactly what comes in
-                // console.log(`[RAW-UPSERT] Recibidos ${messages.length} mensajes. Type: ${type}. JID ej: ${messages[0].key.remoteJid}`);
+            // DEBUG: RAW LOGGING ENABLED FOR DIAGNOSTICS
+            // const sampleJid = messages[0].key.remoteJid;
+            // if (sampleJid !== 'status@broadcast') {
+            //    console.log(`[RAW-UPSERT] Recibidos ${messages.length} mensajes. Tipo: ${type}. De: ${sampleJid}`);
+            // }
 
+            if (type === 'append' && messages.length > 20) {
+                logService.info(`[HISTORY] 📥 Sincronizando bloque de ${messages.length} mensajes antiguos...`, userId);
+            }
+            
+            try {
+                // Group messages by JID to batch process
                 const messagesByJid: Record<string, typeof messages> = {};
                 
                 for (const msg of messages) {
                     const jid = msg.key.remoteJid;
-                    // REMOVED @lid filter here. Only ignore status broadcast.
                     if (!jid || jid === 'status@broadcast') continue; 
                     if (!messagesByJid[jid]) messagesByJid[jid] = [];
                     messagesByJid[jid].push(msg);
                 }
 
+                // Process each chat's batch
                 const chatProcessPromises = Object.keys(messagesByJid).map(async (jid) => {
                     const chatMessages = messagesByJid[jid];
-                    
-                    // --- GROUP MESSAGES (RADAR) ---
-                    if (jid.endsWith('@g.us')) {
-                        for (const msg of chatMessages) {
-                            if (msg.key.fromMe) continue;
-                            const text = extractMessageContent(msg);
-                            if (!text) continue;
-                            const sender = msg.key.participant || msg.participant || jid; 
-                            const senderName = msg.pushName || 'Unknown';
-                            radarService.processGroupMessage(userId, jid, jid, sender, senderName, text).catch(e => console.error(e));
+                    const isGroup = jid.endsWith('@g.us');
+
+                    // --- GROUP LOGIC (RADAR ONLY) ---
+                    if (isGroup) {
+                        // Only process Radar for new messages ('notify'), skip huge history chunks
+                        if (type === 'notify') {
+                            for (const msg of chatMessages) {
+                                if (msg.key.fromMe) continue; // Ignore my own group messages
+                                const text = extractMessageContent(msg);
+                                if (!text) continue;
+                                const sender = msg.key.participant || msg.participant || jid; 
+                                const senderName = msg.pushName || 'Unknown';
+                                radarService.processGroupMessage(userId, jid, jid, sender, senderName, text).catch(e => console.error(e));
+                            }
                         }
-                        return;
+                        return; // Stop here for groups, don't add to "Inbox"
                     }
 
-                    // --- PRIVATE MESSAGES (INBOX) ---
+                    // --- PRIVATE CHAT LOGIC (INBOX) ---
+                    // Process ALL messages (mine and theirs) for history
                     for (const msg of chatMessages) {
                         try {
                             const messageText = extractMessageContent(msg);
-                            if (!messageText) {
-                                // console.log(`[MSG-SKIP] Mensaje vacío o ignorado de ${jid}`);
-                                continue; 
-                            }
+                            if (!messageText) continue; // Skip if no text/media found
 
                             const msgTimestamp = typeof msg.messageTimestamp === 'number' ? msg.messageTimestamp : (msg.messageTimestamp as any)?.low || Date.now() / 1000;
-                            const isOldForAI = msgTimestamp < (Date.now() / 1000 - 300); 
+                            // Check if old. Force 'old' logic if the upsert type is 'append' (history sync)
+                            const isOldForAI = type === 'append' || (msgTimestamp < (Date.now() / 1000 - 300)); 
 
                             const userMessage: Message = {
                                 id: msg.key.id || Date.now().toString(),
@@ -268,15 +327,15 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
 
                             const senderName = msg.pushName || (msg as any).verifiedBizName || undefined;
 
-                            // 1. SAVE TO DB FIRST (Priority)
+                            // 1. SAVE TO DB (Priority)
                             await conversationService.addMessage(userId, jid, userMessage, senderName, isOldForAI);
                             
-                            // Log ingestion for visibility
-                            if (!msg.key.fromMe) {
-                                logService.info(`[INBOX] 📩 Mensaje guardado de ${senderName || jid}: "${messageText.substring(0, 15)}..."`, userId);
+                            // Log ingestion for visibility (Only for live messages)
+                            if (!msg.key.fromMe && !isOldForAI) {
+                                logService.info(`[INBOX] 📩 Mensaje procesado de ${senderName || jid}: "${messageText.substring(0, 20)}..."`, userId);
                             }
 
-                            // 2. QUEUE FOR AI (If new)
+                            // 2. QUEUE FOR AI (If new and not from me)
                             if (!msg.key.fromMe && !isOldForAI && type === 'notify') {
                                 aiProcessingQueue.add(`${userId}::${jid}`);
                             }
