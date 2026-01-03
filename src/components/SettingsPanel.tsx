@@ -398,24 +398,41 @@ ${data.rules}
       return (
         <div className="flex-1 bg-brand-black p-4 md:p-8 overflow-y-auto custom-scrollbar font-sans relative z-10 animate-fade-in">
             <div className="max-w-7xl mx-auto pb-32">
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 border-b border-white/5 pb-6 gap-4">
+                
+                {/* --- NEW PROMINENT HEADER WITH TOGGLE --- */}
+                <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-10 border-b border-white/5 pb-8 gap-6">
                     <div>
-                        <h2 className="text-2xl font-black text-white uppercase tracking-tighter">Ajuste Fino</h2>
-                        <p className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.3em] mt-1">Configuración del Cerebro</p>
+                        <h2 className="text-3xl font-black text-white uppercase tracking-tighter">
+                            Configuración <span className="text-brand-gold">Neural</span>
+                        </h2>
+                        <p className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.3em] mt-2">
+                            Personalidad y Comportamiento del Bot
+                        </p>
                     </div>
                     
-                    <div className="flex items-center gap-4">
-                        <div className="flex items-center gap-3 bg-black/40 px-4 py-2 rounded-xl border border-white/10">
-                            <span className={`text-[10px] font-black uppercase tracking-widest ${!isAdvancedMode ? 'text-white' : 'text-gray-500'}`}>Lineal</span>
-                            
+                    {/* THE TOGGLE SWITCH CONTAINER */}
+                    <div className="flex items-center gap-6 bg-brand-surface border border-white/10 p-2 rounded-2xl shadow-lg">
+                        <div className="flex flex-col items-end mr-2 hidden sm:flex">
+                            <span className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">Arquitectura Cognitiva</span>
+                            <span className={`text-[9px] font-black uppercase tracking-widest ${isAdvancedMode ? 'text-brand-gold' : 'text-blue-400'}`}>
+                                {isAdvancedMode ? 'MODULAR (COMPLEJA)' : 'LINEAL (SIMPLE)'}
+                            </span>
+                        </div>
+
+                        <div className="flex items-center bg-black/50 rounded-xl p-1 border border-white/5">
                             <button 
-                                onClick={handleToggleAdvancedMode}
-                                className={`w-12 h-6 rounded-full p-1 transition-all duration-300 relative ${isAdvancedMode ? 'bg-brand-gold' : 'bg-gray-700'}`}
+                                onClick={() => { if(isAdvancedMode) handleToggleAdvancedMode(); }}
+                                className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${!isAdvancedMode ? 'bg-white/10 text-white shadow-inner' : 'text-gray-600 hover:text-gray-400'}`}
                             >
-                                <div className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform duration-300 ${isAdvancedMode ? 'translate-x-6' : 'translate-x-0'}`}></div>
+                                Simple
                             </button>
-                            
-                            <span className={`text-[10px] font-black uppercase tracking-widest ${isAdvancedMode ? 'text-brand-gold' : 'text-gray-500'}`}>Modular</span>
+                            <button 
+                                onClick={() => { if(!isAdvancedMode) handleToggleAdvancedMode(); }}
+                                className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${isAdvancedMode ? 'bg-brand-gold text-black shadow-lg shadow-brand-gold/20' : 'text-gray-600 hover:text-gray-400'}`}
+                            >
+                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86 3.86l-.477 2.387c-.037.184.011.373.13.514l1.392 1.624a1 1 0 00.707.362h2.242a2 2 0 001.022-.547l1.022-1.022a2 2 0 00.547-1.022l.477-2.387c.037-.184-.011-.373-.13-.514l-1.392-1.624a1 1 0 00-.707-.362z" /></svg>
+                                Avanzado
+                            </button>
                         </div>
 
                         {!isAdvancedMode && (
@@ -426,7 +443,7 @@ ${data.rules}
                                     onUpdateSettings(reset);
                                     setWizardStep('IDENTITY');
                                 }
-                            }} className="text-[10px] text-gray-500 hover:text-red-400 font-bold uppercase tracking-widest border border-white/10 px-4 py-2 rounded-lg hover:border-red-500/30 transition-all">
+                            }} className="text-[10px] text-red-400/70 hover:text-red-400 font-bold uppercase tracking-widest border border-red-500/20 px-3 py-2 rounded-lg hover:border-red-500/50 transition-all ml-2">
                                 Reiniciar Wizard
                             </button>
                         )}
@@ -507,7 +524,7 @@ ${data.rules}
       );
   }
 
-  // VIEW: WIZARD
+  // VIEW: WIZARD (Unchanged logic for the initial setup)
   return (
     <div className="flex-1 bg-brand-black flex flex-col items-center justify-center p-6 relative overflow-hidden font-sans">
         {/* Background Ambient */}

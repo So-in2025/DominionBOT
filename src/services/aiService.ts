@@ -1,5 +1,4 @@
 
-// ... (imports remain the same)
 import { GoogleGenAI, Type } from "@google/genai";
 import { Message, LeadStatus, User, PromptArchetype, Conversation } from '../types.js';
 import { planService } from './planService.js';
@@ -78,8 +77,53 @@ export const generateBotResponse = async (
 
   const prompt = `## HISTORIAL DE SEÑALES (Profundidad: ${memoryLimit} msgs):\n${historyText}`;
 
-  // 3. Inject Cognitive Depth Instructions
-  let systemInstruction = `
+  // 3. CONSTRUCT SYSTEM INSTRUCTION
+  // LOGIC BRANCH: ADVANCED MODULAR ROUTER VS LINEAL MONOLITH
+  
+  let systemInstruction = "";
+
+  if (settings.useAdvancedModel && settings.neuralConfig) {
+      // --- ADVANCED MODULAR LOGIC ---
+      logService.info(`[AI-ROUTER] Usando Arquitectura Modular para ${user.username}`, user.id);
+      
+      const modulesContext = settings.neuralConfig.modules.map(m => `
+--- MÓDULO EXPERTO: ${m.name} ---
+[PALABRAS CLAVE / INTENCIÓN]: ${m.triggerKeywords}
+[CONTEXTO ESPECÍFICO]:
+${m.contextContent}
+----------------------------------
+`).join('\n');
+
+      systemInstruction = `
+# SISTEMA NEURAL MODULAR v1.0 (ROUTER ACTIVO)
+Eres el Nodo Central de Inteligencia para "${settings.productName}".
+Tu Nivel de Profundidad Cognitiva es ${capabilities.depthLevel}.
+
+## TU MISIÓN GLOBAL (IDENTIDAD MAESTRA):
+${settings.neuralConfig.masterIdentity}
+
+## MÓDULOS DE CONOCIMIENTO DISPONIBLES:
+Tienes acceso a los siguientes fragmentos de contexto especializados.
+TU TAREA ES CLASIFICAR LA INTENCIÓN DEL CLIENTE Y USAR EL MÓDULO CORRECTO.
+
+${modulesContext}
+
+## REGLAS DE ENRUTAMIENTO:
+1. Analiza el último mensaje del cliente y el historial.
+2. Si la intención coincide claramente con un MÓDULO EXPERTO, adopta esa personalidad y usa su información.
+3. Si la intención es general o saludo, usa tu IDENTIDAD MAESTRA.
+4. Responde de forma fluida, sin mencionar "Módulo X". Simplemente SÉ el experto.
+
+## PARÁMETROS GLOBALES:
+- Precio Base: ${settings.priceText}
+- Link Cierre: ${settings.ctaLink}
+- Profundidad: ${capabilities.inferencePasses}
+- ${capabilities.canPredictTrends ? 'Análisis de intención latente ACTIVO.' : ''}
+`;
+
+  } else {
+      // --- CLASSIC LINEAL LOGIC ---
+      systemInstruction = `
 # CONSTITUCIÓN DOMINION BOT v2.8 (ELITE - Depth Level ${capabilities.depthLevel})
 Eres un Agente Comercial Autónomo operando en Mendoza, Argentina para "${settings.productName}".
 Tu misión: Atender consultas y, si el plan lo permite, calificar la intención de compra.
@@ -98,6 +142,7 @@ ${settings.productDescription}
 - Precio: ${settings.priceText}.
 - Link de Cierre: ${settings.ctaLink}.
 `;
+  }
 
   if (features.lead_scoring) {
       systemInstruction += `
