@@ -19,7 +19,7 @@ import Toast, { ToastData } from './components/Toast';
 import HowItWorksArt from './components/HowItWorksArt';
 import HowItWorksSection from './components/HowItWorksSection';
 import NeuralArchitectureSection from './components/NeuralArchitectureSection'; 
-import SecurityCanvas from './components/SecurityCanvas'; // REEMPLAZO
+import SecurityCanvas from './components/SecurityCanvas'; 
 import TestimonialsCarousel from './components/TestimonialsCarousel';
 import NetworkConfigModal from './components/NetworkConfigModal';
 import { BACKEND_URL, API_HEADERS, getAuthHeaders } from './config';
@@ -142,7 +142,7 @@ const LandingPage: React.FC<{
                     <div className="relative w-full mt-12 lg:mt-0">
                          <div className="absolute inset-0 bg-brand-gold blur-[150px] opacity-10 rounded-full animate-pulse"></div>
                          <div className="relative bg-[#0a0a0a] border border-white/10 rounded-[40px] shadow-[0_60px_120px_rgba(0,0,0,0.9)] overflow-hidden h-[550px] md:h-[650px] flex flex-col border-t-white/20">
-                            <div className="px-8 py-5 border-b border-white/5 bg-black/80 flex items-center justify-between">
+                            <div className="px-8 py-5 border-b border-white/5 bg-black/80 flex items-center justify-center lg:justify-between">
                                 <div className="flex gap-2">
                                     <div className="w-3 h-3 rounded-full bg-red-500/30"></div>
                                     <div className="w-3 h-3 rounded-full bg-yellow-500/30"></div>
@@ -363,6 +363,28 @@ export function App() {
       return () => document.removeEventListener('click', initAudioAndPlayIntro, true);
   }, []);
 
+  // Defined via useCallback for reuse
+  const fetchConversations = useCallback(async () => {
+    if (!token) return;
+    try {
+        const res = await fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) });
+        if (res.ok) {
+            const latestConversations = await res.json();
+            setConversations(latestConversations.sort((a: Conversation, b: Conversation) => 
+                new Date(b.lastActivity || 0).getTime() - new Date(a.lastActivity || 0).getTime()
+            ));
+        }
+    } catch (e) {}
+  }, [token]);
+
+  // AUTO-REFRESH HISTORY UPON CONNECTION
+  useEffect(() => {
+      if (connectionStatus === ConnectionStatus.CONNECTED) {
+          fetchConversations();
+          // showToast('Sincronizando historial...', 'info');
+      }
+  }, [connectionStatus, fetchConversations]);
+
   // Pollings
   useEffect(() => {
     if (!token || userRole === 'super_admin') return;
@@ -377,24 +399,18 @@ export function App() {
             }
         } catch (e) {}
     };
-    const fetchConversations = async () => {
-        try {
-            const res = await fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) });
-            if (res.ok) {
-                const latestConversations = await res.json();
-                setConversations(latestConversations.sort((a: Conversation, b: Conversation) => new Date(b.lastActivity || 0).getTime() - new Date(a.lastActivity || 0).getTime()));
-            }
-        } catch (e) {}
-    };
+    
     fetchStatus();
     fetchConversations();
+    
     statusPollingIntervalRef.current = window.setInterval(fetchStatus, 15000);
     convoPollingIntervalRef.current = window.setInterval(fetchConversations, 3000);
+    
     return () => {
         if (statusPollingIntervalRef.current) clearInterval(statusPollingIntervalRef.current);
         if (convoPollingIntervalRef.current) clearInterval(convoPollingIntervalRef.current);
     };
-  }, [token, userRole]);
+  }, [token, userRole, fetchConversations]);
 
   // TUNNEL HEARTBEAT & AUTO-RECOVERY TRIGGER
   useEffect(() => {

@@ -1,9 +1,8 @@
 
-
 import { Conversation, LeadStatus, Message } from '../types.js';
 import { db, sanitizeKey } from '../database.js';
 import { logService } from './logService.js';
-import { ELITE_BOT_JID } from '../whatsapp/client.js'; // FIX: Import ELITE_BOT_JID
+import { ELITE_BOT_JID } from '../whatsapp/client.js'; 
 
 class ConversationService {
   
@@ -26,6 +25,7 @@ class ConversationService {
     let conversation = conversations[safeJid] || conversations[jid];
 
     const isEliteBotJid = jid === ELITE_BOT_JID;
+    const nowISO = new Date().toISOString(); // FORCE ISO STRING
 
     if (!conversation) {
       const leadIdentifier = jid.split('@')[0];
@@ -41,13 +41,12 @@ class ConversationService {
         messages: [],
         isBotActive: initialBotState, 
         isMuted: false,
-        firstMessageAt: new Date(message.timestamp),
+        firstMessageAt: message.timestamp instanceof Date ? message.timestamp.toISOString() : new Date(message.timestamp).toISOString(),
         tags: [],
         internalNotes: [],
         isAiSignalsEnabled: true,
         isTestBotConversation: isEliteBotJid, 
-        // FIX: Explicitly pass Date.now() to the Date constructor to avoid potential TypeScript errors in strict environments.
-        lastActivity: new Date(Date.now())
+        lastActivity: nowISO
       };
     } else {
         // Enforce Test Bot Rules on existing conversation
@@ -76,8 +75,9 @@ class ConversationService {
         // Sort to maintain chronological order (crucial for display)
         conversation.messages.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
         
-        const msgDate = new Date(message.timestamp);
-        conversation.lastActivity = msgDate;
+        // FORCE UPDATE LAST ACTIVITY TO ISO STRING
+        // This ensures the sorting on the frontend works correctly (String vs String comparison)
+        conversation.lastActivity = message.timestamp instanceof Date ? message.timestamp.toISOString() : new Date(message.timestamp).toISOString();
     } 
 
     // Status Automation

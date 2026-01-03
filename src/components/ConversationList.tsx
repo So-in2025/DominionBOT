@@ -1,6 +1,5 @@
 
-
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Conversation, LeadStatus, ConnectionStatus } from '../types';
 import ConversationListItem from './ConversationListItem';
 
@@ -9,9 +8,9 @@ interface ConversationListProps {
   selectedConversationId: string | null;
   onSelectConversation: (id: string) => void;
   backendError: string | null;
-  onRequestHistory: () => Promise<void>; // NEW: Callback to request history
-  isRequestingHistory: boolean; // NEW: Loading state for history request
-  connectionStatus: ConnectionStatus; // NEW: To show button based on connection
+  onRequestHistory: () => Promise<void>; 
+  isRequestingHistory: boolean; 
+  connectionStatus: ConnectionStatus; 
 }
 
 const ConversationList: React.FC<ConversationListProps> = ({ 
@@ -19,36 +18,57 @@ const ConversationList: React.FC<ConversationListProps> = ({
     selectedConversationId, 
     onSelectConversation, 
     backendError,
-    onRequestHistory, // NEW
-    isRequestingHistory, // NEW
-    connectionStatus // NEW
+    onRequestHistory, 
+    isRequestingHistory, 
+    connectionStatus 
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<LeadStatus | 'ALL'>('ALL');
+  const [isSyncing, setIsSyncing] = useState(false);
 
-  // NEW LOG: Check conversations received as prop
-  console.log(`[ConversationList.tsx] Received ${conversations.length} conversations as prop.`);
-  if (conversations.length > 0) {
-      console.log(`[ConversationList.tsx] First 2 conversation IDs from props: ${conversations.slice(0, 2).map((c: any) => c.id).join(', ')}`);
-  }
+  // Visual heartbeat effect when conversations update
+  useEffect(() => {
+      setIsSyncing(true);
+      const timer = setTimeout(() => setIsSyncing(false), 800);
+      return () => clearTimeout(timer);
+  }, [conversations]);
 
   const filteredConversations = useMemo(() => {
-      return conversations.filter(c => {
+      // 1. FILTER
+      const filtered = conversations.filter(c => {
           const matchesSearch = c.leadName.toLowerCase().includes(searchTerm.toLowerCase()) || 
                                c.leadIdentifier.includes(searchTerm) ||
                                c.tags?.some(t => t.toLowerCase().includes(searchTerm.toLowerCase()));
           const matchesStatus = statusFilter === 'ALL' || c.status === statusFilter;
           return matchesSearch && matchesStatus;
       });
+
+      // 2. SORT (Robust Sort: Handles Strings, Dates, and missing values safely)
+      return filtered.sort((a, b) => {
+          const dateA = a.lastActivity ? new Date(a.lastActivity).getTime() : 0;
+          const dateB = b.lastActivity ? new Date(b.lastActivity).getTime() : 0;
+          
+          // Safety check for invalid dates (NaN)
+          const validA = isNaN(dateA) ? 0 : dateA;
+          const validB = isNaN(dateB) ? 0 : dateB;
+
+          return validB - validA; // Descending order (Newest first)
+      });
   }, [conversations, searchTerm, statusFilter]);
 
   const showHistoryButton = connectionStatus === ConnectionStatus.CONNECTED || connectionStatus === ConnectionStatus.DISCONNECTED;
 
   return (
-    // SE ELIMINÓ 'hidden md:flex' para permitir visualización en móviles (controlado por App.tsx)
     <aside className="flex flex-col w-full md:w-80 bg-brand-surface border-r border-white/10 h-full flex-shrink-0 backdrop-blur-md">
       {/* Search & Filter Header */}
       <div className="p-4 border-b border-white/10 space-y-3">
+        <div className="flex justify-between items-center mb-1">
+            <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-400">Buzón de Entrada</h3>
+            <div className={`flex items-center gap-1.5 transition-opacity duration-500 ${isSyncing ? 'opacity-100' : 'opacity-30'}`}>
+                <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
+                <span className="text-[8px] font-bold text-green-500 uppercase tracking-wider">Live Sync</span>
+            </div>
+        </div>
         <div className="relative">
              <input
                 type="text"

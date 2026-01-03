@@ -9,30 +9,6 @@ interface AdvancedNeuralConfigProps {
     mode?: 'FULL' | 'WIZARD';
 }
 
-const DEFAULT_DEMO_CONFIG: NeuralRouterConfig = {
-    masterIdentity: "Eres el Nodo Central de Inteligencia. Tu misión es analizar la intención del usuario y derivarlo al módulo experto correcto. Si la consulta es ambigua, asume el rol de 'Recepcionista General' y ofrece el menú de opciones disponibles.",
-    modules: [
-        {
-            id: 'mod_1',
-            name: 'Experto en Dominion Bot',
-            triggerKeywords: 'bot, dominion, demo, automatización whatsapp, piloto automático, sniper, neuro-boost, calificar leads, shadow mode, radar, precio, planes, trial, byok',
-            contextContent: `# PROTOCOLO DE CONOCIMIENTO: DOMINION BOT\nMi rol es Especialista de Producto para Dominion Bot. Mi única misión es explicar, demostrar y vender esta plataforma de software.\n\n# PROBLEMA QUE RESUELVE\nWhatsApp está saturado y los leads se enfrían en minutos. Los negocios pierden ventas por no responder a tiempo. Dominion existe para responder 24/7, filtrar el ruido, identificar a los clientes con alta intención de compra y entregarlos "calientes" a un vendedor humano. No reemplazamos vendedores, los potenciamos.\n\n# CÓMO FUNCIONA\n1. Análisis de Intención: Leo la conversación y entiendo la necesidad real del cliente usando IA (Gemini).\n2. Calificación: Asigno un estado al lead (Frío, Tibio, Caliente).\n3. Shadow Mode: Cuando un lead es "Caliente", la IA se silencia y notifica al humano.\n\n# DIFERENCIALES CLAVE\n- Radar 4.0: Escucha pasiva en grupos.\n- BYOK: Privacidad máxima con API Key propia.\n- Firma Humana: Retrasos variables.\n\n# PLANES (USD)\n- Standard: $19/mes\n- Sniper: $39/mes\n- Neuro-Boost: $5/48hs\n\n# TRIAL\nPrueba gratis de 7 días o 10 leads calificados.`
-        },
-        {
-            id: 'mod_2',
-            name: 'Clarificador de Dominion OS',
-            triggerKeywords: 'dominion os, tiendas autónomas, tienda sin personal, retail autónomo, comercio inteligente, salesmind, stockbrain, promoengine',
-            contextContent: `# PROTOCOLO DE CONOCIMIENTO: DOMINION OS (ACLARACIÓN)\nMi única función es detectar si el cliente pregunta por "Dominion OS" y clarificar la diferencia con "Dominion Bot".\n\n# DEFINICIÓN CLAVE\n- Dominion OS: Sistema operativo (Hardware + Software) para tiendas físicas autónomas.\n- Dominion Bot: Software específico para WhatsApp.\n\n# REGLA DE ORO\nSi mencionan Dominion OS, pregunta: "¿Te refieres a nuestro sistema para tiendas físicas o al bot de WhatsApp?"`
-        },
-        {
-            id: 'mod_3',
-            name: 'Experto en SOIN Soluciones',
-            triggerKeywords: 'diseño web, página web, soporte técnico, ciberseguridad, app móvil, apps, consultoría, armado pc, migración ssd, soluciones informáticas, servicio técnico, computadora, virus, backup, seo, hosting',
-            contextContent: `# PROTOCOLO DE CONOCIMIENTO: SOIN SOLUCIONES INFORMÁTICAS\nMi rol es Asesor de Servicios Digitales en SO→IN.\n\n# QUIÉNES SOMOS\nEmpresa de Mendoza con 10+ años de experiencia en servicios digitales.\n\n# PORTAFOLIO\n- Soporte Técnico: Armado PC, SSD, Mantenimiento.\n- Ciberseguridad: Antivirus, Backups.\n- Desarrollo Web: Sitios, E-commerce.\n- Apps Móviles.\n- Consultoría Digital.\n\n# PRECIOS REF (ARS)\n- Armado PC: $58.000\n- Migración SSD: $20.000\n- Web Básica: $85.000\n- E-commerce: $300.000\n\n# PROCESO\nDiagnóstico -> Presupuesto -> Pago Inicial -> Ejecución -> Soporte.`
-        }
-    ]
-};
-
 const AdvancedNeuralConfig: React.FC<AdvancedNeuralConfigProps> = ({ initialConfig, onChange, mode = 'FULL' }) => {
     const [masterIdentity, setMasterIdentity] = useState(initialConfig?.masterIdentity || '');
     const [modules, setModules] = useState<ContextShard[]>(initialConfig?.modules || []);
@@ -68,13 +44,6 @@ const AdvancedNeuralConfig: React.FC<AdvancedNeuralConfigProps> = ({ initialConf
         }
     };
 
-    const handleLoadDemo = () => {
-        if(confirm("⚠️ Esto reemplazará tu configuración actual con la Plantilla de Demostración (Dominion Ecosystem). ¿Continuar?")) {
-            setMasterIdentity(DEFAULT_DEMO_CONFIG.masterIdentity);
-            setModules(DEFAULT_DEMO_CONFIG.modules);
-        }
-    };
-
     const toggleExpand = (id: string) => {
         setExpandedModuleId(expandedModuleId === id ? null : id);
     };
@@ -97,26 +66,6 @@ const AdvancedNeuralConfig: React.FC<AdvancedNeuralConfigProps> = ({ initialConf
                             </p>
                         </div>
                     </div>
-                    
-                    {/* QUICK IMPORT BUTTON */}
-                    <button 
-                        onClick={handleLoadDemo}
-                        className="px-4 py-2 bg-brand-gold/10 hover:bg-brand-gold/20 text-brand-gold border border-brand-gold/30 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2"
-                    >
-                        <span>⚡</span> Cargar Plantilla: Dominion Demo
-                    </button>
-                </div>
-            )}
-
-            {isWizard && (
-                 <div className="mb-4">
-                    <button 
-                        onClick={handleLoadDemo}
-                        className="w-full py-3 bg-brand-gold/10 hover:bg-brand-gold/20 text-brand-gold border border-brand-gold/30 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
-                    >
-                        <span>⚡</span> Cargar Ejemplo: Ecosistema Dominion
-                    </button>
-                    <p className="text-[9px] text-gray-500 text-center mt-2">Carga automáticamente los 3 módulos del ejemplo para que veas cómo funciona.</p>
                 </div>
             )}
 
@@ -138,7 +87,7 @@ const AdvancedNeuralConfig: React.FC<AdvancedNeuralConfigProps> = ({ initialConf
                     <textarea 
                         value={masterIdentity}
                         onChange={(e) => setMasterIdentity(e.target.value)}
-                        className={`w-full ${isWizard ? 'h-24' : 'h-32'} bg-black/50 border border-white/10 rounded-xl p-3 text-white text-xs focus:border-brand-gold outline-none resize-none custom-scrollbar font-mono placeholder-gray-700 leading-relaxed`}
+                        className={`w-full ${isWizard ? 'h-32' : 'h-32'} bg-black/50 border border-white/10 rounded-xl p-3 text-white text-xs focus:border-brand-gold outline-none resize-none custom-scrollbar font-mono placeholder-gray-700 leading-relaxed`}
                         placeholder={`Ej: Eres el Asistente Central. Identifica qué necesita el cliente y deriva al módulo correcto.`}
                     />
                 </div>

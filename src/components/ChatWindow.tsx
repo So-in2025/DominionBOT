@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState } from 'react';
 import { Conversation, LeadStatus, InternalNote, BotSettings } from '../types';
 import MessageBubble from './MessageBubble';
@@ -146,15 +147,17 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   
   const currentBadge = statusBadgeClass[conversation.status];
   
-  // Simplified display logic: always show leadName as title, leadIdentifier as subtitle
   const displayTitle = conversation.leadName;
   const displaySubtitle = formatPhoneNumber(conversation.leadIdentifier);
   const currentNumber = conversation.id.split('@')[0];
   const isBlacklisted = settings?.ignoredJids?.includes(currentNumber);
 
-  // FOMO LOGIC: Blur if expired and Hot
+  // Bot Status Text Logic
+  const isBotActive = conversation.isBotActive && isBotGloballyActive && !conversation.isMuted && !isBlacklisted && !isPlanExpired;
+  const botStatusText = isBotActive ? "● Bot: Escuchando" : (conversation.isMuted ? "● Bot: Silenciado (Manual)" : "● Bot: Pausado");
+  const botStatusColor = isBotActive ? "text-green-500 animate-pulse" : "text-gray-500";
+
   const showFomoOverlay = isPlanExpired && conversation.status === LeadStatus.HOT;
-  // NEW: Condition for showing "Share to Network" button
   const canShareToNetwork = 
       settings?.isNetworkEnabled && 
       conversation.status === LeadStatus.HOT && 
@@ -190,8 +193,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                     {displayTitle}
                     {isBlacklisted && <span className="text-[9px] bg-red-500 text-white px-1.5 py-0.5 rounded uppercase font-black tracking-wider">Bloqueado</span>}
                 </h2>
-                {/* Always show formatted phone number as a subtitle */}
-                <p className="text-[10px] text-gray-500 font-mono mt-0.5 tracking-wider">{displaySubtitle}</p>
+                <div className="flex flex-col">
+                    <p className="text-[10px] text-gray-500 font-mono mt-0.5 tracking-wider">{displaySubtitle}</p>
+                    {/* NEW: Explicit Bot Status */}
+                    <p className={`text-[9px] font-black uppercase tracking-widest mt-0.5 ${botStatusColor}`}>
+                        {botStatusText}
+                    </p>
+                </div>
               </div>
           </div>
           
@@ -217,7 +225,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                         </button>
                     )}
 
-                    {canShareToNetwork && ( // NEW: Share to Network button
+                    {canShareToNetwork && ( 
                         <button
                             onClick={handleShareSignal}
                             disabled={isSharingSignal}
