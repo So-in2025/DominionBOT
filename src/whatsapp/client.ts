@@ -26,7 +26,7 @@ const sessions = new Map<string, WASocket>();
 const qrCache = new Map<string, string>(); 
 const codeCache = new Map<string, string>(); 
 
-// Set level to info to see internal baileys logs if needed, or stick to silent to rely on our own logs
+// Silent logger to keep terminal clean, we use logService
 const logger = pino({ level: 'silent' }); 
 
 export const ELITE_BOT_JID = '5491112345678@s.whatsapp.net';
@@ -83,10 +83,11 @@ function extractMessageContent(msg: proto.IWebMessageInfo | proto.IMessage): str
     
     // 5. Fallback for unknown types (Ensures visibility)
     if (Object.keys(message).length > 0) {
-        // Only ignore standard protocol overhead, otherwise assume content
-        if (message.protocolMessage || message.reactionMessage || message.pollUpdateMessage || message.keepInChatMessage) {
+        // Ignore strictly technical messages that have no user value
+        if (message.protocolMessage || message.reactionMessage || message.pollUpdateMessage || message.keepInChatMessage || message.senderKeyDistributionMessage) {
             return null; 
         }
+        // If it has content but we don't know what it is, show something so the chat appears
         return '[Contenido Desconocido]'; 
     }
 
@@ -152,18 +153,10 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
             keepAliveIntervalMs: 10000, 
             retryRequestDelayMs: 2000,
             connectTimeoutMs: 60000,
+            // CRITICAL OPTIMIZATION: Do NOT query DB in getMessage. 
+            // This causes massive lag during history sync. Return empty placeholder.
             getMessage: async (key) => {
-                if (key.remoteJid) {
-                    const conversations = await conversationService.getConversations(userId);
-                    const convo = conversations.find(c => c.id === key.remoteJid);
-                    if (convo) {
-                        const msg = convo.messages.find(m => m.id === key.id);
-                        if (msg) {
-                            return { conversation: msg.text };
-                        }
-                    }
-                }
-                return { conversation: 'hello' };
+                return { conversation: '' };
             }
         });
 
@@ -202,7 +195,6 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
             if (connection === 'close') {
                 const disconnectError = lastDisconnect?.error as Boom;
                 const statusCode = disconnectError?.output?.statusCode;
-                
                 const isLoggedOut = statusCode === DisconnectReason.loggedOut;
 
                 qrCache.delete(userId);
@@ -257,8 +249,9 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
         sock.ev.on('messages.upsert', async ({ messages, type }) => {
             if (!messages || messages.length === 0) return;
             
-            if (type === 'append' && messages.length > 20) {
-                logService.info(`[HISTORY] 📥 Sincronizando bloque de ${messages.length} mensajes antiguos...`, userId);
+            // Log for visibility of data flow
+            if (type === 'append' && messages.length > 5) {
+                logService.info(`[HISTORY] 📥 Procesando batch de ${messages.length} mensajes...`, userId);
             }
             
             try {
@@ -280,7 +273,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                     if (isGroup) {
                         if (type === 'notify') {
                             for (const msg of chatMessages) {
-                                if (msg.key.fromMe) continue; // Ignore my own group messages
+                                if (msg.key.fromMe) continue;
                                 const text = extractMessageContent(msg);
                                 if (!text) continue;
                                 const sender = msg.key.participant || msg.participant || jid; 
@@ -288,14 +281,14 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                                 radarService.processGroupMessage(userId, jid, jid, sender, senderName, text).catch(e => console.error(e));
                             }
                         }
-                        return; // Stop here for groups, don't add to "Inbox"
+                        return; // Stop here for groups
                     }
 
                     // --- PRIVATE CHAT LOGIC (INBOX) ---
                     for (const msg of chatMessages) {
                         try {
                             const messageText = extractMessageContent(msg);
-                            if (!messageText) continue; // Skip if no text/media found
+                            if (!messageText) continue; 
 
                             const msgTimestamp = typeof msg.messageTimestamp === 'number' ? msg.messageTimestamp : (msg.messageTimestamp as any)?.low || Date.now() / 1000;
                             const isOldForAI = type === 'append' || (msgTimestamp < (Date.now() / 1000 - 300)); 
@@ -312,7 +305,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                             // 1. SAVE TO DB (Priority)
                             await conversationService.addMessage(userId, jid, userMessage, senderName, isOldForAI);
                             
-                            // Log ingestion for visibility (Only for live messages)
+                            // Log ingestion only for new messages to avoid spam
                             if (!msg.key.fromMe && !isOldForAI) {
                                 logService.info(`[INBOX] 📩 Mensaje procesado de ${senderName || jid}: "${messageText.substring(0, 20)}..."`, userId);
                             }
