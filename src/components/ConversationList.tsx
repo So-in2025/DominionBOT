@@ -11,6 +11,7 @@ interface ConversationListProps {
   onRequestHistory: () => Promise<void>; 
   isRequestingHistory: boolean;
   connectionStatus: ConnectionStatus;
+  onDeleteConversation?: (id: string) => void; // Added prop for deletion callback
 }
 
 const ConversationList: React.FC<ConversationListProps> = ({
@@ -18,7 +19,8 @@ const ConversationList: React.FC<ConversationListProps> = ({
   selectedConversationId,
   onSelectConversation,
   backendError,
-  connectionStatus
+  connectionStatus,
+  onDeleteConversation
 }) => {
   const [filter, setFilter] = useState<'ALL' | 'HOT' | 'WARM' | 'COLD'>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
@@ -109,6 +111,7 @@ const ConversationList: React.FC<ConversationListProps> = ({
                         conversation={conversation}
                         isSelected={selectedConversationId === conversation.id}
                         onSelect={() => onSelectConversation(conversation.id)}
+                        onDelete={onDeleteConversation}
                     />
                 ))}
             </ul>

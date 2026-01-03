@@ -641,6 +641,15 @@ export function App() {
       }).catch(() => showToast('Error al enviar mensaje', 'error'));
   };
 
+  // NEW: HANDLE INSTANT DELETE
+  const handleDeleteConversation = (id: string) => {
+      setConversations(prev => prev.filter(c => c.id !== id));
+      if (selectedConversationId === id) {
+          setSelectedConversationId(null);
+      }
+      showToast('Conversación eliminada.', 'success');
+  };
+
   const handleToggleBot = async (id: string) => {
       const convo = conversations.find(c => c.id === id);
       if (!convo || !token) return;
@@ -714,7 +723,16 @@ export function App() {
             return (
                 <div className="flex-1 flex overflow-hidden relative">
                     <div className={`${selectedConversationId ? 'hidden md:flex' : 'flex'} w-full md:w-auto h-full`}>
-                        <ConversationList conversations={conversations} selectedConversationId={selectedConversationId} onSelectConversation={setSelectedConversationId} backendError={backendError} onRequestHistory={() => Promise.resolve()} isRequestingHistory={false} connectionStatus={connectionStatus} />
+                        <ConversationList 
+                            conversations={conversations} 
+                            selectedConversationId={selectedConversationId} 
+                            onSelectConversation={setSelectedConversationId} 
+                            backendError={backendError} 
+                            onRequestHistory={() => Promise.resolve()} 
+                            isRequestingHistory={false} 
+                            connectionStatus={connectionStatus}
+                            onDeleteConversation={handleDeleteConversation} // Pass deletion handler
+                        />
                     </div>
                     <div className={`${!selectedConversationId ? 'hidden md:flex' : 'flex'} flex-1 h-full`}>
                         <ChatWindow 

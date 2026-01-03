@@ -38,7 +38,8 @@ class ConversationService {
       let hasUpdates = false;
 
       for (const item of items) {
-          if (item.jid === 'status@broadcast') continue;
+          // FILTER: Ignore Status Broadcasts AND Groups (@g.us) for the main Inbox
+          if (item.jid === 'status@broadcast' || item.jid.endsWith('@g.us')) continue;
           
           const safeJid = sanitizeKey(item.jid);
           let conversation = conversations[safeJid] || conversations[item.jid] || updates[safeJid];
@@ -84,7 +85,10 @@ class ConversationService {
   }
 
   async addMessage(userId: string, jid: string, message: Message, leadName?: string, isHistoryImport: boolean = false) {
-    // Retriev fresh user data to ensure we don't overwrite with stale state
+    // FILTER: Ignore messages from Groups for the Inbox (Radar handles groups separately)
+    if (jid.endsWith('@g.us')) return;
+
+    // Retrieve fresh user data to ensure we don't overwrite with stale state
     const user = await db.getUser(userId);
     if(!user) {
         logService.warn(`[ConversationService] User ${userId} not found.`, userId);

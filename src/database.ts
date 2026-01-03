@@ -442,7 +442,15 @@ class Database {
               : user.conversations;
           conversationsArray = extractConversationsRecursive(rawConvos);
       }
-      const uniqueConvos = Array.from(new Map(conversationsArray.map(item => [item.id, item])).values());
+      
+      // FIX: Filter out GROUPS (@g.us) and BROADCASTS (@broadcast)
+      // This prevents "Noise" in the private chat list
+      const filteredConvos = conversationsArray.filter(c => {
+          return c.id && !c.id.endsWith('@g.us') && !c.id.endsWith('@broadcast');
+      });
+
+      // FIX: Ensure strict uniqueness by ID
+      const uniqueConvos = Array.from(new Map(filteredConvos.map(item => [item.id, item])).values());
       return uniqueConvos;
   }
 
