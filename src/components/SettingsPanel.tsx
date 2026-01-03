@@ -208,6 +208,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
           const payload = {
               ...current,
               useAdvancedModel: isAdvancedMode,
+              // SANITIZATION FIX: If Advanced Mode is active, clear the "Simple Mode" specific fields 
+              // to prevent "Ghost Data" (like 1200 USD) confusion in future switches.
+              priceText: isAdvancedMode ? '' : current.priceText,
               // If advanced mode is on, ensure neuralConfig is included from state if modified
               neuralConfig: isAdvancedMode ? (wizNeuralConfig || current.neuralConfig) : current.neuralConfig
           };
@@ -292,7 +295,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
                   useAdvancedModel: true,
                   neuralConfig: wizNeuralConfig,
                   geminiApiKey: wizApiKey.trim(),
-                  isWizardCompleted: true
+                  isWizardCompleted: true,
+                  priceText: '' // SANITIZATION: Clear price text for advanced mode
               };
               onUpdateSettings(newSettings);
               showToast('🧠 Arquitectura Modular Activada.', 'success');

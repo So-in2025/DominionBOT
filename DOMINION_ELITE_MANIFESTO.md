@@ -1,4 +1,5 @@
-# 🦅 CÓDICE DOMINION v3.1.1 [ADN DEL PROYECTO]
+
+# 🦅 CÓDICE DOMINION v3.1.2 [ADN DEL PROYECTO]
 
 > "En la era de la saturación digital, la velocidad es la moneda y la inteligencia es el arma. Dominion no es un bot; es la herramienta para no perder ventas en WhatsApp."
 
@@ -543,3 +544,23 @@ Para combatir la volatilidad de las URLs públicas en entornos híbridos/locales
 El `campaignService.ts` implementa un monitor de "Lag de Event Loop".
 - **Función:** Detecta si la CPU del servidor está saturada midiendo la deriva temporal entre ticks del reloj.
 - **Acción:** Si el retraso supera los 200ms, el sistema pausa el procesamiento de campañas durante un ciclo para permitir que el hardware se recupere, priorizando la estabilidad sobre la velocidad.
+
+---
+
+## 🛡️ ADDENDUM v3.1.2: RESILIENCIA COGNITIVA (FALLBACK MATRIX)
+
+### 1. Arquitectura de Supervivencia (5-Tier Fallback)
+Para garantizar una disponibilidad del 99.9% incluso durante caídas de Google Cloud, hemos implementado una **Matriz de Derivación Secuencial** de 5 niveles.
+- **Filosofía:** En un chatbot de ventas, la latencia es secundaria; la disponibilidad de la respuesta es absoluta.
+- **Secuencia de Disparo:**
+    1.  `gemini-2.0-flash-exp` (Velocidad Experimental)
+    2.  `gemini-2.5-flash` (Estándar de Producción)
+    3.  `gemini-3-flash-preview` (Nueva Generación)
+    4.  `gemini-2.5-pro` (Razonamiento Profundo)
+    5.  `gemini-3-pro-preview` (Último Recurso / Máxima Potencia)
+
+### 2. Sistema de Lista Negra Temporal (Cooldown Automático)
+Para evitar bucles de latencia infinita intentando consultar modelos caídos o agotados:
+- **Mecanismo:** Si un modelo falla (Error 5xx/429), el sistema lo ingresa automáticamente en una **Lista Negra en Memoria**.
+- **Penalización:** El modelo bloqueado es ignorado por el enrutador durante **60 minutos**.
+- **Resultado:** El sistema aprende qué "neuronas" están dañadas y las evita instantáneamente, redirigiendo el tráfico a nodos sanos sin que el usuario perciba el error.

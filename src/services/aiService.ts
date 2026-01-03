@@ -10,10 +10,20 @@ import { db } from '../database.js';
 const aiResponseCache = new Map<string, { timestamp: number; data: any }>();
 const CACHE_DURATION_MS = 5 * 60 * 1000; // 5 minutes
 
-// Updated Priority List: Try new preview, then stable flash exp, then lite.
-const MODEL_PRIORITY = ["gemini-3-flash-preview", "gemini-2.0-flash-exp", "gemini-flash-lite-latest"];
+// --- BLACKLIST SYSTEM ---
+const modelCooldowns = new Map<string, number>();
+const MODEL_COOLDOWN_MS = 60 * 60 * 1000; // 60 Minutes
 
-// ... (generateBotResponse function remains unchanged)
+// Updated Priority List: 5-Tier Fallback Architecture for Maximum Availability
+const MODEL_PRIORITY = [
+    "gemini-2.0-flash-exp",
+    "gemini-2.5-flash",
+    "gemini-3-flash-preview",
+    "gemini-2.5-pro",
+    "gemini-3-pro-preview"
+];
+
+// ... (rest of the file)
 export const generateBotResponse = async (
   conversation: Conversation,
   user: User,
@@ -197,7 +207,19 @@ ${JSON.stringify(Object.keys(responseSchema.properties))}
   
   const ai = new GoogleGenAI({ apiKey: cleanKey });
 
+  // EXECUTE FAILOVER LOOP
   for (const modelName of MODEL_PRIORITY) {
+    // 1. CHECK BLACKLIST
+    if (modelCooldowns.has(modelName)) {
+        const cooldownUntil = modelCooldowns.get(modelName)!;
+        if (Date.now() < cooldownUntil) {
+            logService.debug(`[AI-BLACKLIST] Skipping ${modelName} (Exhausted until ${new Date(cooldownUntil).toLocaleTimeString()})`, user.id);
+            continue; // Skip to next model
+        } else {
+            modelCooldowns.delete(modelName); // Cooldown expired, unblock
+        }
+    }
+
     try {
       const response = await ai.models.generateContent({
         model: modelName,
@@ -210,7 +232,7 @@ ${JSON.stringify(Object.keys(responseSchema.properties))}
       });
       
       const jsonText = response.text;
-      if (!jsonText) throw new Error("Respuesta vacía de la IA.");
+      if (!jsonText) throw new Error(`Respuesta vacía de la IA (${modelName}).`);
 
       const result = JSON.parse(jsonText.trim());
       if (!features.lead_scoring) result.newStatus = LeadStatus.WARM;
@@ -220,20 +242,26 @@ ${JSON.stringify(Object.keys(responseSchema.properties))}
       if (lastMessage && (lastMessage.sender === 'user' || lastMessage.sender === 'elite_bot')) {
           const cacheKey = `${user.id}::${lastMessage.text.trim()}`;
           aiResponseCache.set(cacheKey, { timestamp: Date.now(), data: result });
-          logService.info(`[AI-CACHE] SET for user ${user.username}`, user.id);
+          logService.info(`[AI-CACHE] SET for user ${user.username} using ${modelName}`, user.id);
       }
       // --- END: Set Cache ---
 
+      // Clear cooldown if it existed (just in case)
+      modelCooldowns.delete(modelName);
+
       return result;
     } catch (err: any) { 
-        logService.warn(`[AI FAILOVER] Fallo con ${modelName}, intentando siguiente...`, user.id, user.username, { error: err.message }); 
+        logService.warn(`[AI FAILOVER] Fallo con ${modelName}. Activando BLACKLIST (60m).`, user.id, user.username, { error: err.message });
+        
+        // 2. ADD TO BLACKLIST ON FAILURE
+        modelCooldowns.set(modelName, Date.now() + MODEL_COOLDOWN_MS);
     }
   }
   
   return null;
 };
 
-// --- NEW FUNCTION: Autonomous Script Generator ---
+// ... (rest of the file remains unchanged)
 export const regenerateSimulationScript = async (userId: string) => {
     try {
         const user = await db.getUser(userId);

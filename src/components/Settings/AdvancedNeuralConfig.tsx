@@ -14,6 +14,14 @@ const AdvancedNeuralConfig: React.FC<AdvancedNeuralConfigProps> = ({ initialConf
     const [modules, setModules] = useState<ContextShard[]>(initialConfig?.modules || []);
     const [expandedModuleId, setExpandedModuleId] = useState<string | null>(null); // For accordion logic
     
+    // SYNC ON LOAD: Ensure local state updates when data arrives from backend
+    useEffect(() => {
+        if (initialConfig) {
+            setMasterIdentity(prev => initialConfig.masterIdentity !== undefined ? initialConfig.masterIdentity : prev);
+            setModules(prev => initialConfig.modules !== undefined ? initialConfig.modules : prev);
+        }
+    }, [initialConfig]);
+
     useEffect(() => {
         onChange({
             masterIdentity,
