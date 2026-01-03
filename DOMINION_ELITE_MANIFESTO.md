@@ -1,4 +1,3 @@
-
 # 🦅 CÓDICE DOMINION v3.1.0 [ADN DEL PROYECTO]
 
 > "En la era de la saturación digital, la velocidad es la moneda y la inteligencia es el arma. Dominion no es un bot; es la herramienta para no perder ventas en WhatsApp."
@@ -131,7 +130,7 @@ Cuando un bot detecta un lead "CALIENTE" que no encaja con su oferta (ej: una ag
 Dominion Network opera bajo un estándar ético absoluto:
 1.  **Contribución:** El nodo A comparte la señal (anonimizada).
 2.  **Match:** El nodo B (que busca esa categoría) recibe la oportunidad.
-3.  **Solicitud:** El sistema envía un mensaje neutral al prospecto: *"Detectamos tu interés en X. ¿Aceptas ser contactado por un experto certificado de la red?"*
+3.  **Solicitud:** El sistema, a través de un **número neutral de la red Dominion**, envía un mensaje transparente al prospecto: *"Detectamos tu interés en X. ¿Aceptas ser contactado por un experto certificado de la red?"*
 4.  **Conexión:** Solo si el prospecto dice **SÍ**, se revelan los datos de contacto al nodo B.
 
 ---
@@ -173,18 +172,21 @@ Dominion opera como una plataforma de Software como Servicio (SaaS) donde múlti
 ### 2. Estrategia de Precios por Profundidad (Tiered Pricing)
 La oferta comercial de Dominion está directamente ligada a la potencia del **Depth Engine**. Los clientes eligen el nivel de profundidad cognitiva que necesitan, pagando solo por la capacidad de razonamiento que utilizan.
 
-#### a) Nivel 3: Standard (Protocolo Base) - **USD 29/mes**
+#### a) NIVEL 3: STANDARD (Protocolo Base) - **USD 19/mes**
+- **Nivel de Profundidad Asignado:** 3
 - **Funcionalidades:** `intent_detection`, `lead_scoring` básico, `auto_reply`.
 - **Caso de Uso:** Ideal para negocios con alto volumen de consultas y que necesitan un filtrado rápido y eficiente. Automatiza respuestas frecuentes y califica leads con intención de compra explícita.
 - **Filosofía:** El punto de entrada para automatizar tu WhatsApp y dejar de perder ventas por demoras.
 
-#### b) Nivel 7: Sniper (Modo Estratega) - **USD 49/mes**
+#### b) NIVEL 7: SNIPER (Modo Estratega) - **USD 39/mes**
+- **Nivel de Profundidad Asignado:** 7
 - **Funcionalidades Totales:** Incluye todo lo del plan Standard más `close_assist` (Copiloto), `force_run`, y acceso al **Radar 4.0**.
 - **Capacidades Aumentadas:** Memoria contextual extendida, análisis de sentimiento, detección de micro-lenguaje y manejo de objeciones complejas.
 - **Caso de Uso:** Esencial para ventas consultivas, servicios de alto valor (High-Ticket) y cualquier negocio donde entender el matiz de la conversación es crítico para la venta.
 - **Filosofía:** La experiencia Dominion completa. No solo responde, sino que entiende, razona y asiste estratégicamente al vendedor humano.
 
-#### c) Nivel 10: Neuro-Boost (Inyección de Potencia) - **USD 15/48hs**
+#### c) NIVEL 10: NEURO-BOOST (Inyección de Potencia) - **USD 5/48hs**
+- **Nivel de Profundidad Asignado:** 10 (Temporal)
 - **Funcionalidad:** Un "boost" temporal que eleva la cuenta a la máxima capacidad cognitiva.
 - **Capacidades Máximas:** Múltiples pases de inferencia (Chain-of-Thought), predicción de tendencias de mercado en grupos y análisis de señales ocultas.
 - **Caso de Uso:** Diseñado para períodos críticos de alta intensidad comercial, como lanzamientos de productos, eventos o campañas de marketing agresivas.
@@ -506,8 +508,11 @@ Se ha eliminado cualquier dependencia de `localStorage` para simular datos en la
 ### 6. Motor de Campañas (Broadcast Táctico)
 Implementado en `campaignService.ts`, permite la programación y envío de mensajes a grupos.
 - **Anti-Ban Jitter:** Retrasos aleatorios entre mensajes (configurables) para imitar comportamiento humano.
-- **Memory Lock (Semáforo):** [NUEVO] Sistema de bloqueo en memoria RAM que impide condiciones de carrera (Race Conditions), asegurando que una campaña nunca se ejecute por duplicado, incluso si el scheduler se solapa por latencia de red.
+- **Memory Lock (Semáforo):** Sistema de bloqueo en memoria RAM que impide condiciones de carrera (Race Conditions), asegurando que una campaña nunca se ejecute por duplicado, incluso si el scheduler se solapa por latencia de red.
 - **Circuit Breaker:** Si una campaña falla 3 veces consecutivamente (errores lógicos, no de red), se aborta automáticamente para proteger la reputación de la cuenta.
+- **Gobernador de Tráfico Global:** El sistema limita el número de campañas concurrentes en toda la plataforma (ej: 2 a la vez) para no saturar la IP y evitar bloqueos.
+- **Watchdog de Hardware (Event Loop Guard):** El motor monitorea la carga de la CPU. Si detecta un "lag" excesivo, pausa el envío de campañas para permitir que el hardware se recupere, priorizando la estabilidad.
+- **Inmunidad a Fallos de Red:** Errores de conexión a internet (ISP local) no cuentan como fallos de campaña, evitando que el Circuit Breaker se active por problemas externos.
 
 ### 7. Ejecución Forzada de Campañas (Override)
 Se ha implementado un control manual ("Rayo" ⚡) en el panel de campañas.

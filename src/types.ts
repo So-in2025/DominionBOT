@@ -326,9 +326,23 @@ export interface Conversation {
   isTestBotConversation?: boolean; 
 }
 
+// NEW: Brain Architecture Types
+export interface BrainModule {
+  id: string;
+  name: string;
+  triggers: string[]; // Keywords to activate this module
+  context: string; // The "brain" or prompt for this module
+}
+
+export interface BrainArchitecture {
+  type: 'monolithic' | 'modular';
+  defaultModuleId?: string;
+  modules: BrainModule[];
+}
+
 export interface BotSettings {
   productName: string;
-  productDescription: string;
+  productDescription: string; // Stays for monolithic / legacy
   priceText: string;
   ticketValue: number; // NEW: Real Ticket Value for metrics
   freeTrialDays: number;
@@ -348,6 +362,8 @@ export interface BotSettings {
   ttsEnabled: boolean;
   ignoredJids: string[];
   isNetworkEnabled: boolean; // NEW: Network participation toggle
+  // NEW: Brain architecture model
+  brainArchitecture?: BrainArchitecture;
 }
 
 export interface User {

@@ -198,6 +198,7 @@ const UserSchema = new Schema({
         isWizardCompleted: { type: Boolean, default: false }, 
         ignoredJids: { type: [String], default: [] },
         isNetworkEnabled: { type: Boolean, default: false }, // NEW: Default to false
+        brainArchitecture: { type: Schema.Types.Mixed, default: undefined },
     },
     radar: {
         isEnabled: { type: Boolean, default: false },
