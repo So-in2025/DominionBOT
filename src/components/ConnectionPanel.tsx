@@ -30,17 +30,26 @@ const StatusIndicator: React.FC<{ status: ConnectionStatus }> = ({ status }) => 
 
 const ConnectionPanel: React.FC<ConnectionPanelProps> = ({ status, qrCode, pairingCode, onConnect, onDisconnect, onWipe, user }) => {
     const [linkMode, setLinkMode] = useState<'QR' | 'NUMBER'>('QR');
-    // FIX: Initialize phoneNumber with an empty string fallback
     const [phoneNumber, setPhoneNumber] = useState(user?.whatsapp_number || '');
     const [qrError, setQrError] = useState(false);
-    
+    const [isConnecting, setIsConnecting] = useState(false); // NEW: Local loading state for immediate feedback
+
     const isLoading = status === ConnectionStatus.GENERATING_QR;
+    const showLoading = isLoading || isConnecting;
 
     useEffect(() => {
         if (user?.whatsapp_number) {
             setPhoneNumber(user.whatsapp_number);
         }
     }, [user]);
+    
+    // Handover from local loading to global status
+    useEffect(() => {
+        if (status !== ConnectionStatus.DISCONNECTED && isConnecting) {
+            setIsConnecting(false);
+        }
+    }, [status, isConnecting]);
+
 
     // AUTO-SWITCH TAB BASED ON AVAILABLE DATA
     useEffect(() => {
@@ -52,11 +61,13 @@ const ConnectionPanel: React.FC<ConnectionPanelProps> = ({ status, qrCode, pairi
     }, [pairingCode, qrCode]);
 
     const handleStartConnect = async () => {
-        setQrError(false); // Reset error state on new attempt
+        setQrError(false);
+        setIsConnecting(true); // Set local loading state immediately
         try {
             await onConnect(linkMode === 'NUMBER' ? phoneNumber : undefined);
+            // The polling will eventually update the global status and turn off `isConnecting`
         } catch (e) {
-            // El error es manejado por el componente padre, que mostrará un toast.
+            setIsConnecting(false); // Reset on direct error
         }
     };
 
@@ -113,12 +124,18 @@ const ConnectionPanel: React.FC<ConnectionPanelProps> = ({ status, qrCode, pairi
 
                         <button
                             onClick={handleStartConnect}
-                            disabled={isLoading || (linkMode === 'NUMBER' && phoneNumber.length < 8)}
-                            className={`w-full py-4 rounded-xl font-black text-xs uppercase tracking-[0.2em] transition-all ${
-                                isLoading ? 'bg-white/5 text-gray-700 animate-pulse cursor-wait' : 'bg-brand-gold text-black shadow-lg hover:scale-[1.02]'
+                            disabled={showLoading || (linkMode === 'NUMBER' && phoneNumber.length < 8)}
+                            className={`w-full py-4 rounded-xl font-black text-xs uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-2 ${
+                                showLoading ? 'bg-white/5 text-gray-700 cursor-wait' : 'bg-brand-gold text-black shadow-lg hover:scale-[1.02]'
                             }`}
                         >
-                            {isLoading ? 'Iniciando Motor...' : 'Vincular Ahora'}
+                            {showLoading && (
+                                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                            )}
+                            {showLoading ? 'Conectando...' : 'Vincular Ahora'}
                         </button>
                         
                         <div className="pt-6 border-t border-white/5">
