@@ -89,7 +89,7 @@ export const generateBotResponse = async (
       const modulesContext = settings.neuralConfig.modules.map(m => `
 --- MÓDULO EXPERTO: ${m.name} ---
 [PALABRAS CLAVE / INTENCIÓN]: ${m.triggerKeywords}
-[CONTEXTO ESPECÍFICO]:
+[CONTEXTO ESPECÍFICO (FUENTE DE VERDAD)]:
 ${m.contextContent}
 ----------------------------------
 `).join('\n');
@@ -108,14 +108,16 @@ TU TAREA ES CLASIFICAR LA INTENCIÓN DEL CLIENTE Y USAR EL MÓDULO CORRECTO.
 
 ${modulesContext}
 
-## REGLAS DE ENRUTAMIENTO:
+## REGLAS DE ENRUTAMIENTO Y VERDAD:
 1. Analiza el último mensaje del cliente y el historial.
-2. Si la intención coincide claramente con un MÓDULO EXPERTO, adopta esa personalidad y usa su información.
-3. Si la intención es general o saludo, usa tu IDENTIDAD MAESTRA.
+2. Si la intención coincide con un MÓDULO EXPERTO, ADOPTA ESA PERSONALIDAD TOTALMENTE.
+3. **CANDADO COGNITIVO (PRECIOS):** Tu única fuente de verdad para precios es el texto dentro del [CONTEXTO ESPECÍFICO] del módulo seleccionado.
+   - Si el módulo dice "USD 19/mes", ese es el precio.
+   - Si el módulo dice "A convenir", di eso.
+   - **PROHIBIDO:** Usar precios de tu entrenamiento general o inventar cifras que no estén explícitamente escritas en el módulo.
 4. Responde de forma fluida, sin mencionar "Módulo X". Simplemente SÉ el experto.
 
 ## PARÁMETROS GLOBALES:
-- Precio Base: ${settings.priceText}
 - Link Cierre: ${settings.ctaLink}
 - Profundidad: ${capabilities.inferencePasses}
 - ${capabilities.canPredictTrends ? 'Análisis de intención latente ACTIVO.' : ''}
@@ -132,9 +134,10 @@ Tu misión: Atender consultas y, si el plan lo permite, calificar la intención 
 - Profundidad de Razonamiento: ${capabilities.inferencePasses} (1=Rápido, 3=Profundo)
 - ${capabilities.canPredictTrends ? 'Activar análisis de intención latente.' : 'Análisis literal.'}
 
-## REGLAS DE ORO:
+## REGLAS DE ORO (SEGURIDAD):
 - Responde en Español Argentino Profesional (Voseo permitido).
 - PROHIBIDO: Emojis excesivos, lenguaje de 'coach', mencionar que eres una IA.
+- PROHIBIDO ALUCINAR PRECIOS: Tu única verdad sobre precios es: "${settings.priceText}". Si el usuario presiona por un número y el dato es "A convenir", NO INVENTES UNA CIFRA. En su lugar, explica que depende del proyecto y busca cerrar la reunión.
 - Sé directo y eficiente.
 
 ## CONTEXTO DE PRODUCTO:
@@ -152,10 +155,24 @@ Analiza el historial y determina el estado del lead (Frío, Tibio, Caliente).
   }
 
   if (features.close_assist) {
-      systemInstruction += `
+      if (isSimulation) {
+          // --- SIMULATION OVERRIDE ---
+          // En simulación, queremos ver cómo la IA cerraría la venta, NO queremos silencio.
+          systemInstruction += `
+## MODO SIMULACIÓN ACTIVO:
+- SI EL LEAD ES CALIENTE: IGNORA el protocolo de silencio (Shadow Mode).
+- TU OBJETIVO: Asume el rol del MEJOR VENDEDOR HUMANO y cierra la venta con una respuesta directa y persuasiva ('responseText').
+- RECUERDA: Usa SOLO la información de precios disponible en tu contexto/módulo. Si falta, vende la reunión.
+`;
+      } else {
+          // --- PRODUCTION BEHAVIOR ---
+          // En producción, silencio absoluto para proteger la venta.
+          systemInstruction += `
 ## PROTOCOLO "HOT-SHADOW" (PLAN PRO):
 - SI EL LEAD ES CALIENTE (listo para comprar): NO generes 'responseText'. En su lugar, genera 3 'suggestedReplies' para que el vendedor humano cierre.
+- TU OBJETIVO: Alertar al humano y apartarte.
 `;
+      }
   }
   
   const responseSchema: any = {

@@ -1,4 +1,4 @@
-# 🦅 CÓDICE DOMINION v3.1.0 [ADN DEL PROYECTO]
+# 🦅 CÓDICE DOMINION v3.1.1 [ADN DEL PROYECTO]
 
 > "En la era de la saturación digital, la velocidad es la moneda y la inteligencia es el arma. Dominion no es un bot; es la herramienta para no perder ventas en WhatsApp."
 
@@ -243,7 +243,8 @@ Para recompensar a los primeros usuarios y construir una base de clientes leal, 
     - **Stack:** React con Vite, TypeScript, Tailwind CSS.
     - **Función:** Proporciona la interfaz de usuario (Dashboard) para que el cliente gestione su nodo. Se comunica con el Backend a través de una API RESTful.
     - **Despliegue:** Vercel (Front) / Ngrok Tunnel (Hybrid).
-2.  **Backend (Servidor):**
+    - **Service Discovery:** `ngrokService` para autodetectar URLs públicas.
+3.  **Backend (Servidor):**
     - **Stack:** Node.js con Express, TypeScript.
     - **Función:** Es el núcleo de la aplicación. Gestiona la lógica de negocio, la autenticación (JWT), las peticiones de la API, y orquesta la comunicación entre el Motor de WhatsApp, la Base de Datos y el Core de IA.
     - **Despliegue:** Local con Ngrok (Híbrido) o Cloud (Render).
@@ -275,7 +276,7 @@ Para recompensar a los primeros usuarios y construir una base de clientes leal, 
     - El Backend extrae el `responseText` y lo envía al Motor de WhatsApp para que lo mande al Usuario Final.
     - El `newStatus` y los `tags` se actualizan en la base de datos para esa conversación.
     - La respuesta del bot también se guarda en el historial.
-10. **Actualización UI:** El Frontend utiliza un sistema de **Polling Optimizado** (intervalos de 3s para conversaciones y 5s para estado) para mantener la interfaz sincronizada con el backend en tiempo real.
+10. **Actualización UI:** El Frontend utiliza un sistema de **Polling Optimizado** (intervalos de 2s para conversaciones y 15s para estado) para mantener la interfaz sincronizada con el backend en tiempo real.
 
 ---
 
@@ -450,10 +451,11 @@ Proporcionar feedback auditivo para acciones de UI/UX y reforzar la identidad de
 - **Elite++ Training:** Simulador adversarial.
 - **Motor de Campañas:** Sistema de difusión masiva.
 
-### ✅ v3.1 (Estado Actual - Desplegado)
+### ✅ v3.1.1 (Estado Actual - Blindado)
 - **Red Dominion:** Intercambio colaborativo de leads.
 - **Protocolo Smart Link:** Autorecuperación de conexión backend.
 - **Gobernanza Avanzada:** Kill Switch y Watchdog de hardware.
+- **Optimistic UI Core:** Sincronización instantánea y eliminación de estados zombies.
 
 ### 🌌 Visión a Largo Plazo
 - **Integración Multi-Canal:** Expandir el motor a Instagram DMs, Telegram, etc.
