@@ -326,6 +326,23 @@ export interface Conversation {
   isTestBotConversation?: boolean; 
 }
 
+// --- UPDATED BRAIN MODULE FOR ADVANCED CONTEXTS ---
+export interface BrainModule {
+    id: string;
+    name: string;
+    triggers: string[];
+    context: string;
+    // New fields for Advanced Context Mode
+    priority?: number; 
+    active?: boolean;
+}
+
+export interface BrainArchitecture {
+    type: 'monolithic' | 'modular';
+    modules: BrainModule[];
+    defaultModuleId?: string;
+}
+
 export interface BotSettings {
   productName: string;
   productDescription: string;
@@ -348,6 +365,7 @@ export interface BotSettings {
   ttsEnabled: boolean;
   ignoredJids: string[];
   isNetworkEnabled: boolean; // NEW: Network participation toggle
+  brainArchitecture?: BrainArchitecture; // NEW: Modular Architecture Support
 }
 
 export interface User {
