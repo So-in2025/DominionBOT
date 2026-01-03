@@ -14,28 +14,44 @@ import LegalModal from './components/LegalModal';
 import AgencyDashboard from './components/AgencyDashboard';
 import CampaignsPanel from './components/CampaignsPanel'; 
 import RadarPanel from './components/RadarPanel'; 
-import NetworkPanel from './components/NetworkPanel'; // NEW: Import NetworkPanel
+import NetworkPanel from './components/NetworkPanel'; 
 import Toast, { ToastData } from './components/Toast';
 import HowItWorksArt from './components/HowItWorksArt';
 import HowItWorksSection from './components/HowItWorksSection';
 import NeuralArchitectureSection from './components/NeuralArchitectureSection'; 
-import DominionExplainerCanvas from './components/DominionExplainerCanvas'; // Import the new component
+import SecurityCanvas from './components/SecurityCanvas'; // REEMPLAZO
+import TestimonialsCarousel from './components/TestimonialsCarousel';
+import NetworkConfigModal from './components/NetworkConfigModal';
 import { BACKEND_URL, API_HEADERS, getAuthHeaders } from './config';
 import { audioService } from './services/audioService';
 import { openSupportWhatsApp } from './utils/textUtils';
 
-const SIMULATION_SCRIPT = [
-    { id: 1, type: 'user', text: "Hola, vi el anuncio. ¿Cómo funciona el bot?", delayBefore: 1000 },
-    { id: 2, type: 'bot', text: "Hola. Dominion no es un bot común. Es una infraestructura que califica tus leads en tiempo real para que no pierdas tiempo con curiosos.\n\nContame, ¿cuántos mensajes recibís por día aproximadamente?", statusLabel: "Lead: FRÍO", delayBefore: 1800 },
-    { id: 3, type: 'user', text: "Entre 30 y 50, pero muchos preguntan y después desaparecen.", delayBefore: 2000 },
-    { id: 4, type: 'bot', text: "Clásico. Eso pasa porque la respuesta no es inmediata o el filtro es débil. Dominion atiende en < 5 segundos.\n\n¿Qué producto o servicio vendés?", statusLabel: "Lead: TIBIO", delayBefore: 2000 },
-    { id: 5, type: 'user', text: "Vendemos servicios y productos digitales.", delayBefore: 1500 },
-    { id: 6, type: 'bot', text: "Bien, sector ideal. En ventas digitales la confianza es todo. Dominion puede explicar tu oferta, filtrar por interés y entregarte el lead listo para cerrar.\n\n¿Qué tu equipo de ventas hoy da abasto?", statusLabel: "Lead: INTERESADO", delayBefore: 2500 },
-    { id: 7, type: 'user', text: "No, la verdad que se nos pasan muchos leads por responder tarde.", delayBefore: 2000 },
-    { id: 8, type: 'bot', text: "Entiendo. Si logramos automatizar el 80% de las consultas y que solo te lleguen los que están listos para pagar, ¿te serviría?", statusLabel: "Lead: CALIENTE 🔥", delayBefore: 2500 },
-    { id: 9, type: 'user', text: "Olvidate, sería un golazo. ¿Cómo sigo?", delayBefore: 1800 },
-    { id: 10, type: 'bot', text: "Excelente. Te dejo el link para que actives tu nodo de infraestructura ahora mismo y empecemos a filtrar. \n\n👉 https://dominion-bot.vercel.app/\n(Toca en 'Solicitar Acceso')", statusLabel: "VENTA CERRADA ✅", delayBefore: 2200 },
+// --- DUAL LOOP SIMULATION SCRIPTS ---
+
+// SCRIPT 1: The "Value Proposition" Chat
+const SIMULATION_SCRIPT_1 = [
+    { id: 1, type: 'user', text: "Hola, vi que ofrecen un bot para WhatsApp. ¿Es como los que responden con menú 1, 2, 3?", delayBefore: 1200 },
+    { id: 2, type: 'bot', text: "Hola. Para nada. Dominion no usa menús rígidos. Es una IA que entiende, razona y califica la intención real de compra en cada mensaje.", statusLabel: "Análisis de Intención", delayBefore: 2000 },
+    { id: 3, type: 'user', text: "Interesante. ¿Y cómo sabe cuándo un cliente está listo para comprar?", delayBefore: 1800 },
+    { id: 4, type: 'bot', text: "Analiza el lenguaje, la urgencia y el historial. Cuando detecta una oportunidad real, entra en 'Shadow Mode' y te alerta para que tú, el humano, cierres la venta.", statusLabel: "Lead: TIBIO", delayBefore: 2500 },
+    { id: 5, type: 'user', text: "Ok, me gusta eso de no perder el control. ¿Puedo probarlo?", delayBefore: 1500 },
+    { id: 6, type: 'bot', text: "Claro. Puedes solicitar acceso ahora mismo y activar un nodo de prueba PRO sin costo. Te dejo el link para que empieces.", statusLabel: "Lead: CALIENTE 🔥", delayBefore: 2200 },
 ];
+
+// SCRIPT 2: The "Anti-Ban Security" Chat
+const SIMULATION_SCRIPT_2 = [
+    { id: 1, type: 'user', text: "Hola. Me interesa, pero me preocupa que WhatsApp me banee el número por usar un bot.", delayBefore: 1200 },
+    { id: 2, type: 'bot', text: "Es una preocupación válida y la razón por la que Dominion fue diseñado con un protocolo de 'Firma Humana'. No somos un bot de spam, somos una infraestructura de venta.", statusLabel: "Protocolo de Seguridad", delayBefore: 2500 },
+    { id: 3, type: 'user', text: "¿'Firma Humana'? ¿Qué es eso?", delayBefore: 1800 },
+    { id: 4, type: 'bot', text: "Significa que cada acción está calibrada para ser indistinguible de un operador real. Usamos 'jitter' (retrasos variables) y un 'Watchdog' que monitorea la conexión para evitar patrones robóticos.", statusLabel: "Gobernanza Activa", delayBefore: 2800 },
+    { id: 5, type: 'user', text: "Suena mucho más seguro que otros. ¿Entonces el riesgo es cero?", delayBefore: 2000 },
+    { id: 6, type: 'bot', text: "El riesgo nunca es cero, pero nuestra arquitectura está obsesionada con minimizarlo. Priorizamos la seguridad de tu número por sobre la velocidad. Es nuestra regla de oro.", statusLabel: "Seguridad > Velocidad", delayBefore: 2500 },
+    { id: 7, type: 'user', text: "Entendido. Me da más confianza para probarlo. ¿Cómo sigo?", delayBefore: 1500 },
+    { id: 8, type: 'bot', text: "Perfecto. Te comparto el enlace para que solicites acceso y actives tu nodo. El proceso es rápido y seguro.", statusLabel: "Acceso Seguro", delayBefore: 2200 },
+];
+
+const SIMULATION_SCRIPTS = [SIMULATION_SCRIPT_1, SIMULATION_SCRIPT_2];
+
 
 const PlanStatusBanner: React.FC<{ user: User | null }> = ({ user }) => {
     if (!user || user.role === 'super_admin') return null;
@@ -79,30 +95,6 @@ const PlanStatusBanner: React.FC<{ user: User | null }> = ({ user }) => {
 
 
     return null;
-};
-
-// FIX: Updated `showToast` prop type to include 'info'.
-// FIX: Moved TestimonialsSection outside of App component.
-const TestimonialsSection = ({ isLoggedIn, token, showToast }: { isLoggedIn: boolean, token: string | null, showToast: (message: string, type: 'success' | 'error' | 'info') => void }) => {
-    const [realTestimonials, setRealTestimonials] = useState<Testimonial[]>([]);
-    useEffect(() => {
-        const fetchRealTestimonials = async () => {
-            try {
-                if (!BACKEND_URL) return;
-                const res = await fetch(`${BACKEND_URL}/api/testimonials`, { headers: API_HEADERS });
-                if (res.ok) setRealTestimonials(await res.json());
-                // FIX: Added error handling to show toast on fetch failure
-            } catch (e: any) {
-                showToast('Error al cargar testimonios.', 'error');
-            }
-        };
-        fetchRealTestimonials();
-    }, []);
-    return <section className="bg-brand-surface py-20 border-t border-white/5 overflow-hidden w-full relative"><div className="text-center mb-10"><h2 className="text-brand-gold font-bold uppercase tracking-widest text-xs">Testimonios</h2></div></section>;
-};
-
-const FaqSection = () => {
-    return <section className="bg-brand-black py-20 text-center"><h2 className="text-white font-bold">FAQ</h2></section>;
 };
 
 const LandingPage: React.FC<{
@@ -189,8 +181,9 @@ const LandingPage: React.FC<{
             
             <HowItWorksArt />
             <HowItWorksSection />
-            <DominionExplainerCanvas />
+            <SecurityCanvas />
             <NeuralArchitectureSection />
+            <TestimonialsCarousel isLoggedIn={isLoggedIn} token={token} showToast={showToast} />
             
             <footer className="relative z-10 w-full border-t border-white/5 bg-brand-black/95 backdrop-blur-2xl px-12 py-10 flex flex-col md:flex-row justify-between items-center gap-12">
                 <div className="text-center md:text-left space-y-4">
@@ -276,12 +269,19 @@ export function App() {
   const [isTyping, setIsTyping] = useState(false);
   const [isLoadingSettings, setIsLoadingSettings] = useState(false);
   const [toast, setToast] = useState<ToastData | null>(null);
+  
+  // Tunnel Heartbeat State
+  const [tunnelLatency, setTunnelLatency] = useState<number | null>(null);
+  const [failureCount, setFailureCount] = useState(0); // Track failed heartbeats
+  const [showNetworkConfig, setShowNetworkConfig] = useState(false); // Modal state
 
   const statusPollingIntervalRef = useRef<number | null>(null);
   const convoPollingIntervalRef = useRef<number | null>(null);
+  const heartbeatIntervalRef = useRef<number | null>(null);
 
   const [visibleMessages, setVisibleMessages] = useState<any[]>([]);
   const [isSimTyping, setIsSimTyping] = useState(false);
+  const [simulationLoopIndex, setSimulationLoopIndex] = useState(0); // For dual loop
   const simScrollRef = useRef<HTMLDivElement>(null);
 
   const [isMobileView, setIsMobileView] = useState(window.innerWidth < 768); // Detect mobile view
@@ -321,6 +321,7 @@ export function App() {
       setAuditTarget(null);
       if (statusPollingIntervalRef.current) clearInterval(statusPollingIntervalRef.current);
       if (convoPollingIntervalRef.current) clearInterval(convoPollingIntervalRef.current);
+      if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current);
       setBackendError(null); 
   };
 
@@ -372,6 +373,49 @@ export function App() {
     };
   }, [token, userRole]);
 
+  // TUNNEL HEARTBEAT & AUTO-RECOVERY TRIGGER
+  useEffect(() => {
+      // Polling for tunnel health (Smart Link)
+      // We start this even if not logged in, to detect general connectivity, 
+      // but usually only care if we expect the backend to be there.
+      const checkHeartbeat = async () => {
+          const start = Date.now();
+          try {
+              // We use a simple fetch to health. If it fails, network error.
+              const res = await fetch(`${BACKEND_URL}/api/health`, { method: 'GET' });
+              const end = Date.now();
+              if (res.ok) {
+                  setTunnelLatency(end - start);
+                  setFailureCount(0); // Reset failures on success
+              } else {
+                  setTunnelLatency(null);
+                  setFailureCount(prev => prev + 1);
+              }
+          } catch (e) {
+              setTunnelLatency(null);
+              setFailureCount(prev => prev + 1);
+          }
+      };
+      
+      checkHeartbeat();
+      heartbeatIntervalRef.current = window.setInterval(checkHeartbeat, 5000); // Check every 5s
+      
+      return () => {
+          if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current);
+      }
+  }, []);
+
+  // Show Modal if failures accumulate
+  useEffect(() => {
+      // Only show modal if we have token (user was logged in) and failures > threshold
+      // Or if explicitly in a mode where we expect connection.
+      if (token && failureCount >= 3) {
+          setShowNetworkConfig(true);
+      } else {
+          setShowNetworkConfig(false);
+      }
+  }, [failureCount, token]);
+
   // TTS for Connection Status
   const prevConnectionStatus = usePrevious(connectionStatus);
   useEffect(() => {
@@ -416,17 +460,27 @@ export function App() {
     loadInitialUserData();
   }, [token]);
 
+  // DUAL LOOP SIMULATION LOGIC
   useEffect(() => {
     if (token) return; 
+    
+    const currentScript = SIMULATION_SCRIPTS[simulationLoopIndex];
     let timeoutId: any;
     let currentIndex = 0;
+
     const runStep = () => {
-        if (currentIndex >= SIMULATION_SCRIPT.length) {
-            timeoutId = setTimeout(() => { setVisibleMessages([]); currentIndex = 0; runStep(); }, 8000); 
+        if (currentIndex >= currentScript.length) {
+            // End of current script, switch to the next one after a delay
+            timeoutId = setTimeout(() => { 
+                setVisibleMessages([]); 
+                setSimulationLoopIndex(prev => (prev + 1) % SIMULATION_SCRIPTS.length);
+            }, 8000); 
             return;
         }
-        const step = SIMULATION_SCRIPT[currentIndex];
+        
+        const step = currentScript[currentIndex];
         setIsSimTyping(true);
+        
         timeoutId = setTimeout(() => {
             setIsSimTyping(false);
             setVisibleMessages(prev => [...prev, step]);
@@ -434,9 +488,12 @@ export function App() {
             runStep();
         }, step.delayBefore);
     };
+
+    // Start the simulation for the current script
     runStep();
+
     return () => clearTimeout(timeoutId);
-  }, [token]);
+  }, [token, simulationLoopIndex]); // Re-run when loop index changes
 
   useEffect(() => {
       if (simScrollRef.current) simScrollRef.current.scrollTop = simScrollRef.current.scrollHeight;
@@ -532,6 +589,9 @@ export function App() {
           </div>
       )}
 
+      {/* Network Configuration Modal - Triggered on connection loss */}
+      <NetworkConfigModal isOpen={showNetworkConfig} onClose={() => setShowNetworkConfig(false)} />
+
       <Toast toast={toast} onClose={() => setToast(null)} />
       <AuthModal isOpen={authModal.isOpen} initialMode={authModal.mode} onClose={() => setAuthModal({ ...authModal, isOpen: false })} onSuccess={handleLoginSuccess} onOpenLegal={setLegalModalType} />
       <LegalModal type={legalModalType} onClose={() => setLegalModalType(null)} />
@@ -548,6 +608,7 @@ export function App() {
           onNavigate={handleNavigate} 
           connectionStatus={connectionStatus}
           isMobile={isMobileView} // Pass isMobileView prop
+          tunnelLatency={tunnelLatency} // NEW: Pass tunnel health metric
       />
       {isAppView && <PlanStatusBanner user={currentUser} />}
 

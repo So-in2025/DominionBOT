@@ -1,4 +1,5 @@
 
+
 import React, { useEffect, useState } from 'react';
 import { User, LogEntry, GlobalDashboardMetrics, SystemSettings, LogLevel } from '../../types';
 import { getAuthHeaders } from '../../config';
@@ -200,8 +201,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
     const [clients, setClients] = useState<User[]>([]);
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const [metrics, setMetrics] = useState<GlobalDashboardMetrics | null>(null);
-    // FIX: Initialize SystemSettings with dominionNetworkJid
-    const [systemSettings, setSystemSettings] = useState<SystemSettings>({ supportWhatsappNumber: '', logLevel: 'INFO', dominionNetworkJid: '5491110000000@s.whatsapp.net' });
+    // FIX: Initialize SystemSettings with dominionNetworkJid and Kill Switch
+    const [systemSettings, setSystemSettings] = useState<SystemSettings>({ supportWhatsappNumber: '', logLevel: 'INFO', dominionNetworkJid: '5491110000000@s.whatsapp.net', isOutboundKillSwitchActive: false });
     const [view, setView] = useState<AdminView>('dashboard');
     const [loading, setLoading] = useState(true);
     const [isResetArmed, setIsResetArmed] = useState(false);
@@ -283,6 +284,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
 
     const handleLogLevelChange = (level: LogLevel) => {
         updateSystemSettings({ logLevel: level });
+    };
+
+    const handleKillSwitchToggle = () => {
+        const newValue = !systemSettings.isOutboundKillSwitchActive;
+        if (newValue) {
+            if (!confirm("☢️ PELIGRO: ¿ACTIVAR KILL SWITCH GLOBAL?\n\nEsto bloqueará TODAS las campañas salientes de TODOS los clientes inmediatamente.\nÚsalo solo en emergencias.")) return;
+        }
+        updateSystemSettings({ isOutboundKillSwitchActive: newValue });
     };
 
     const testSupportLink = () => {
@@ -428,6 +437,23 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
                                         <option value="ERROR">ERROR (Solo Errores)</option>
                                     </select>
                                     <p className="text-[9px] text-gray-600 italic">Cambia la verbosidad de la terminal del servidor al instante.</p>
+                                </div>
+                                <div className="space-y-3">
+                                    <label className="text-[10px] font-bold text-red-500 uppercase tracking-widest flex items-center gap-2">
+                                        KILL SWITCH (Salida)
+                                        {systemSettings.isOutboundKillSwitchActive && <span className="animate-pulse">🔴</span>}
+                                    </label>
+                                    <button 
+                                        onClick={handleKillSwitchToggle}
+                                        className={`w-full py-4 rounded-xl font-black text-xs uppercase tracking-[0.2em] transition-all border ${
+                                            systemSettings.isOutboundKillSwitchActive 
+                                            ? 'bg-red-600 text-white border-red-500 animate-pulse' 
+                                            : 'bg-black/40 text-gray-500 border-white/10 hover:border-white/30'
+                                        }`}
+                                    >
+                                        {systemSettings.isOutboundKillSwitchActive ? '⚠️ BLOQUEO ACTIVO' : 'SISTEMA NOMINAL'}
+                                    </button>
+                                    <p className="text-[9px] text-gray-600 italic">Corta el tráfico de campañas salientes globalmente.</p>
                                 </div>
                             </div>
                         </div>

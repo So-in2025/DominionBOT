@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { View, ConnectionStatus } from '../types';
 
@@ -12,7 +13,8 @@ interface HeaderProps {
   currentView: View;
   onNavigate: (view: View) => void;
   connectionStatus: ConnectionStatus;
-  isMobile: boolean; // NEW: Added isMobile prop
+  isMobile: boolean; 
+  tunnelLatency: number | null; // NEW: Latency in ms
 }
 
 const Header: React.FC<HeaderProps> = ({ 
@@ -26,7 +28,8 @@ const Header: React.FC<HeaderProps> = ({
     currentView, 
     onNavigate, 
     connectionStatus,
-    isMobile // NEW: Destructured isMobile
+    isMobile,
+    tunnelLatency // Destructure new prop
 }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const isSuperAdmin = userRole === 'super_admin';
@@ -45,6 +48,23 @@ const Header: React.FC<HeaderProps> = ({
             (window as any).IS_LANDING_VIEW = true; 
       }
   };
+
+  // Tunnel Health Logic
+  let tunnelColor = 'bg-gray-500';
+  let tunnelText = 'OFFLINE';
+  
+  if (tunnelLatency !== null) {
+      if (tunnelLatency < 300) {
+          tunnelColor = 'bg-green-500';
+          tunnelText = `${tunnelLatency}ms`;
+      } else if (tunnelLatency < 1000) {
+          tunnelColor = 'bg-yellow-500';
+          tunnelText = `${tunnelLatency}ms (LAG)`;
+      } else {
+          tunnelColor = 'bg-red-500';
+          tunnelText = `${tunnelLatency}ms (SLOW)`;
+      }
+  }
 
 
   const navBtnClass = (view: View) => `
@@ -68,7 +88,15 @@ const Header: React.FC<HeaderProps> = ({
                     <h1 className="text-white font-black text-lg md:text-2xl leading-none tracking-tighter uppercase">
                         DOMINION <span className="text-brand-gold">BOT</span>
                     </h1>
-                    <p className="text-[9px] md:text-[10px] text-gray-500 uppercase tracking-widest font-bold hidden sm:block">Infraestructura Comercial</p>
+                    <div className="flex items-center gap-2 mt-1">
+                        <p className="text-[9px] md:text-[10px] text-gray-500 uppercase tracking-widest font-bold hidden sm:block">Infraestructura Comercial</p>
+                        {isLoggedIn && (
+                            <div className="flex items-center gap-1 bg-white/5 px-1.5 py-0.5 rounded border border-white/5" title="Latencia del Túnel (Ngrok)">
+                                <div className={`w-1.5 h-1.5 rounded-full ${tunnelColor} ${tunnelLatency === null ? 'animate-pulse' : ''}`}></div>
+                                <span className="text-[8px] font-mono text-gray-400">{tunnelText}</span>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
         </div>

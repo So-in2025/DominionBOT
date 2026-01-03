@@ -1,4 +1,5 @@
-# 🦅 CÓDICE DOMINION v3.0.0 [ADN DEL PROYECTO]
+
+# 🦅 CÓDICE DOMINION v3.1.0 [ADN DEL PROYECTO]
 
 > "En la era de la saturación digital, la velocidad es la moneda y la inteligencia es el arma. Dominion no es un bot; es la herramienta para no perder ventas en WhatsApp."
 
@@ -11,6 +12,7 @@
 3.  **Privacidad Sagrada (BYOK).** Tus datos son tu activo. Nosotros solo proveemos el motor.
 4.  **Verdad Absoluta.** No simulamos datos en el frontend. Todo es persistente y real desde el servidor.
 5.  **Tecnología con Propósito.** Cada feature existe para vender más, sin relleno.
+6.  **Responsabilidad Operativa.** El sistema sabe cuándo callar. Si el mando falla, el sistema hiberna.
 
 ---
 
@@ -116,6 +118,24 @@ La IA busca patrones subyacentes que un humano podría perder:
 
 ---
 
+## 🌐 DOMINION NETWORK: RED COLABORATIVA (v3.1)
+
+> "Transforma leads descartados en capital reputacional."
+
+La Red Dominion permite a los nodos (clientes) interactuar entre sí para intercambiar valor, creando una economía circular de oportunidades.
+
+### 1. Economía de Señales
+Cuando un bot detecta un lead "CALIENTE" que no encaja con su oferta (ej: una agencia de marketing recibe una consulta sobre desarrollo de software), puede compartir esa **Señal de Intención** con la red.
+
+### 2. Protocolo de Permiso Estricto
+Dominion Network opera bajo un estándar ético absoluto:
+1.  **Contribución:** El nodo A comparte la señal (anonimizada).
+2.  **Match:** El nodo B (que busca esa categoría) recibe la oportunidad.
+3.  **Solicitud:** El sistema envía un mensaje neutral al prospecto: *"Detectamos tu interés en X. ¿Aceptas ser contactado por un experto certificado de la red?"*
+4.  **Conexión:** Solo si el prospecto dice **SÍ**, se revelan los datos de contacto al nodo B.
+
+---
+
 ## 🧠 CAPABILITY DEPTH ENGINE (ARQUITECTURA DE PROFUNDIDAD COGNITIVA)
 
 Esta capa arquitectónica introduce un sistema de razonamiento paramétrico controlado centralmente. En lugar de activar/desactivar funciones, ajustamos la "profundidad de pensamiento" de la IA.
@@ -173,7 +193,7 @@ La oferta comercial de Dominion está directamente ligada a la potencia del **De
 ### 3. Ciclo de Vida de la Suscripción
 1.  **Registro (`trial`):**
     - Al registrarse, un nuevo cliente comienza automáticamente en un período de prueba (`plan_status: 'trial'`).
-    - **Protocolo de Escasez:** Este período otorga acceso a todas las funcionalidades del nivel **Sniper (Nivel 7)** durante **3 días o hasta calificar 10 conversaciones**, lo que ocurra primero.
+    - **Protocolo de Escasez:** Este período otorga acceso a todas las funcionalidades del nivel **Sniper (Nivel 7)** durante **7 días o hasta calificar 10 conversaciones**, lo que ocurra primero.
 2.  **Activación (`active`):**
     - Un `super_admin` activa manually la licencia para un plan específico.
     - La activación cambia el `plan_status` a `active` y establece una nueva `billing_end_date`.
@@ -220,11 +240,12 @@ Para recompensar a los primeros usuarios y construir una base de clientes leal, 
 1.  **Frontend (Cliente):**
     - **Stack:** React con Vite, TypeScript, Tailwind CSS.
     - **Función:** Proporciona la interfaz de usuario (Dashboard) para que el cliente gestione su nodo. Se comunica con el Backend a través de una API RESTful.
-    - **Despliegue:** Vercel.
+    - **Despliegue:** Vercel (Front) / Ngrok Tunnel (Hybrid).
 2.  **Backend (Servidor):**
     - **Stack:** Node.js con Express, TypeScript.
     - **Función:** Es el núcleo de la aplicación. Gestiona la lógica de negocio, la autenticación (JWT), las peticiones de la API, y orquesta la comunicación entre el Motor de WhatsApp, la Base de Datos y el Core de IA.
-    - **Despliegue:** Render.
+    - **Despliegue:** Local con Ngrok (Híbrido) o Cloud (Render).
+    - **Service Discovery:** `ngrokService` para autodetectar URLs públicas.
 3.  **Motor de WhatsApp:**
     - **Librería:** `@whiskeysockets/baileys`.
     - **Función:** Emula una sesión de WhatsApp Web, manteniendo una conexión WebSocket persistente con los servidores de WhatsApp. Se encarga de recibir y enviar mensajes en nombre del usuario. Cada cliente tiene su propia sesión aislada.
@@ -269,9 +290,9 @@ Para recompensar a los primeros usuarios y construir una base de clientes leal, 
 | **Motor WhatsApp**| `@whiskeysockets/baileys`    | Librería clave que emula WhatsApp Web para la conexión.                  |
 | **Inteligencia IA**| `@google/genai` (Gemini)     | SDK oficial para interactuar con los modelos de IA de Google.            |
 | **Autenticación** | JWT (jsonwebtoken)           | Estándar para crear tokens de acceso seguros entre cliente y servidor.   |
-| **Despliegue (BE)** | Render                       | Plataforma en la nube para desplegar el servicio Node.js.                |
+| **Despliegue (BE)** | Ngrok / Render               | Híbrido: Local con túnel público o Nube.                                 |
 | **Despliegue (FE)** | Vercel                       | Plataforma optimizada para el despliegue de aplicaciones frontend.       |
-| **Sincronización**  | Polling (Intervalos)         | Estrategia robusta para actualización de UI sin complejidad de Sockets.  |
+| **Sincronización**  | Polling + Smart Link         | Estrategia robusta de actualización y reconexión automática.             |
 
 ### 2. Estructura de Archivos del Proyecto (`/src`)
 ```
@@ -281,6 +302,8 @@ Para recompensar a los primeros usuarios y construir una base de clientes leal, 
 │   ├── Client/         # Componentes específicos del cliente (TestBotSimulator)
 │   ├── AuthModal.tsx
 │   ├── ChatWindow.tsx
+│   ├── NetworkPanel.tsx       # [NUEVO] Panel de Red Colaborativa
+│   ├── NetworkConfigModal.tsx # [NUEVO] Modal de recuperación de enlace (Smart Link)
 │   └── ...
 ├── controllers/        # Lógica de la API (manejo de requests/responses)
 │   ├── apiController.ts
@@ -290,6 +313,7 @@ Para recompensar a los primeros usuarios y construir una base de clientes leal, 
 ├── services/           # Lógica de negocio y comunicación con APIs externas
 │   ├── aiService.ts      # Lógica de construcción de prompts y llamada a Gemini
 │   ├── radarService.ts   # Motor de detección de oportunidades grupales (Radar 3.0)
+│   ├── ngrokService.ts   # [NUEVO] Servicio de autodeteción de túneles
 │   ├── audioService.ts   # (Frontend) Gestión de reproducción de audio y TTS
 │   ├── conversationService.ts # Orquesta la lógica de las conversaciones
 │   ├── logService.ts     # Sistema centralizado de logging
@@ -302,7 +326,7 @@ Para recompensar a los primeros usuarios y construir una base de clientes leal, 
 │   ├── client.ts       # Orquesta la conexión, recepción y envío de mensajes
 │   └── mongoAuth.ts    # Almacena y recupera el estado de autenticación de Baileys en MongoDB
 ├── App.tsx             # Componente raíz de React
-├── config.ts           # Configuración compartida (URLs, headers)
+├── config.ts           # Configuración compartida (URLs dinámicas)
 ├── database.ts         # Conexión con MongoDB y modelos de datos (Mongoose)
 ├── env.ts              # Carga y exporta variables de entorno
 ├── server.ts           # Punto de entrada del servidor Express
@@ -380,6 +404,10 @@ Esta guía cubre las funcionalidades del panel de control global.
     - **Aislamiento de Sesiones:** Cada cuenta opera de forma independiente para prevenir riesgos en cascada.
     - **Huella Digital Legítima:** La conexión se identifica como un navegador estándar (Chrome en macOS).
 
+### 4. Protocolos de Emergencia (NUEVO)
+- **Dead Man Switch (Backend):** Si el backend detecta una pérdida de control con el dashboard durante un periodo prolongado, entra en modo de conservación, reduciendo el throughput.
+- **Kill Switch Global:** El administrador puede activar un bloqueo total de campañas salientes desde el panel, deteniendo inmediatamente cualquier actividad riesgosa en todos los clientes.
+
 ---
 
 ## 🎨 DISEÑO Y EXPERIENCIA DE USUARIO (UI/UX)
@@ -412,17 +440,18 @@ Proporcionar feedback auditivo para acciones de UI/UX y reforzar la identidad de
 
 ## 🗺️ ROADMAP EVOLUTIVO
 
-### ✅ v3.0 (Estado Actual - Completado)
-- **Persistencia Total (DB Seeding):** Eliminación de localStorage para "simulaciones". El servidor siembra datos reales en MongoDB al inicio.
-- **Trigger Manual (Force Run):** Capacidad de forzar la ejecución de IA ignorando temporizadores.
-- **Infraestructura Robusta:** Polling optimizado y reconexión automática de nodos (Zombie Kicker).
-- **Audio Feedback:** Sistema TTS integrado para eventos del sistema.
-- **Elite++ Training:** Simulador adversarial con detección de patrones de fallo.
-- **Motor de Campañas:** Sistema de difusión masiva con programación y jitter anti-ban.
+### ✅ v3.0 (Completado)
+- **Persistencia Total (DB Seeding):** Eliminación de localStorage.
+- **Trigger Manual (Force Run):** Capacidad de forzar IA.
+- **Infraestructura Robusta:** Polling optimizado y reconexión automática.
+- **Audio Feedback:** Sistema TTS integrado.
+- **Elite++ Training:** Simulador adversarial.
+- **Motor de Campañas:** Sistema de difusión masiva.
 
-### 🚀 v3.1 (Próximo Sprint)
-- **Mejoras de PWA:** Implementar notificaciones push para alertas de leads calientes.
-- **Copiloto Proactivo:** Expandir las capacidades del "Close Assist" para sugerir seguimientos.
+### ✅ v3.1 (Estado Actual - Desplegado)
+- **Red Dominion:** Intercambio colaborativo de leads.
+- **Protocolo Smart Link:** Autorecuperación de conexión backend.
+- **Gobernanza Avanzada:** Kill Switch y Watchdog de hardware.
 
 ### 🌌 Visión a Largo Plazo
 - **Integración Multi-Canal:** Expandir el motor a Instagram DMs, Telegram, etc.
@@ -451,7 +480,7 @@ Proporcionar feedback auditivo para acciones de UI/UX y reforzar la identidad de
 
 ### 1. Protocolo de Trial Dinámico (Gobernanza de Escasez)
 Para maximizar la conversión del usuario SaaS, hemos endurecido las reglas del período de prueba. Ya no es solo tiempo, es **resultado**.
-- **Límite Híbrido:** El trial finaliza a los **3 días** O al calificar los primeros **10 Leads**, lo que ocurra primero.
+- **Límite Híbrido:** El trial finaliza a los **7 días** O al calificar los primeros **10 Leads**, lo que ocurra primero.
 - **Psicología:** Esto fuerza al usuario a valorar cada interacción de la IA. Si la IA le consigue 10 clientes potenciales, el valor está demostrado y el bloqueo se activa, obligando a la compra para continuar operando.
 
 ### 2. Ingesta Multimedia (Ojos y Oídos del Sistema)
@@ -478,9 +507,32 @@ Se ha eliminado cualquier dependencia de `localStorage` para simular datos en la
 Implementado en `campaignService.ts`, permite la programación y envío de mensajes a grupos.
 - **Anti-Ban Jitter:** Retrasos aleatorios entre mensajes (configurables) para imitar comportamiento humano.
 - **Memory Lock (Semáforo):** [NUEVO] Sistema de bloqueo en memoria RAM que impide condiciones de carrera (Race Conditions), asegurando que una campaña nunca se ejecute por duplicado, incluso si el scheduler se solapa por latencia de red.
-- **Scheduler:** Ejecución basada en cron (Diario, Semanal) o envío único.
+- **Circuit Breaker:** Si una campaña falla 3 veces consecutivamente (errores lógicos, no de red), se aborta automáticamente para proteger la reputación de la cuenta.
 
 ### 7. Ejecución Forzada de Campañas (Override)
 Se ha implementado un control manual ("Rayo" ⚡) en el panel de campañas.
 - **Función:** Permite disparar una campaña inmediatamente, ignorando la hora programada y la ventana operativa de seguridad.
 - **Uso:** Ideal para pruebas rápidas o comunicaciones de emergencia que no pueden esperar al ciclo del scheduler.
+
+---
+
+## 🔗 ADDENDUM v3.1: PROTOCOLOS DE SUPERVIVENCIA (SMART LINK)
+
+### 1. Tunnel Heartbeat (Latido del Túnel)
+El frontend ya no es ciego. Implementa un sistema de monitoreo activo (`App.tsx`) que verifica la salud de la conexión con el backend cada 5 segundos.
+- **Diagnóstico en Tiempo Real:** Mide la latencia y la muestra en la cabecera.
+    - **Verde (<300ms):** Óptimo.
+    - **Amarillo (<1000ms):** Lag detectado (posible congestión).
+    - **Rojo (>1000ms o Error):** Falla de conexión.
+- **Lógica de Fallo:** Si el heartbeat falla 3 veces consecutivas, el sistema asume que la URL del túnel (Ngrok) ha cambiado o caído.
+
+### 2. Protocolo Smart Link (Autorecuperación)
+Para combatir la volatilidad de las URLs públicas en entornos híbridos/locales:
+- **Backend Autoconsciente:** El servicio `ngrokService.ts` consulta la API local de Ngrok para descubrir su propia URL pública al inicio.
+- **Frontend Dinámico:** Si se detecta una desconexión sostenida, la UI despliega automáticamente el **Modal de Enlace Satelital**.
+- **Recuperación sin Código:** El usuario puede ingresar la nueva URL (visible en la consola del servidor) directamente en la interfaz. Esta se guarda en `localStorage` y el sistema se reconecta instantáneamente sin necesidad de un redeploy.
+
+### 3. Watchdog de Hardware
+El `campaignService.ts` implementa un monitor de "Lag de Event Loop".
+- **Función:** Detecta si la CPU del servidor está saturada midiendo la deriva temporal entre ticks del reloj.
+- **Acción:** Si el retraso supera los 200ms, el sistema pausa el procesamiento de campañas durante un ciclo para permitir que el hardware se recupere, priorizando la estabilidad sobre la velocidad.

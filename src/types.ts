@@ -1,4 +1,5 @@
 
+
 export interface SimulationLab {
     experiments: SimulationRun[];
     aggregatedScore: number;
@@ -52,7 +53,7 @@ export enum PromptArchetype {
   CUSTOM = 'CUSTOM'
 }
 
-export type SystemState = 'ACTIVE' | 'PAUSED' | 'LIMITED' | 'SUSPENDED';
+export type SystemState = 'ACTIVE' | 'PAUSED' | 'LIMITED' | 'SUSPENDED' | 'WARNING';
 
 export type IntendedUse = 
   | 'HIGH_TICKET_AGENCY' 
@@ -231,7 +232,7 @@ export interface NetworkProfile {
 }
 // -----------------------
 
-export type CampaignStatus = 'DRAFT' | 'ACTIVE' | 'PAUSED' | 'COMPLETED';
+export type CampaignStatus = 'DRAFT' | 'ACTIVE' | 'PAUSED' | 'COMPLETED' | 'ABORTED';
 export type ScheduleType = 'ONCE' | 'DAILY' | 'WEEKLY';
 
 export interface Campaign {
@@ -463,4 +464,5 @@ export interface SystemSettings {
     supportWhatsappNumber: string;
     logLevel: LogLevel;
     dominionNetworkJid?: string; // FIX: Made optional to handle potential missing data from API
+    isOutboundKillSwitchActive?: boolean; // NEW: Kill Switch Flag
 }

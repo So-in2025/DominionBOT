@@ -1,6 +1,7 @@
+
 import mongoose, { Schema, Model } from 'mongoose';
 import bcrypt from 'bcrypt';
-import { User, BotSettings, PromptArchetype, GlobalMetrics, GlobalTelemetry, Conversation, IntendedUse, LogEntry, Testimonial, SystemSettings, Campaign, RadarSignal, RadarSettings, GroupMarketMemory, DepthBoost, DepthLog, LogLevel, IntentSignal, ConnectionOpportunity, NetworkProfile, PermissionStatus } from './types.js';
+import { User, BotSettings, PromptArchetype, GlobalMetrics, GlobalTelemetry, Conversation, IntendedUse, LogEntry, Testimonial, SystemSettings, Campaign, RadarSignal, RadarSettings, GroupMarketMemory, DepthBoost, DepthLog, IntentSignal, ConnectionOpportunity, NetworkProfile, PermissionStatus } from './types.js';
 import { v4 as uuidv4 } from 'uuid';
 import { MONGO_URI } from './env.js';
 import { clearBindedSession } from './whatsapp/mongoAuth.js';
@@ -37,7 +38,8 @@ const SystemSettingsSchema = new Schema({
     id: { type: String, required: true, unique: true },
     supportWhatsappNumber: { type: String, default: '' },
     logLevel: { type: String, default: 'INFO' },
-    dominionNetworkJid: { type: String, default: '5491110000000@s.whatsapp.net' }
+    dominionNetworkJid: { type: String, default: '5491110000000@s.whatsapp.net' },
+    isOutboundKillSwitchActive: { type: Boolean, default: false } // NEW: Default OFF
 });
 
 const CampaignSchema = new Schema({
@@ -47,7 +49,7 @@ const CampaignSchema = new Schema({
     message: { type: String, required: true },
     imageUrl: { type: String },
     groups: { type: [String], default: [] },
-    status: { type: String, enum: ['DRAFT', 'ACTIVE', 'PAUSED', 'COMPLETED'], default: 'DRAFT' },
+    status: { type: String, enum: ['DRAFT', 'ACTIVE', 'PAUSED', 'COMPLETED', 'ABORTED'], default: 'DRAFT' }, // Added ABORTED
     schedule: {
         type: { type: String, enum: ['ONCE', 'DAILY', 'WEEKLY'], default: 'ONCE' },
         startDate: { type: String },
@@ -55,8 +57,8 @@ const CampaignSchema = new Schema({
         daysOfWeek: { type: [Number] }
     },
     config: {
-        minDelaySec: { type: Number, default: 5 },
-        maxDelaySec: { type: Number, default: 25 },
+        minDelaySec: { type: Number, default: 30 }, // UPDATED: Safer default (Stealth Mode)
+        maxDelaySec: { type: Number, default: 60 }, // UPDATED: Safer default (Stealth Mode)
         operatingWindow: {
             startHour: { type: Number },
             endHour: { type: Number }
@@ -307,7 +309,7 @@ class Database {
         plan_type: 'pro',
         plan_status: 'trial', 
         billing_start_date: new Date(Date.now()).toISOString(),
-        billing_end_date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(), 
+        billing_end_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), 
         trial_qualified_leads_count: 0,
         is_founder: true, // NEW: Mark new users as founders
         depthLevel: 1, // Default depth
@@ -522,7 +524,7 @@ class Database {
   async getSystemSettings(): Promise<SystemSettings> {
       const doc = await SystemSettingsModel.findOne({ id: 'global' }).lean();
       // FIX: Added dominionNetworkJid to defaults
-      const defaults: SystemSettings = { supportWhatsappNumber: '', logLevel: 'INFO', dominionNetworkJid: '5491110000000@s.whatsapp.net' };
+      const defaults: SystemSettings = { supportWhatsappNumber: '', logLevel: 'INFO', dominionNetworkJid: '5491110000000@s.whatsapp.net', isOutboundKillSwitchActive: false };
       if (!doc) {
           const newSettings = await SystemSettingsModel.create({ id: 'global', dominionNetworkJid: defaults.dominionNetworkJid }); // Ensure default is set for new creation
           return { ...defaults, ...newSettings.toObject() };

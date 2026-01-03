@@ -8,36 +8,32 @@ import { db } from './database.js';
 import { authenticateToken } from './middleware/auth.js';
 import { optionalAuthenticateToken } from './middleware/optionalAuth.js';
 import { logService } from './services/logService.js';
-import { ttsService } from './services/ttsService.js'; // Importar el nuevo servicio
-import { campaignService } from './services/campaignService.js'; // Init scheduler
-import { connectToWhatsApp, getSessionStatus } from './whatsapp/client.js'; // Import connectToWhatsApp AND getSessionStatus
-import { ConnectionStatus } from './types.js'; // Import ConnectionStatus
-import { v4 as uuidv4 } from 'uuid'; // Fix: Import uuidv4
-import { regenerateSimulationScript } from './services/aiService.js'; // NEW IMPORT
+import { ttsService } from './services/ttsService.js'; 
+import { campaignService } from './services/campaignService.js'; 
+import { connectToWhatsApp, getSessionStatus } from './whatsapp/client.js'; 
+import { ConnectionStatus } from './types.js'; 
+import { v4 as uuidv4 } from 'uuid'; 
+import { regenerateSimulationScript } from './services/aiService.js'; 
+import { ngrokService } from './services/ngrokService.js'; // NEW IMPORT
 
 // ... (Global Error Handlers remain same)
-// --- CRASH PREVENTION: Global Error Handlers ---
 (process as any).on('uncaughtException', (err: any) => {
     console.error('🔥 [CRITICAL] Uncaught Exception:', err);
     logService.error('UNCAUGHT EXCEPTION - SERVER KEPT ALIVE', err);
-    // No salimos del proceso para mantener el servidor vivo ante fallos de Baileys
 });
 
 (process as any).on('unhandledRejection', (reason: any, promise: any) => {
     console.error('🔥 [CRITICAL] Unhandled Rejection:', reason);
-    // Detectar error 428 específico de Baileys para no llenar el log
     if (reason?.output?.statusCode === 428 || reason?.message === 'Connection Closed') {
         logService.warn('WhatsApp Session Conflict (428) detected in background. Session needs reset.');
     } else {
         logService.error('UNHANDLED REJECTION - SERVER KEPT ALIVE', reason);
     }
 });
-// -----------------------------------------------
 
 // ... (SEED DATA remains same)
 const SEED_TESTIMONIALS = [
     { name: "Marcos López", location: "Mendoza", text: "Bueno, parece que soy el primero en comentar. La verdad entré medio de curioso y no entendía nada al principio, pero después de usarlo un poco me acomodó bastante el WhatsApp." },
-    // ... (rest of seed data)
     { name: "Emilia Ponce", location: "Rosario", text: "Ojalá lo sigan mejorando, pero la base está muy bien." },
 ];
 
@@ -124,8 +120,6 @@ app.post('/api/settings', authenticateToken, async (req: any, res: any) => {
     logService.info('Configuración actualizada', userId, req.user.username);
     
     // FIRE AND FORGET: Regenerate Simulation Script
-    // This happens in background to ensure the simulator always has fresh data
-    // Addressing LAG RISK: We do not await this.
     regenerateSimulationScript(userId).catch(err => {
         logService.error('Background script generation failed', err, userId);
     });
@@ -138,16 +132,13 @@ app.get('/api/metrics', authenticateToken, async (req: any, res: any) => {
     const user = await db.getUser(userId);
     if (!user) return res.status(404).end();
     
-    // Conversation Metrics
     const convs = Object.values(user.conversations || {});
     const hot = convs.filter((c: any) => c.status === 'Caliente').length;
     
-    // Campaign Metrics Integration
     const campaigns = await db.getCampaigns(userId);
     const activeCampaigns = campaigns.filter(c => c.status === 'ACTIVE').length;
     const totalCampaignMessages = campaigns.reduce((acc, curr) => acc + (curr.stats?.totalSent || 0), 0);
 
-    // Calculate dynamic revenue based on user settings
     const ticketValue = user.settings?.ticketValue || 0;
     const revenueEstimated = hot * ticketValue;
 
@@ -156,13 +147,12 @@ app.get('/api/metrics', authenticateToken, async (req: any, res: any) => {
         hotLeads: hot,
         warmLeads: convs.filter((c: any) => c.status === 'Tibio').length,
         coldLeads: convs.filter((c: any) => c.status === 'Frío').length,
-        totalMessages: 0, // Placeholder for inbound messages count if tracked later
+        totalMessages: 0, 
         conversionRate: convs.length > 0 ? Math.round((hot / convs.length) * 100) : 0,
         revenueEstimated,
         avgEscalationTimeMinutes: 0,
         activeSessions: 1,
         humanDeviationScore: user.governance.humanDeviationScore || 0,
-        // New Campaign Data
         campaignsActive: activeCampaigns,
         campaignMessagesSent: totalCampaignMessages
     });
@@ -179,12 +169,12 @@ app.post('/api/connect', authenticateToken, apiController.handleConnect);
 app.get('/api/disconnect', authenticateToken, apiController.handleDisconnect);
 app.post('/api/send', authenticateToken, apiController.handleSendMessage);
 app.post('/api/conversation/update', authenticateToken, apiController.handleUpdateConversation);
-app.post('/api/conversation/force-run', authenticateToken, apiController.handleForceAiRun); // NEW ROUTE
+app.post('/api/conversation/force-run', authenticateToken, apiController.handleForceAiRun); 
 app.get('/api/conversations', authenticateToken, apiController.handleGetConversations);
 
 // Client Test Bot Routes
 app.post('/api/client/test-bot/start', authenticateToken, apiController.handleStartClientTestBot);
-app.post('/api/client/test-bot/stop', authenticateToken, apiController.handleStopClientTestBot); // NEW ROUTE
+app.post('/api/client/test-bot/stop', authenticateToken, apiController.handleStopClientTestBot); 
 app.post('/api/client/test-bot/clear', authenticateToken, apiController.handleClearClientTestBotConversation);
 
 // Campaign Routes (NEW)
@@ -192,7 +182,7 @@ app.get('/api/campaigns', authenticateToken, apiController.handleGetCampaigns);
 app.post('/api/campaigns', authenticateToken, apiController.handleCreateCampaign);
 app.put('/api/campaigns/:id', authenticateToken, apiController.handleUpdateCampaign);
 app.delete('/api/campaigns/:id', authenticateToken, apiController.handleDeleteCampaign);
-app.post('/api/campaigns/:id/execute', authenticateToken, apiController.handleForceExecuteCampaign); // NEW FORCE EXECUTE ROUTE
+app.post('/api/campaigns/:id/execute', authenticateToken, apiController.handleForceExecuteCampaign); 
 app.get('/api/whatsapp/groups', authenticateToken, apiController.handleGetWhatsAppGroups);
 
 // Radar Routes (NEW RADAR 3.0)
@@ -200,9 +190,9 @@ app.get('/api/radar/signals', authenticateToken, apiController.handleGetRadarSig
 app.get('/api/radar/settings', authenticateToken, apiController.handleGetRadarSettings);
 app.post('/api/radar/settings', authenticateToken, apiController.handleUpdateRadarSettings);
 app.post('/api/radar/signals/:id/dismiss', authenticateToken, apiController.handleDismissRadarSignal);
-app.post('/api/radar/signals/:id/convert', authenticateToken, apiController.handleConvertRadarSignal); // BRIDGE TO LEAD
-app.post('/api/radar/simulate', authenticateToken, apiController.handleSimulateRadarSignal); // NEW SIMULATION ROUTE
-app.get('/api/radar/activity', authenticateToken, apiController.handleGetRadarActivityLogs); // NEW ACTIVITY LOG
+app.post('/api/radar/signals/:id/convert', authenticateToken, apiController.handleConvertRadarSignal); 
+app.post('/api/radar/simulate', authenticateToken, apiController.handleSimulateRadarSignal); 
+app.get('/api/radar/activity', authenticateToken, apiController.handleGetRadarActivityLogs); 
 
 // Network Routes (NEW)
 app.post('/api/network/signals', authenticateToken, apiController.handleCreateIntentSignal);
@@ -215,7 +205,6 @@ app.post('/api/network/profile', authenticateToken, apiController.handleUpdateNe
 
 
 // Public/Shared Routes
-// MODIFIED: Make system settings public so Landing Page can get Support Number
 app.get('/api/system/settings', adminController.handleGetSystemSettings); 
 
 // Testimonial Routes
@@ -235,7 +224,7 @@ adminRouter.use(authenticateToken, (req: any, res, next) => {
 adminRouter.get('/dashboard-metrics', adminController.handleGetDashboardMetrics);
 adminRouter.get('/clients', adminController.handleGetAllClients);
 adminRouter.put('/clients/:id', adminController.handleUpdateClient);
-adminRouter.delete('/clients/:id', adminController.handleDeleteClient); // New route for deletion
+adminRouter.delete('/clients/:id', adminController.handleDeleteClient); 
 adminRouter.post('/clients/:id/renew', adminController.handleRenewClient);
 adminRouter.post('/clients/:id/activate', adminController.handleActivateClient);
 adminRouter.get('/logs', adminController.handleGetLogs);
@@ -295,6 +284,9 @@ app.listen(Number(PORT), '0.0.0.0', async () => {
         await db.init();
         logService.info('El sistema backend se ha iniciado correctamente.');
         
+        // START NGROK AUTO-DETECTION
+        ngrokService.startAutoDetection();
+
         // ... (Testimonial seeding and TTS init logic remains the same)
         const seedCount = await db.countSeedTestimonials();
         if (seedCount === 0) {
