@@ -184,7 +184,8 @@ const UserSchema = new Schema({
     
     settings: {
         productName: { type: String, default: 'Mi Producto' },
-        productDescription: { type: String, default: 'Breve descripción...' },
+        productDescription: { type: Schema.Types.Mixed, default: 'Breve descripción...' },
+        brainArchitecture: { type: String, enum: ['MONOLITHIC', 'MODULAR'], default: 'MONOLITHIC' },
         priceText: { type: String, default: 'Consultar' },
         ticketValue: { type: Number, default: 0 }, // NEW: Default ticket value
         ctaLink: { type: String, default: '#' },
@@ -324,6 +325,7 @@ class Database {
         settings: { 
             productName: businessName,
             productDescription: '',
+            brainArchitecture: 'MONOLITHIC',
             priceText: 'A convenir',
             ticketValue: 0, // NEW: Default ticket value
             ctaLink: '',

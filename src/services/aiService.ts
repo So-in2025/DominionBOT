@@ -1,7 +1,7 @@
 
 // ... (imports remain the same)
 import { GoogleGenAI, Type } from "@google/genai";
-import { Message, LeadStatus, User, PromptArchetype, Conversation } from '../types.js';
+import { Message, LeadStatus, User, PromptArchetype, Conversation, ModularBrain } from '../types.js';
 import { planService } from './planService.js';
 import { logService } from './logService.js';
 import { capabilityResolver } from './capabilityResolver.js';
@@ -44,6 +44,70 @@ export const generateBotResponse = async (
   }
   // --- END: AI Caching ---
 
+  // --- START: MODULAR BRAIN LOGIC ---
+  const settings = user.settings;
+  let effectiveProductDescription: string;
+
+  if (settings.brainArchitecture === 'MODULAR' && typeof settings.productDescription === 'object' && settings.productDescription !== null && 'architecture' in settings.productDescription) {
+      const modularBrain = settings.productDescription as ModularBrain;
+      
+      if (!modularBrain.modules || modularBrain.modules.length === 0) {
+          logService.error(`[AI-MODULAR] Brain is MODULAR but has no modules.`, null, user.id, user.username);
+          return { responseText: "[ERROR SISTEMA] Arquitectura modular sin cerebros configurados.", newStatus: conversation.status, tags: ['ERROR_CONFIG'] };
+      }
+
+      const lastUserMessage = conversation.messages.filter(m => m.sender === 'user' || m.sender === 'elite_bot').pop();
+
+      let selectedModuleId = modularBrain.defaultModule;
+
+      if (lastUserMessage && lastUserMessage.text) {
+          logService.info(`[AI-MODULAR] Starting triage for message: "${lastUserMessage.text.substring(0, 30)}..."`, user.id);
+
+          const triagePrompt = `
+              User message: "${lastUserMessage.text}"
+
+              Available modules and their activation triggers (keywords):
+              ${modularBrain.modules.map(m => `- ID: "${m.id}", Triggers: "${m.triggers}"`).join('\n')}
+
+              Default module ID: "${modularBrain.defaultModule}"
+
+              Based on the user message, which module is the most relevant?
+              Respond ONLY with the module ID. If no specific triggers match, respond with the default module ID.
+          `;
+          
+          try {
+              const cleanKey = user.settings.geminiApiKey?.trim();
+              if (!cleanKey) throw new Error("Missing Gemini Key for triage");
+              const aiTriage = new GoogleGenAI({ apiKey: cleanKey });
+              
+              const response = await aiTriage.models.generateContent({
+                  model: "gemini-flash-lite-latest", // Use the cheapest, fastest model for triage
+                  contents: [{ parts: [{ text: triagePrompt }] }]
+              });
+
+              const triageResult = response.text?.trim().replace(/"/g, ''); // Clean up response
+              
+              if (triageResult && modularBrain.modules.some(m => m.id === triageResult)) {
+                  selectedModuleId = triageResult;
+                  logService.info(`[AI-MODULAR] Triage successful. Selected module: ${selectedModuleId}`, user.id);
+              } else {
+                  logService.warn(`[AI-MODULAR] Triage failed or returned invalid ID "${triageResult}". Using default module.`, user.id);
+              }
+          } catch (triageError) {
+              logService.error(`[AI-MODULAR] Triage API call failed. Using default module.`, triageError, user.id);
+          }
+      }
+
+      const selectedModule = modularBrain.modules.find(m => m.id === selectedModuleId) || modularBrain.modules.find(m => m.id === modularBrain.defaultModule) || modularBrain.modules[0];
+      effectiveProductDescription = selectedModule.context;
+      logService.info(`[AI-MODULAR] Using context from module: "${selectedModule.name}"`, user.id);
+
+  } else {
+      // --- MONOLITHIC (EXISTING) LOGIC ---
+      effectiveProductDescription = settings.productDescription as string;
+  }
+  // --- END: MODULAR BRAIN LOGIC ---
+
   const cleanKey = user.settings.geminiApiKey?.trim();
 
   if (!cleanKey) {
@@ -62,7 +126,6 @@ export const generateBotResponse = async (
   }
 
   const features = planService.getClientFeatures(user);
-  const settings = user.settings;
 
   // 2. Adjust History Depth based on Capabilities
   const memoryLimit = capabilities.memoryDepth || 15;
@@ -94,7 +157,7 @@ Tu misión: Atender consultas y, si el plan lo permite, calificar la intención 
 - Sé directo y eficiente.
 
 ## CONTEXTO DE PRODUCTO:
-${settings.productDescription}
+${effectiveProductDescription}
 - Precio: ${settings.priceText}.
 - Link de Cierre: ${settings.ctaLink}.
 `;
@@ -185,7 +248,7 @@ export const regenerateSimulationScript = async (userId: string) => {
         ACT AS: Un cliente potencial escéptico y directo.
         
         CONTEXTO DE NEGOCIO (Lo que estás evaluando comprar):
-        "${user.settings.productDescription}"
+        "${typeof user.settings.productDescription === 'string' ? user.settings.productDescription : 'Servicios varios de una agencia'}"
         
         TU TAREA:
         Genera una secuencia de 5 a 7 mensajes cronológicos que simulen una interacción de compra natural y desafiante.
