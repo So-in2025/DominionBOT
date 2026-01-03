@@ -68,9 +68,9 @@ const PlanStatusBanner: React.FC<{ user: User | null }> = ({ user }) => {
             sessionStorage.setItem('trial_ended_alert_played', 'true');
         }
         return (
-            <div className="bg-red-800 text-white text-center py-2 px-4 text-xs font-bold shadow-lg flex items-center justify-center gap-4">
+            <div className="bg-red-800 text-white text-center py-3 px-4 text-xs font-bold shadow-lg flex flex-col md:flex-row items-center justify-center gap-4 z-[90] relative">
                 <span>Tu período de prueba ha finalizado. Activa tu licencia para restaurar las funcionalidades.</span>
-                <button onClick={() => openSupportWhatsApp(`Hola, mi período de prueba ha finalizado y quiero activar mi licencia.`)} className="bg-white text-red-800 px-3 py-1 rounded font-bold text-[10px] uppercase">Contactar Soporte</button>
+                <button onClick={() => openSupportWhatsApp(`Hola, mi período de prueba ha finalizado y quiero activar mi licencia.`)} className="bg-white text-red-800 px-3 py-1 rounded font-bold text-[10px] uppercase whitespace-nowrap">Contactar Soporte</button>
             </div>
         );
     }
@@ -78,7 +78,7 @@ const PlanStatusBanner: React.FC<{ user: User | null }> = ({ user }) => {
     // Trial In Progress
     if (user.plan_status === 'trial' && daysRemaining > 0 && qualifiedLeads < 10) {
         return (
-            <div className="bg-gradient-to-r from-brand-gold-dark via-brand-gold to-brand-gold-dark text-black text-center py-2 px-4 text-xs font-bold shadow-lg">
+            <div className="bg-gradient-to-r from-brand-gold-dark via-brand-gold to-brand-gold-dark text-black text-center py-2 px-4 text-xs font-bold shadow-lg z-[90] relative">
                 Estás en un período de prueba PRO. Finaliza en {daysRemaining} {daysRemaining > 1 ? 'días' : 'día'} o al calificar {10 - qualifiedLeads} leads más.
             </div>
         );
@@ -87,7 +87,7 @@ const PlanStatusBanner: React.FC<{ user: User | null }> = ({ user }) => {
     // Founder Status (if active and founder)
     if (user.is_founder && user.plan_status === 'active') {
         return (
-            <div className="bg-gradient-to-r from-gray-800 via-gray-700 to-gray-800 text-brand-gold text-center py-2 px-4 text-xs font-bold shadow-lg flex items-center justify-center gap-2">
+            <div className="bg-gradient-to-r from-gray-800 via-gray-700 to-gray-800 text-brand-gold text-center py-2 px-4 text-xs font-bold shadow-lg flex items-center justify-center gap-2 z-[90] relative">
                 <span>🏷️</span> PRECIO FUNDADORES ACTIVO. Tu plan mantiene el valor de lanzamiento.
             </div>
         );
@@ -607,7 +607,7 @@ export function App() {
     <div className={`flex flex-col bg-brand-black text-white font-sans ${isAppView ? 'h-screen overflow-hidden' : 'min-h-screen'} max-w-[100vw]`}>
       {/* SCANNING BAR ANIMATION FOR ALIVE FEEL */}
       {isAppView && (
-          <div className="h-0.5 w-full bg-brand-gold/20 overflow-hidden relative">
+          <div className="h-0.5 w-full bg-brand-gold/20 overflow-hidden relative flex-shrink-0 z-[100]">
               <div className="absolute top-0 left-0 h-full w-1/3 bg-brand-gold/50 blur-[4px] animate-slide-in-right"></div>
           </div>
       )}
@@ -619,21 +619,24 @@ export function App() {
       <AuthModal isOpen={authModal.isOpen} initialMode={authModal.mode} onClose={() => setAuthModal({ ...authModal, isOpen: false })} onSuccess={handleLoginSuccess} onOpenLegal={setLegalModalType} />
       <LegalModal type={legalModalType} onClose={() => setLegalModalType(null)} />
       
-      <Header 
-          isLoggedIn={!!token} 
-          userRole={userRole} 
-          onLoginClick={() => setAuthModal({ isOpen: true, mode: 'login' })} 
-          onRegisterClick={() => setAuthModal({ isOpen: true, mode: 'register' })} 
-          onLogoutClick={handleLogout} 
-          isBotGloballyActive={isBotGloballyActive} 
-          onToggleBot={() => setIsBotGloballyActive(!isBotGloballyActive)} 
-          currentView={currentView} 
-          onNavigate={handleNavigate} 
-          connectionStatus={connectionStatus}
-          isMobile={isMobileView} // Pass isMobileView prop
-          tunnelLatency={tunnelLatency} // NEW: Pass tunnel health metric
-      />
-      {isAppView && <PlanStatusBanner user={currentUser} />}
+      {/* STICKY TOP CONTAINER: Header + Banner */}
+      <div className="flex-none z-50 relative flex flex-col">
+          <Header 
+              isLoggedIn={!!token} 
+              userRole={userRole} 
+              onLoginClick={() => setAuthModal({ isOpen: true, mode: 'login' })} 
+              onRegisterClick={() => setAuthModal({ isOpen: true, mode: 'register' })} 
+              onLogoutClick={handleLogout} 
+              isBotGloballyActive={isBotGloballyActive} 
+              onToggleBot={() => setIsBotGloballyActive(!isBotGloballyActive)} 
+              currentView={currentView} 
+              onNavigate={handleNavigate} 
+              connectionStatus={connectionStatus}
+              isMobile={isMobileView} // Pass isMobileView prop
+              tunnelLatency={tunnelLatency} // NEW: Pass tunnel health metric
+          />
+          {isAppView && <PlanStatusBanner user={currentUser} />}
+      </div>
 
       <main className={`flex-1 relative ${isAppView ? 'flex overflow-hidden' : 'block'}`}>
         {backendError && <div className="absolute top-0 left-0 right-0 z-[200] flex items-center justify-center p-2 text-[10px] font-black shadow-xl animate-pulse bg-red-600/95 text-white"><span>⚠️ {backendError}</span></div>}
