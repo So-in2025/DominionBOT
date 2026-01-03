@@ -10,58 +10,51 @@ const g = (typeof globalThis !== 'undefined' ? globalThis : {}) as any;
 // CLAVE DE ALMACENAMIENTO LOCAL PARA LA URL DINÁMICA
 export const STORAGE_KEY_BACKEND = 'dominion_backend_url';
 
-// --- ZONA DE EMERGENCIA: HARDCODE (FALLBACK) ---
-// Configuración para arquitectura Híbrida: Backend Local (Ngrok) <-> Frontend Vercel
-// DEPRECATED: Se eliminó la URL hardcodeada para priorizar variables de entorno y la función de Smart Link.
-// ------------------------------------
-
-// Detección segura de la URL del Backend desde variables de entorno o LocalStorage
-const getEnvUrl = () => {
-    // 1. PRIORIDAD SUPREMA: LocalStorage (Frontend Dinámico - Smart Link)
-    // Esto permite que el usuario actualice la URL desde la UI sin tocar código.
+// Detección segura y ordenada de la URL del Backend
+const getEnvUrl = (): { url: string; source: string } => {
+    // 1. PRIORIDAD MÁXIMA: URL dinámica desde LocalStorage (Smart Link del Frontend)
     if (typeof g.window !== 'undefined' && g.localStorage) {
         const storedUrl = g.localStorage.getItem(STORAGE_KEY_BACKEND);
         if (storedUrl && storedUrl.startsWith('http')) {
-            return storedUrl;
+            return { url: storedUrl, source: 'LocalStorage (Smart Link)' };
         }
     }
 
-    // 2. Intentar proceso de Node.js (Backend)
-    if (typeof process !== 'undefined' && process.env && process.env.BACKEND_URL) {
-        return process.env.BACKEND_URL;
-    }
-    // 3. Intentar import.meta de Vite (Frontend)
+    // 2. ENTORNO VITE (Vercel / Frontend Build)
     try {
         const meta = (import.meta as any);
-        if (meta && meta.env) {
-            if (meta.env.VITE_BACKEND_URL) {
-                return meta.env.VITE_BACKEND_URL;
-            }
+        if (meta && meta.env && meta.env.VITE_BACKEND_URL) {
+            return { url: meta.env.VITE_BACKEND_URL, source: 'Vite Env (Vercel)' };
         }
     } catch (e) {
-        // Suppress client-side errors
+        // No es un entorno Vite, ignorar error.
+    }
+
+    // 3. ENTORNO NODE.JS (Backend local)
+    if (typeof process !== 'undefined' && process.env && process.env.BACKEND_URL) {
+        return { url: process.env.BACKEND_URL, source: 'Node.js Env' };
     }
     
-    // 4. Fallback para desarrollo local puro
+    // 4. FALLBACK PARA DESARROLLO LOCAL PURO (si no hay .env)
     if (typeof g.window !== 'undefined') {
         const hostname = g.window.location.hostname;
         if (hostname === 'localhost' || hostname === '127.0.0.1') {
-            return "http://localhost:3001";
+            return { url: "http://localhost:3001", source: 'Localhost Fallback' };
         }
     }
 
-    // Default final
-    return "http://localhost:3001"; 
+    // Default final si todo falla
+    return { url: "http://localhost:3001", source: 'Default Fallback' }; 
 };
+
+const resolvedConfig = getEnvUrl();
 
 /**
  * URL del Backend Resuelta:
  */
-export const BACKEND_URL: string | undefined = getEnvUrl()?.replace(/\/$/, '');
+export const BACKEND_URL: string | undefined = resolvedConfig.url.replace(/\/$/, '');
 
 // HEADERS OBLIGATORIOS PARA EVITAR BLOQUEOS DE NGROK Y CORS
-// CRITICAL: Ngrok's free tier intercepts requests without this header, 
-// causing the app to crash or show HTML warnings instead of JSON.
 export const API_HEADERS = {
     'Content-Type': 'application/json',
     'ngrok-skip-browser-warning': 'true', // BYPASS NGROK WARNING PAGE
@@ -80,10 +73,8 @@ export const getAuthHeaders = (token: string | null) => ({
 if (typeof g.window !== 'undefined') {
     console.log(`%c 🦅 DOMINION NETWORK `, 'background: #D4AF37; color: #000; font-weight: bold; padding: 2px 6px; border-radius: 4px;');
     if (BACKEND_URL) {
-        console.log(`%c API_TARGET: ${BACKEND_URL} `, 'color: #D4AF37; font-family: monospace;');
-        // Detectar origen
-        const source = g.localStorage.getItem(STORAGE_KEY_BACKEND) ? 'DYNAMIC (Smart Link)' : 'STATIC (Config)';
-        console.log(`%c 🔗 MODO ENLACE: ${source}`, 'background: #222; color: #aaa; font-size: 10px;');
+        console.log(`%c 🔗 API Target: ${BACKEND_URL}`, 'color: #D4AF37; font-family: monospace;');
+        console.log(`%c 💡 Source: ${resolvedConfig.source}`, 'background: #222; color: #aaa; font-size: 10px; padding: 1px 4px; border-radius: 2px;');
     } else {
         console.warn(`%c ⚠️ ALERTA CRÍTICA: BACKEND_URL NO ESTÁ DEFINIDA.`, 'background: #FF0000; color: #FFFFFF; font-weight: bold; padding: 5px 10px; border-radius: 5px;');
     }
