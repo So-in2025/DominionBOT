@@ -285,10 +285,24 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                     }
 
                     // --- PRIVATE CHAT LOGIC (INBOX) ---
+                    // FIX 1: FORCE CONVERSATION EXISTENCE BEFORE PROCESSING
+                    // Ensure conversation exists even if messages are skipped later
+                    const firstMsg = chatMessages[0];
+                    const bestName = firstMsg.pushName || (firstMsg as any).verifiedBizName || undefined;
+                    await conversationService.ensureConversationsExist(userId, [{ jid, name: bestName }]);
+
                     for (const msg of chatMessages) {
                         try {
-                            const messageText = extractMessageContent(msg);
-                            if (!messageText) continue; 
+                            // FIX 2: DEBUGGING LOG TO CONFIRM DELIVERY
+                            // logService.info(`[DEBUG-INBOX] jid=${jid} hasMessage=${!!msg.message}`, userId);
+
+                            // FIX 3: RELAXED FILTERING (NO SILENT CONTINUE)
+                            let messageText = extractMessageContent(msg);
+                            
+                            if (!messageText) {
+                                // Fallback content so we don't lose the message/conversation bump
+                                messageText = '[Mensaje de Sistema/Contenido]'; 
+                            }
 
                             const msgTimestamp = typeof msg.messageTimestamp === 'number' ? msg.messageTimestamp : (msg.messageTimestamp as any)?.low || Date.now() / 1000;
                             const isOldForAI = type === 'append' || (msgTimestamp < (Date.now() / 1000 - 300)); 

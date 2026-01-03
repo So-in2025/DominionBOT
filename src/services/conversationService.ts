@@ -85,14 +85,17 @@ class ConversationService {
 
     const isEliteBotJid = jid === ELITE_BOT_JID;
     
-    // FORCE NOW for sorting, unless it's strictly history import
-    // This ensures new messages ALWAYS jump to top, even if device time is off
-    const effectiveLastActivity = isHistoryImport ? (message.timestamp instanceof Date ? message.timestamp.toISOString() : new Date(message.timestamp).toISOString()) : new Date().toISOString();
+    // FIX 1: Robust Timestamp Logic
+    // If it's a history import, rely on the message's original timestamp.
+    // If it's a real-time message, force NOW to ensure it jumps to the top of the inbox.
+    const effectiveLastActivity = isHistoryImport 
+        ? (message.timestamp instanceof Date ? message.timestamp.toISOString() : new Date(message.timestamp).toISOString()) 
+        : new Date().toISOString();
 
     if (!conversation) {
       const leadIdentifier = jid.split('@')[0];
       
-      // Elite Bot is always active and never muted initially
+      // Elite Bot is always active. History imports start inactive to avoid auto-replying to old messages.
       const initialBotState = isEliteBotJid ? true : (isHistoryImport ? false : true);
 
       conversation = {
@@ -129,6 +132,13 @@ class ConversationService {
         }
     }
     
+    // FIX 2: Blindaje de IDs (Message ID Safety)
+    // Ensure every message has a unique ID before attempting deduplication.
+    // This prevents losing messages that come with undefined IDs from Baileys.
+    if (!message.id) {
+        message.id = `${jid}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    }
+
     // ATOMIC-LIKE APPEND:
     // Check for duplicates
     if (!conversation.messages.some(m => m.id === message.id)) {
@@ -137,9 +147,27 @@ class ConversationService {
         // Sort to maintain chronological order (crucial for display)
         conversation.messages.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
         
-        // UPDATE LAST ACTIVITY TO FORCE SORTING
-        conversation.lastActivity = effectiveLastActivity;
+        // FIX 3: Update lastActivity logic to ensure visibility
+        // If it's a REAL user message (not history), force bump to top.
+        if (message.sender === 'user' && !isHistoryImport) {
+             conversation.lastActivity = new Date().toISOString();
+        } else {
+             // For history imports, respect effective timestamp but don't regress if already newer
+             const existingLast = new Date(conversation.lastActivity || 0).getTime();
+             const newLast = new Date(effectiveLastActivity).getTime();
+             if (newLast > existingLast) {
+                 conversation.lastActivity = effectiveLastActivity;
+             }
+        }
     } 
+
+    // FIX 4: Reactivate Bot on new Real User Message
+    // If a user writes in real-time, ensure the bot wakes up to handle it (unless explicitly muted)
+    if (message.sender === 'user' && !isHistoryImport) {
+        if (!conversation.isMuted && conversation.status !== LeadStatus.PERSONAL) {
+             conversation.isBotActive = true;
+        }
+    }
 
     // Status Automation
     if (message.sender === 'owner') {
