@@ -1,10 +1,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { BotSettings, PromptArchetype, BrainArchitecture, BrainModule } from '../types';
+import { BotSettings, PromptArchetype } from '../types';
 import { GoogleGenAI, Type } from '@google/genai';
 import { audioService } from '../services/audioService';
 import { openSupportWhatsApp } from '../utils/textUtils';
-import { v4 as uuidv4 } from 'uuid';
 
 interface SettingsPanelProps {
   settings: BotSettings | null;
@@ -136,11 +135,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
   const [isAnalyzingWeb, setIsAnalyzingWeb] = useState(false);
   
   const [isProcessing, setIsProcessing] = useState(false);
-  
-  // NEW: MODULAR BRAIN STATE
-  const [modules, setModules] = useState<BrainModule[]>([]);
-  const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
-  const [defaultModuleId, setDefaultModuleId] = useState<string | null>(null);
+  const [wizardState, setWizardState] = useState<WizardState>({
+      mission: '', idealCustomer: '', detailedDescription: '',
+      objections: [{ id: 1, objection: '', response: '' }], rules: ''
+  });
 
   const recognitionRef = useRef<any>(null);
 
@@ -149,13 +147,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
         setCurrent({ ...settings, ignoredJids: settings.ignoredJids || [] });
         if (settings.geminiApiKey) {
             setWizApiKey(settings.geminiApiKey);
-        }
-        if (settings.brainArchitecture?.type === 'modular') {
-            setModules(settings.brainArchitecture.modules);
-            setDefaultModuleId(settings.brainArchitecture.defaultModuleId || null);
-            if (settings.brainArchitecture.modules.length > 0 && !selectedModuleId) {
-                setSelectedModuleId(settings.brainArchitecture.modules[0].id);
-            }
         }
     }
   }, [settings]);
@@ -218,6 +209,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
           const cleanKey = wizApiKey.trim(); 
           const ai = new GoogleGenAI({ apiKey: cleanKey }); 
           
+          // REFINED PROMPT: MORE SALES ORIENTED, LESS DESCRIPTIVE
           const prompt = `
             Analiza el sitio web: ${wizIdentity.website}
             
@@ -235,8 +227,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
             IMPORTANTE: Si mencionan herramientas de competencia (ej: Chatfuel, ManyChat), omítelas o cámbialas por "Nuestras soluciones de IA", a menos que sea un servicio de implementación de esas herramientas.
           `;
 
+          // UPDATED MODEL to gemini-2.5-flash as requested
           const response = await ai.models.generateContent({
-              model: 'gemini-3-flash-preview', 
+              model: 'gemini-2.5-flash', 
               contents: [{ parts: [{ text: prompt }] }],
               config: { 
                   tools: [{ googleSearch: {} }]
@@ -386,404 +379,386 @@ ${data.rules}
       audioService.play('action_success');
   };
 
-  // --- MODULAR BRAIN HANDLERS ---
-  const handleAddModule = () => {
-      // Default priority 1, Active true
-      const newModule: BrainModule = { 
-          id: uuidv4(), 
-          name: `Nuevo Contexto ${modules.length + 1}`, 
-          triggers: [], 
-          context: '', 
-          priority: 1, 
-          active: true 
-      };
-      setModules([...modules, newModule]);
-      setSelectedModuleId(newModule.id);
-      if (modules.length === 0) {
-          setDefaultModuleId(newModule.id);
-      }
-  };
-
-  const handleUpdateModule = (id: string, field: keyof BrainModule, value: any) => {
-      setModules(prev => prev.map(m => m.id === id ? { ...m, [field]: value } : m));
-  };
-
-  const handleDeleteModule = (id: string) => {
-      if (confirm("¿Eliminar este contexto de conocimiento?")) {
-          setModules(prev => prev.filter(m => m.id !== id));
-          if (selectedModuleId === id) {
-              setSelectedModuleId(modules.length > 1 ? modules[0].id : null);
-          }
-          if (defaultModuleId === id) {
-              setDefaultModuleId(modules.length > 1 ? modules[0].id : null);
-          }
-      }
-  };
-
-  const handleSaveModularBrain = () => {
-    if (!current) return;
-    const newBrain: BrainArchitecture = {
-        type: 'modular',
-        modules: modules,
-        defaultModuleId: defaultModuleId || undefined
-    };
-    onUpdateSettings({ ...current, brainArchitecture: newBrain, isWizardCompleted: true });
-    showToast('Cerebro Modular Sincronizado.', 'success');
-  };
-  
-  const handleSaveModularFineTuning = () => {
-    if (!current) return;
-    const newBrain: BrainArchitecture = {
-        type: 'modular',
-        modules: modules,
-        defaultModuleId: defaultModuleId || undefined
-    };
-    onUpdateSettings({ ...current, brainArchitecture: newBrain });
-    showToast('Contextos actualizados.', 'success');
-  }
-
-  const handleSwitchArchitecture = () => {
-    if (confirm("Vas a volver al selector de modelo de negocio. Tu configuración actual guardada no se modificará a menos que completes y guardes un nuevo modelo. ¿Deseas continuar?")) {
-        setCurrent(prev => {
-            if (!prev) return null;
-            return {
-                ...prev,
-                isWizardCompleted: false,
-                brainArchitecture: undefined
-            };
-        });
-    }
-  };
-
-  const selectedModule = modules.find(m => m.id === selectedModuleId);
-
   if (isLoading || !current) return <div className="p-10 text-center text-gray-500 animate-pulse font-black uppercase tracking-widest">Cargando Núcleo...</div>;
-  
-  const architectureType = current.brainArchitecture?.type;
 
-  // --- RENDER LOGIC ---
-
-  // VIEW: WIZARD NOT COMPLETED
-  if (!current.isWizardCompleted) {
-    // STEP 0: Architecture Selector
-    if (!architectureType) {
-        return (
-            <div className="flex-1 bg-brand-black flex flex-col items-center justify-center p-6 animate-fade-in">
-                <div className="text-center mb-12 max-w-2xl">
-                    <h2 className="text-3xl font-black text-white uppercase tracking-tighter">Modelo de Negocio</h2>
-                    <p className="text-sm text-gray-400 mt-3">Para una calibración óptima, dinos cómo opera tu negocio. Esto definirá la arquitectura interna de tu IA.</p>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full max-w-4xl">
-                    <button onClick={() => onUpdateSettings({ ...current, brainArchitecture: { type: 'monolithic', modules: [] }})} className="group bg-brand-surface border border-white/10 rounded-2xl p-8 text-left hover:border-brand-gold/50 transition-all hover:-translate-y-1">
-                        <div className="text-4xl mb-4">🚀</div>
-                        <h3 className="text-lg font-black text-white group-hover:text-brand-gold transition-colors">Modo Simple (Enfoque Único)</h3>
-                        <p className="text-xs text-gray-400 mt-2">Ideal para negocios con un producto o servicio principal. Configuración rápida y directa.</p>
-                    </button>
-                    <button onClick={() => onUpdateSettings({ ...current, brainArchitecture: { type: 'modular', modules: [] }})} className="group bg-brand-surface border border-white/10 rounded-2xl p-8 text-left hover:border-brand-gold/50 transition-all hover:-translate-y-1">
-                        <div className="text-4xl mb-4">🧩</div>
-                        <h3 className="text-lg font-black text-white group-hover:text-brand-gold transition-colors">Modo Avanzado (Contextos)</h3>
-                        <p className="text-xs text-gray-400 mt-2">Gestión profesional de múltiples intenciones. Define contextos específicos, prioridades y disparadores manualmente.</p>
+  // VIEW: MAIN SETTINGS (If Wizard Completed)
+  if (current.isWizardCompleted) {
+      return (
+        <div className="flex-1 bg-brand-black p-4 md:p-8 overflow-y-auto custom-scrollbar font-sans relative z-10 animate-fade-in">
+            <div className="max-w-7xl mx-auto pb-32">
+                <div className="flex justify-between items-center mb-8 border-b border-white/5 pb-4">
+                    <h2 className="text-2xl font-black text-white uppercase tracking-tighter">Ajuste Fino</h2>
+                    <button onClick={() => { 
+                        if(confirm("¿Recalibrar todo el cerebro? Perderás los textos actuales.")) {
+                            const reset = {...current, isWizardCompleted: false};
+                            setCurrent(reset);
+                            onUpdateSettings(reset);
+                            setWizardStep('IDENTITY');
+                        }
+                    }} className="text-[10px] text-gray-500 hover:text-brand-gold font-bold uppercase tracking-widest border border-white/10 px-4 py-2 rounded-lg hover:border-brand-gold transition-all">
+                        Reiniciar Wizard
                     </button>
                 </div>
-            </div>
-        );
-    }
-    
-    // STEP 1-N: Monolithic Wizard
-    if (architectureType === 'monolithic') {
-        return (
-          <div className="flex-1 bg-brand-black flex flex-col items-center justify-center p-6 relative overflow-hidden font-sans">
-              <div className="absolute inset-0 neural-grid opacity-30 z-0"></div>
-              <div className="w-full max-w-4xl mx-auto relative z-10 animate-fade-in">
-                  {wizardStep === 'IDENTITY' && (
-                     <div className="space-y-8 text-center">
-                        <h2 className="text-3xl font-black text-white uppercase tracking-tighter">Calibración Neural (1/4)</h2>
-                        <div className="space-y-6 bg-brand-surface p-8 rounded-2xl border border-white/5">
-                            <input value={wizIdentity.name} onChange={e => setWizIdentity({...wizIdentity, name: e.target.value})} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white" placeholder="Nombre de tu Negocio" />
-                            <input value={wizIdentity.website} onChange={e => setWizIdentity({...wizIdentity, website: e.target.value})} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white" placeholder="Sitio Web (Opcional)" />
-                        </div>
-                        <button onClick={() => setWizardStep('API_SETUP')} disabled={!wizIdentity.name} className="px-8 py-4 bg-brand-gold text-black rounded-xl font-black text-xs uppercase tracking-widest disabled:opacity-50">Siguiente</button>
-                     </div>
-                  )}
-                  {wizardStep === 'API_SETUP' && (
-                      <div className="space-y-8 text-center">
-                          <h2 className="text-3xl font-black text-white uppercase tracking-tighter">Conexión Gemini (2/4)</h2>
-                          <div className="bg-brand-surface p-8 rounded-2xl border border-white/5">
-                              <input type="password" value={wizApiKey} onChange={e => setWizApiKey(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white font-mono" placeholder="Pega tu API Key de Google Gemini" />
-                              <a href="https://aistudio.google.com/app/apikey" target="_blank" className="text-xs text-brand-gold mt-4 block underline">Obtener API Key</a>
-                          </div>
-                          <div className="flex justify-between">
-                              <button onClick={() => setWizardStep('IDENTITY')} className="text-gray-500 font-bold">Atrás</button>
-                              <button onClick={() => setWizardStep('CONTEXT')} disabled={!wizApiKey} className="px-8 py-4 bg-brand-gold text-black rounded-xl font-black text-xs uppercase tracking-widest disabled:opacity-50">Siguiente</button>
-                          </div>
-                      </div>
-                  )}
-                  {wizardStep === 'CONTEXT' && (
-                      <div className="space-y-8">
-                          <h2 className="text-3xl font-black text-white uppercase tracking-tighter text-center">Contexto de Negocio (3/4)</h2>
-                          <div className="bg-brand-surface p-8 rounded-2xl border border-white/5 space-y-4">
-                              <textarea value={wizContext} onChange={e => setWizContext(e.target.value)} className="w-full h-48 bg-black/50 border border-white/10 rounded-xl p-4 text-white resize-none" placeholder="Describe tu producto, precios, y cómo vendes..." />
-                              <div className="flex gap-4">
-                                  <button onClick={toggleRecording} className={`flex-1 py-3 rounded-lg text-xs font-bold uppercase ${isRecording ? 'bg-red-500 text-white' : 'bg-blue-500/20 text-blue-400'}`}>{isRecording ? 'Detener Grabación' : 'Dictar Contexto'}</button>
-                                  <button onClick={analyzeWebsite} disabled={!wizIdentity.website || isAnalyzingWeb} className="flex-1 py-3 bg-purple-500/20 text-purple-400 rounded-lg text-xs font-bold uppercase disabled:opacity-50">{isAnalyzingWeb ? 'Analizando...' : 'Analizar Web'}</button>
-                              </div>
-                          </div>
-                          <div className="flex justify-between">
-                              <button onClick={() => setWizardStep('API_SETUP')} className="text-gray-500 font-bold">Atrás</button>
-                              <button onClick={() => setWizardStep('PATH')} disabled={!wizContext} className="px-8 py-4 bg-brand-gold text-black rounded-xl font-black text-xs uppercase tracking-widest disabled:opacity-50">Finalizar</button>
-                          </div>
-                      </div>
-                  )}
-                  {wizardStep === 'PATH' && (
-                      <div className="space-y-8 text-center">
-                          <h2 className="text-3xl font-black text-white uppercase tracking-tighter">Calibración Final (4/4)</h2>
-                           <div className="grid grid-cols-2 gap-8">
-                               <button onClick={executeNeuralPath} className="bg-brand-surface border border-brand-gold/30 p-8 rounded-2xl text-left hover:bg-brand-gold/10">
-                                   <h3 className="text-lg font-black text-brand-gold">Ruta Neural</h3>
-                                   <p className="text-xs text-gray-400 mt-2">La IA analizará tu contexto y generará un "Cerebro de Ventas" completo y optimizado para ti.</p>
-                               </button>
-                               <div className="bg-brand-surface border border-white/10 p-8 rounded-2xl text-left">
-                                   <h3 className="text-lg font-black text-white">Plantillas Tácticas</h3>
-                                   <div className="grid grid-cols-2 gap-4 mt-4">
-                                       {Object.entries(INDUSTRY_TEMPLATES).map(([key, t]) => (
-                                           <button key={key} onClick={() => executeTemplatePath(key)} className="bg-black/40 p-3 rounded-lg text-xs text-left hover:bg-white/5">{t.label}</button>
-                                       ))}
-                                   </div>
-                               </div>
-                           </div>
-                      </div>
-                  )}
-                  {wizardStep === 'LOADING' && (
-                      <div className="text-center space-y-4">
-                          <div className="w-16 h-16 border-4 border-brand-gold/20 border-t-brand-gold rounded-full animate-spin mx-auto"></div>
-                          <p className="text-brand-gold font-black uppercase tracking-widest">Generando Cerebro Neural...</p>
-                      </div>
-                  )}
-              </div>
-          </div>
-        );
-    }
-
-    // NEW: Modular Wizard (ADVANCED CONTEXT MODE WIZARD)
-    if (architectureType === 'modular') {
-        return (
-             <div className="flex-1 bg-brand-black flex flex-col p-6 md:p-10 animate-fade-in">
-                <div className="text-center mb-8">
-                    <h2 className="text-3xl font-black text-white uppercase tracking-tighter">Gestor de Contextos</h2>
-                    <p className="text-sm text-gray-400 mt-3">Define manualmente los cerebros especializados y sus reglas de activación.</p>
-                </div>
-                <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 bg-brand-surface border border-white/5 rounded-2xl p-6 min-h-0">
-                    {/* Left: Context List */}
-                    <div className="lg:col-span-1 flex flex-col space-y-2 border-r border-white/5 pr-4 overflow-y-auto custom-scrollbar">
-                        <button onClick={handleAddModule} className="w-full text-center py-3 bg-brand-gold/10 text-brand-gold border border-brand-gold/20 rounded-lg text-xs font-bold uppercase hover:bg-brand-gold/20 mb-4">+ Crear Contexto</button>
-                        {modules.map(m => (
-                            <div key={m.id} onClick={() => setSelectedModuleId(m.id)} className={`p-3 rounded-lg cursor-pointer border transition-all flex flex-col ${selectedModuleId === m.id ? 'bg-brand-gold/20 border-brand-gold' : 'border-transparent hover:bg-white/5'}`}>
-                                <div className="flex justify-between items-center w-full">
-                                    <h4 className="font-bold text-sm text-white truncate">{m.name}</h4>
-                                    {m.active === false && <span className="text-[9px] text-red-400 bg-red-900/20 px-1 rounded">INACTIVO</span>}
-                                </div>
-                                <p className="text-[10px] text-gray-500 truncate mt-1">Triggers: {m.triggers.join(', ') || 'Ninguno'}</p>
-                                <div className="flex justify-between items-center mt-2">
-                                    <span className="text-[9px] text-gray-600 font-mono">Prio: {m.priority || 0}</span>
-                                    {m.id === defaultModuleId && <span className="text-[8px] text-yellow-400 font-bold uppercase border border-yellow-500/30 px-1 rounded">DEFAULT</span>}
-                                </div>
-                            </div>
-                        ))}
+                
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    {/* Manual Editor */}
+                    <div className="space-y-4">
+                        <label className="text-xs font-bold text-brand-gold uppercase tracking-widest">Prompt del Sistema (Solo Lectura / Edición Avanzada)</label>
+                        <textarea 
+                            value={current.productDescription} 
+                            onChange={(e) => handleUpdate('productDescription', e.target.value)}
+                            className="w-full h-[500px] bg-black/40 border border-white/10 rounded-xl p-4 text-gray-300 text-sm font-mono leading-relaxed focus:border-brand-gold outline-none custom-scrollbar"
+                        />
+                        <button onClick={() => onUpdateSettings(current)} className="w-full py-3 bg-brand-gold text-black font-black uppercase tracking-widest rounded-xl text-xs hover:scale-[1.01] transition-transform">Guardar Cambios Manuales</button>
                     </div>
-                    {/* Right: Editor */}
-                    <div className="lg:col-span-2 flex flex-col min-h-0">
-                        {selectedModule ? (
-                            <>
-                                <div className="flex-1 flex flex-col space-y-4 overflow-y-auto custom-scrollbar pr-2">
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <label className="text-xs font-bold text-brand-gold">Nombre del Contexto</label>
-                                            <input value={selectedModule.name} onChange={e => handleUpdateModule(selectedModuleId!, 'name', e.target.value)} className="w-full mt-1 p-2 bg-black/50 border border-white/10 rounded text-white" />
-                                        </div>
-                                        <div>
-                                            <label className="text-xs font-bold text-brand-gold">Prioridad (Mayor gana)</label>
-                                            <input type="number" value={selectedModule.priority || 0} onChange={e => handleUpdateModule(selectedModuleId!, 'priority', parseInt(e.target.value))} className="w-full mt-1 p-2 bg-black/50 border border-white/10 rounded text-white" />
-                                        </div>
+
+                    {/* Controls */}
+                    <div className="space-y-6">
+                         {/* GEMINI PANEL */}
+                        <div className="bg-brand-surface border border-white/5 rounded-2xl p-6 shadow-lg">
+                            <h3 className="text-sm font-black text-white uppercase tracking-widest mb-4">Motor IA</h3>
+                            {/* Fake inputs to prevent password autofill */}
+                            <div style={{ height: 0, overflow: 'hidden', opacity: 0, position: 'absolute', pointerEvents: 'none' }}>
+                                <input type="text" name="fake_user_prevent_autofill" autoComplete="off" tabIndex={-1} />
+                                <input type="password" name="fake_password_prevent_autofill" autoComplete="off" tabIndex={-1} />
+                            </div>
+                            <input 
+                                type="password" 
+                                name="gemini_api_key_settings_v3"
+                                id="gemini_api_key_settings_v3"
+                                autoComplete="new-password"
+                                data-lpignore="true"
+                                readOnly={true}
+                                onFocus={(e) => e.target.readOnly = false}
+                                value={current.geminiApiKey || ''} 
+                                onChange={e => handleUpdate('geminiApiKey', e.target.value)}
+                                className="w-full bg-black/50 border border-white/10 rounded-xl p-3 text-white text-xs font-mono tracking-widest focus:border-brand-gold outline-none mb-2"
+                                placeholder="API KEY"
+                            />
+                            <button onClick={() => onUpdateSettings(current)} className="text-[10px] text-gray-500 hover:text-white font-bold uppercase">Actualizar Key</button>
+                        </div>
+
+                        {/* SLIDERS */}
+                        <div className="bg-brand-surface border border-white/5 rounded-2xl p-6 shadow-lg space-y-6">
+                            <h3 className="text-sm font-black text-white uppercase tracking-widest mb-2">Personalidad</h3>
+                            {[
+                                { label: 'Tono', val: current.toneValue, key: 'toneValue' },
+                                { label: 'Ritmo', val: current.rhythmValue, key: 'rhythmValue' },
+                                { label: 'Intensidad', val: current.intensityValue, key: 'intensityValue' }
+                            ].map((s) => (
+                                <div key={s.key}>
+                                    <div className="flex justify-between mb-1">
+                                        <label className="text-[10px] font-bold text-gray-400 uppercase">{s.label}</label>
+                                        <span className="text-[10px] text-brand-gold font-bold">{s.val}</span>
                                     </div>
-                                    <div>
-                                        <label className="text-xs font-bold text-brand-gold">Disparadores (palabras clave, separadas por coma)</label>
-                                        <input value={selectedModule.triggers.join(', ')} onChange={e => handleUpdateModule(selectedModuleId!, 'triggers', e.target.value.split(',').map(t=>t.trim()))} className="w-full mt-1 p-2 bg-black/50 border border-white/10 rounded text-white" placeholder="ej: precio, info, comprar" />
-                                    </div>
-                                    <div className="flex-1 flex flex-col">
-                                        <label className="text-xs font-bold text-brand-gold mb-1">Contexto / Cerebro (Texto Crudo)</label>
-                                        <textarea value={selectedModule.context} onChange={e => handleUpdateModule(selectedModuleId!, 'context', e.target.value)} className="flex-1 w-full p-4 bg-black/50 border border-white/10 rounded text-white font-mono text-xs resize-none custom-scrollbar leading-relaxed" placeholder="Escribe aquí las instrucciones, precios y conocimientos específicos de este contexto..." />
-                                    </div>
+                                    <input type="range" min="1" max="5" value={s.val} onChange={(e) => handleUpdate(s.key as any, parseInt(e.target.value))} className="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-brand-gold" />
                                 </div>
-                                <div className="flex-shrink-0 flex items-center justify-between pt-4 mt-4 border-t border-white/5">
-                                    <div className="flex items-center gap-6">
-                                        <div className="flex items-center gap-2">
-                                            <input type="checkbox" id={`active-chk-${selectedModule.id}`} checked={selectedModule.active !== false} onChange={e => handleUpdateModule(selectedModuleId!, 'active', e.target.checked)} className="accent-brand-gold w-4 h-4"/>
-                                            <label htmlFor={`active-chk-${selectedModule.id}`} className="text-xs text-white font-bold">Contexto Activo</label>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <input type="radio" id={`default-radio-${selectedModule.id}`} checked={defaultModuleId === selectedModule.id} onChange={() => setDefaultModuleId(selectedModule.id)} className="accent-brand-gold w-4 h-4"/>
-                                            <label htmlFor={`default-radio-${selectedModule.id}`} className="text-xs text-gray-400">Marcar como Default</label>
-                                        </div>
-                                    </div>
-                                    <button onClick={() => handleDeleteModule(selectedModuleId!)} className="text-xs text-red-500 hover:text-red-400 font-bold uppercase tracking-wider hover:underline">Eliminar Contexto</button>
-                                </div>
-                            </>
-                        ) : (
-                            <div className="flex-1 flex items-center justify-center text-gray-600">Selecciona o crea un contexto para editar.</div>
-                        )}
+                            ))}
+                            <button onClick={() => onUpdateSettings(current)} className="w-full py-2 bg-white/5 hover:bg-white/10 text-white font-bold uppercase tracking-widest rounded-lg text-[10px] transition-all">Aplicar Personalidad</button>
+                        </div>
                     </div>
                 </div>
-                <div className="mt-6 flex justify-end">
-                    <button onClick={handleSaveModularBrain} className="px-8 py-4 bg-brand-gold text-black rounded-xl font-black text-xs uppercase tracking-widest hover:scale-105 transition-transform">Guardar y Activar</button>
-                </div>
-            </div>
-        );
-    }
-  }
-
-  // VIEW: WIZARD COMPLETED - FINE TUNING
-  if (architectureType === 'modular') {
-    return (
-        <div className="flex-1 bg-brand-black flex flex-col p-6 md:p-10 animate-fade-in">
-            <div className="flex justify-between items-center mb-8 border-b border-white/5 pb-4">
-                <h2 className="text-2xl font-black text-white uppercase tracking-tighter">Gestor de Contextos (Avanzado)</h2>
-                <button onClick={handleSwitchArchitecture} className="text-[10px] text-gray-500 hover:text-brand-gold font-bold uppercase tracking-widest border border-white/10 px-4 py-2 rounded-lg transition-all">Cambiar Modo</button>
-            </div>
-            <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 bg-brand-surface border border-white/5 rounded-2xl p-6 min-h-0">
-                {/* Left: Module List */}
-                <div className="lg:col-span-1 flex flex-col space-y-2 border-r border-white/5 pr-4 overflow-y-auto custom-scrollbar">
-                    <button onClick={handleAddModule} className="w-full text-center py-3 bg-brand-gold/10 text-brand-gold border border-brand-gold/20 rounded-lg text-xs font-bold uppercase hover:bg-brand-gold/20 mb-4">+ Crear Contexto</button>
-                    {modules.map(m => (
-                        <div key={m.id} onClick={() => setSelectedModuleId(m.id)} className={`p-3 rounded-lg cursor-pointer border transition-all flex flex-col ${selectedModuleId === m.id ? 'bg-brand-gold/20 border-brand-gold' : 'border-transparent hover:bg-white/5'}`}>
-                            <div className="flex justify-between items-center w-full">
-                                <h4 className="font-bold text-sm text-white truncate">{m.name}</h4>
-                                {m.active === false && <span className="text-[9px] text-red-400 bg-red-900/20 px-1 rounded">INACTIVO</span>}
-                            </div>
-                            <p className="text-[10px] text-gray-500 truncate mt-1">Triggers: {m.triggers.join(', ') || 'Ninguno'}</p>
-                            <div className="flex justify-between items-center mt-2">
-                                <span className="text-[9px] text-gray-600 font-mono">Prio: {m.priority || 0}</span>
-                                {m.id === defaultModuleId && <span className="text-[8px] text-yellow-400 font-bold uppercase border border-yellow-500/30 px-1 rounded">DEFAULT</span>}
-                            </div>
-                        </div>
-                    ))}
-                </div>
-                {/* Right: Editor */}
-                <div className="lg:col-span-2 flex flex-col min-h-0">
-                    {selectedModule ? (
-                        <>
-                            <div className="flex-1 flex flex-col space-y-4 overflow-y-auto custom-scrollbar pr-2">
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="text-xs font-bold text-brand-gold">Nombre del Contexto</label>
-                                        <input value={selectedModule.name} onChange={e => handleUpdateModule(selectedModuleId!, 'name', e.target.value)} className="w-full mt-1 p-2 bg-black/50 border border-white/10 rounded text-white" />
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-bold text-brand-gold">Prioridad (Mayor gana)</label>
-                                        <input type="number" value={selectedModule.priority || 0} onChange={e => handleUpdateModule(selectedModuleId!, 'priority', parseInt(e.target.value))} className="w-full mt-1 p-2 bg-black/50 border border-white/10 rounded text-white" />
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="text-xs font-bold text-brand-gold">Disparadores (palabras clave, separadas por coma)</label>
-                                    <input value={selectedModule.triggers.join(', ')} onChange={e => handleUpdateModule(selectedModuleId!, 'triggers', e.target.value.split(',').map(t=>t.trim()))} className="w-full mt-1 p-2 bg-black/50 border border-white/10 rounded text-white" />
-                                </div>
-                                <div className="flex-1 flex flex-col">
-                                    <label className="text-xs font-bold text-brand-gold mb-1">Contexto / Cerebro (Texto Crudo)</label>
-                                    <textarea value={selectedModule.context} onChange={e => handleUpdateModule(selectedModuleId!, 'context', e.target.value)} className="flex-1 w-full p-4 bg-black/50 border border-white/10 rounded text-white font-mono text-xs resize-none custom-scrollbar leading-relaxed" />
-                                </div>
-                            </div>
-                            <div className="flex-shrink-0 flex items-center justify-between pt-4 mt-4 border-t border-white/5">
-                                <div className="flex items-center gap-6">
-                                    <div className="flex items-center gap-2">
-                                        <input type="checkbox" id={`active-chk-edit-${selectedModule.id}`} checked={selectedModule.active !== false} onChange={e => handleUpdateModule(selectedModuleId!, 'active', e.target.checked)} className="accent-brand-gold w-4 h-4"/>
-                                        <label htmlFor={`active-chk-edit-${selectedModule.id}`} className="text-xs text-white font-bold">Contexto Activo</label>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <input type="radio" id={`default-radio-edit-${selectedModule.id}`} checked={defaultModuleId === selectedModule.id} onChange={() => setDefaultModuleId(selectedModule.id)} className="accent-brand-gold w-4 h-4"/>
-                                        <label htmlFor={`default-radio-edit-${selectedModule.id}`} className="text-xs text-gray-400">Marcar como Default</label>
-                                    </div>
-                                </div>
-                                <button onClick={() => handleDeleteModule(selectedModuleId!)} className="text-xs text-red-500 hover:text-red-400 font-bold uppercase tracking-wider hover:underline">Eliminar Contexto</button>
-                            </div>
-                        </>
-                    ) : (
-                        <div className="flex-1 flex items-center justify-center text-gray-600">Selecciona un contexto.</div>
-                    )}
-                </div>
-            </div>
-             <div className="mt-6 flex justify-end">
-                <button onClick={handleSaveModularFineTuning} className="px-8 py-4 bg-brand-gold text-black rounded-xl font-black text-xs uppercase tracking-widest hover:scale-105 transition-transform">Actualizar Contextos</button>
             </div>
         </div>
-    );
+      );
   }
 
-  // VIEW: WIZARD COMPLETED - MONOLITHIC / LEGACY FINE TUNING
+  // VIEW: WIZARD
   return (
-    <div className="flex-1 bg-brand-black p-4 md:p-8 overflow-y-auto custom-scrollbar font-sans relative z-10 animate-fade-in">
-        <div className="max-w-7xl mx-auto pb-32">
-            <div className="flex justify-between items-center mb-8 border-b border-white/5 pb-4">
-                <h2 className="text-2xl font-black text-white uppercase tracking-tighter">Ajuste Fino</h2>
-                <button onClick={handleSwitchArchitecture} className="text-[10px] text-gray-500 hover:text-brand-gold font-bold uppercase tracking-widest border border-white/10 px-4 py-2 rounded-lg hover:border-brand-gold transition-all">
-                    Cambiar Modelo
-                </button>
-            </div>
+    <div className="flex-1 bg-brand-black flex flex-col items-center justify-center p-6 relative overflow-hidden font-sans">
+        {/* Background Ambient */}
+        <div className="absolute top-0 left-0 w-full h-full bg-noise opacity-5 pointer-events-none"></div>
+        <div className="absolute -top-20 -right-20 w-96 h-96 bg-brand-gold/5 rounded-full blur-[100px] pointer-events-none"></div>
+
+        <div className="w-full max-w-2xl relative z-10">
             
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {/* Manual Editor */}
-                <div className="space-y-4">
-                    <label className="text-xs font-bold text-brand-gold uppercase tracking-widest">Prompt del Sistema</label>
-                    <textarea 
-                        value={current.productDescription} 
-                        onChange={(e) => handleUpdate('productDescription', e.target.value)}
-                        className="w-full h-[500px] bg-black/40 border border-white/10 rounded-xl p-4 text-gray-300 text-sm font-mono leading-relaxed focus:border-brand-gold outline-none custom-scrollbar"
-                    />
-                    <button onClick={() => onUpdateSettings(current)} className="w-full py-3 bg-brand-gold text-black font-black uppercase tracking-widest rounded-xl text-xs hover:scale-[1.01] transition-transform">Guardar Cambios</button>
+            {/* PROGRESS HEADER */}
+            <div className="mb-10 text-center">
+                <h2 className="text-3xl md:text-4xl font-black text-white uppercase tracking-tighter mb-2">
+                    Configuración <span className="text-brand-gold">Neural</span>
+                </h2>
+                <div className="flex justify-center gap-2 mt-4">
+                    {['IDENTITY', 'API_SETUP', 'CONTEXT', 'PATH'].map((s, idx) => {
+                        const steps = ['IDENTITY', 'API_SETUP', 'CONTEXT', 'PATH'];
+                        const currIdx = steps.indexOf(wizardStep);
+                        const isActive = idx <= currIdx;
+                        return (
+                            <div key={s} className={`h-1.5 w-8 rounded-full transition-all duration-500 ${isActive ? 'bg-brand-gold shadow-[0_0_10px_rgba(212,175,55,0.5)]' : 'bg-white/10'}`}></div>
+                        );
+                    })}
                 </div>
+            </div>
 
-                {/* Controls */}
-                <div className="space-y-6">
-                     {/* GEMINI PANEL */}
-                    <div className="bg-brand-surface border border-white/5 rounded-2xl p-6 shadow-lg">
-                        <h3 className="text-sm font-black text-white uppercase tracking-widest mb-4">Motor IA</h3>
-                        <div style={{ height: 0, overflow: 'hidden', opacity: 0, position: 'absolute', pointerEvents: 'none' }}>
-                            <input type="text" name="fake_user_prevent_autofill" autoComplete="off" tabIndex={-1} />
-                            <input type="password" name="fake_password_prevent_autofill" autoComplete="off" tabIndex={-1} />
+            <div className="bg-brand-surface border border-white/10 rounded-[32px] p-8 md:p-12 shadow-2xl relative backdrop-blur-sm">
+                
+                {/* STEP 1: IDENTITY */}
+                {wizardStep === 'IDENTITY' && (
+                    <div className="space-y-8 animate-fade-in">
+                        <div className="text-center">
+                            <h3 className="text-xl font-black text-white uppercase tracking-widest">Identidad Digital</h3>
+                            <p className="text-xs text-gray-400 mt-2 font-medium">¿Quién eres ante el mundo?</p>
                         </div>
-                        <input 
-                            type="password" 
-                            name="gemini_api_key_settings_v3"
-                            id="gemini_api_key_settings_v3"
-                            autoComplete="new-password"
-                            data-lpignore="true"
-                            readOnly={true}
-                            onFocus={(e) => e.target.readOnly = false}
-                            value={current.geminiApiKey || ''} 
-                            onChange={e => handleUpdate('geminiApiKey', e.target.value)}
-                            className="w-full bg-black/50 border border-white/10 rounded-xl p-3 text-white text-xs font-mono tracking-widest focus:border-brand-gold outline-none mb-2"
-                            placeholder="API KEY"
-                        />
-                        <button onClick={() => onUpdateSettings(current)} className="text-[10px] text-gray-500 hover:text-white font-bold uppercase">Actualizar Key</button>
-                    </div>
 
-                    {/* SLIDERS */}
-                    <div className="bg-brand-surface border border-white/5 rounded-2xl p-6 shadow-lg space-y-6">
-                        <h3 className="text-sm font-black text-white uppercase tracking-widest mb-2">Personalidad</h3>
-                        {[
-                            { label: 'Tono', val: current.toneValue, key: 'toneValue' },
-                            { label: 'Ritmo', val: current.rhythmValue, key: 'rhythmValue' },
-                            { label: 'Intensidad', val: current.intensityValue, key: 'intensityValue' }
-                        ].map((s) => (
-                            <div key={s.key}>
-                                <div className="flex justify-between mb-1">
-                                    <label className="text-[10px] font-bold text-gray-400 uppercase">{s.label}</label>
-                                    <span className="text-[10px] text-brand-gold font-bold">{s.val}</span>
-                                </div>
-                                <input type="range" min="1" max="5" value={s.val} onChange={(e) => handleUpdate(s.key as any, parseInt(e.target.value))} className="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-brand-gold" />
+                        <div className="space-y-6">
+                            <div>
+                                <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2 ml-1">Nombre del Negocio</label>
+                                <input 
+                                    type="text" 
+                                    value={wizIdentity.name}
+                                    onChange={(e) => setWizIdentity({...wizIdentity, name: e.target.value})}
+                                    placeholder="Ej: Agencia Alpha, Inmobiliaria Sur..."
+                                    className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-lg font-bold focus:border-brand-gold outline-none transition-all placeholder-gray-700"
+                                    autoFocus
+                                />
                             </div>
-                        ))}
-                        <button onClick={() => onUpdateSettings(current)} className="w-full py-2 bg-white/5 hover:bg-white/10 text-white font-bold uppercase tracking-widest rounded-lg text-[10px] transition-all">Aplicar Personalidad</button>
+
+                            <div className="relative">
+                                <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2 ml-1">Sitio Web (Opcional)</label>
+                                <input 
+                                    type="text" 
+                                    value={wizIdentity.website}
+                                    onChange={(e) => setWizIdentity({...wizIdentity, website: e.target.value})}
+                                    onBlur={() => { if(!wizIdentity.website) setShowWebTooltip(true); }}
+                                    placeholder="www.tu-negocio.com"
+                                    className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm focus:border-brand-gold outline-none transition-all placeholder-gray-700"
+                                />
+                                {showWebTooltip && !wizIdentity.website && (
+                                    <div className="absolute top-0 right-0 -mt-10 md:-mr-4 bg-brand-gold text-black p-3 rounded-xl shadow-lg border border-white/20 animate-bounce cursor-pointer z-20 max-w-[200px]" onClick={() => openSupportWhatsApp('Hola, estoy configurando mi bot y vi que necesito una web profesional. ¿Me das info?')}>
+                                        <div className="relative">
+                                            <p className="text-[9px] font-black leading-tight uppercase">¿Sin web? Pierdes el 40% de confianza. <span className="underline">Hablemos.</span></p>
+                                            <div className="absolute bottom-[-18px] right-4 w-3 h-3 bg-brand-gold rotate-45 transform"></div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        <button 
+                            onClick={() => { if(wizIdentity.name) setWizardStep('API_SETUP'); else showToast('El nombre es obligatorio.', 'error'); }}
+                            className="w-full py-4 bg-white/10 hover:bg-white/20 text-white border border-white/10 rounded-xl font-black text-xs uppercase tracking-[0.2em] transition-all hover:scale-[1.02] mt-4"
+                        >
+                            Siguiente &rarr;
+                        </button>
                     </div>
-                </div>
+                )}
+
+                {/* STEP 2: API SETUP (NEW STEP) */}
+                {wizardStep === 'API_SETUP' && (
+                    <div className="space-y-8 animate-fade-in">
+                        <div className="text-center">
+                            <h3 className="text-xl font-black text-white uppercase tracking-widest">Motor Cognitivo</h3>
+                            <p className="text-xs text-gray-400 mt-2 font-medium max-w-sm mx-auto">
+                                Dominion opera con tu propia llave maestra de Google (BYOK). 
+                                Esto garantiza privacidad total y control de costos.
+                            </p>
+                        </div>
+
+                        <div className="bg-black/30 border border-brand-gold/20 p-6 rounded-2xl space-y-4">
+                            <div>
+                                <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2 ml-1">Gemini API Key</label>
+                                {/* Fake inputs to confuse browser password manager */}
+                                <div style={{ height: 0, overflow: 'hidden', opacity: 0, position: 'absolute', pointerEvents: 'none' }}>
+                                    <input type="text" name="fake_user_prevent_autofill_wiz" autoComplete="off" tabIndex={-1} />
+                                    <input type="password" name="fake_password_prevent_autofill_wiz" autoComplete="off" tabIndex={-1} />
+                                </div>
+                                <input 
+                                    type="password"
+                                    name="gemini_api_key_setup_v3"
+                                    id="gemini_api_key_setup_v3"
+                                    autoComplete="new-password"
+                                    data-lpignore="true"
+                                    readOnly={true}
+                                    onFocus={(e) => e.target.readOnly = false}
+                                    value={wizApiKey}
+                                    onChange={(e) => setWizApiKey(e.target.value)}
+                                    placeholder="Pegar AI Studio Key aquí..."
+                                    className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm font-mono focus:border-brand-gold outline-none transition-all placeholder-gray-700 tracking-wider"
+                                />
+                            </div>
+                            
+                            <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                                <a 
+                                    href="https://aistudio.google.com/app/apikey" 
+                                    target="_blank" 
+                                    rel="noreferrer"
+                                    className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-[10px] font-bold text-gray-300 uppercase tracking-wider transition-all"
+                                >
+                                    <span>🔑</span> Obtener Key Gratis
+                                </a>
+                                {/* Placeholder for Tutorial Video */}
+                                <button 
+                                    onClick={() => showToast('Video tutorial próximamente. Usa el link de Google por ahora.', 'info')}
+                                    className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-[10px] font-bold text-gray-300 uppercase tracking-wider transition-all"
+                                >
+                                    <span>▶️</span> Ver Tutorial (1 min)
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="flex gap-4 pt-2">
+                            <button onClick={() => setWizardStep('IDENTITY')} className="px-6 py-3 text-gray-500 font-bold text-xs uppercase hover:text-white transition-colors">Atrás</button>
+                            <button 
+                                onClick={() => { 
+                                    if(wizApiKey.length > 20) {
+                                        // Save intermediate state to settings immediately so next steps can use it
+                                        if (current) {
+                                            const tempSettings = { ...current, geminiApiKey: wizApiKey.trim() };
+                                            setCurrent(tempSettings);
+                                            onUpdateSettings(tempSettings); // Persist early
+                                        }
+                                        setWizardStep('CONTEXT'); 
+                                    } else {
+                                        showToast('Ingresa una API Key válida.', 'error'); 
+                                    }
+                                }}
+                                className="flex-1 py-3 bg-white/10 hover:bg-white/20 text-white border border-white/10 rounded-xl font-black text-xs uppercase tracking-[0.2em] transition-all hover:scale-[1.02]"
+                            >
+                                Validar & Continuar &rarr;
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* STEP 3: CONTEXT (HYBRID) */}
+                {wizardStep === 'CONTEXT' && (
+                    <div className="space-y-6 animate-fade-in relative">
+                        <div className="text-center mb-6">
+                            <h3 className="text-xl font-black text-white uppercase tracking-widest">Contexto Operativo</h3>
+                            <p className="text-xs text-gray-400 mt-2 font-medium">Cuéntale a la IA qué vendes y cómo. Escribe o dicta.</p>
+                        </div>
+
+                        {/* WEB ANALYSIS BUTTON - Repositioned above Textarea with Spacing */}
+                        {wizIdentity.website && (
+                            <div className="flex justify-end mb-6 px-1">
+                                <button 
+                                    onClick={analyzeWebsite}
+                                    disabled={isAnalyzingWeb}
+                                    className="flex items-center gap-2 bg-brand-gold/10 border border-brand-gold/30 hover:bg-brand-gold/20 text-brand-gold px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all disabled:opacity-50"
+                                >
+                                    {isAnalyzingWeb ? (
+                                        <>
+                                            <div className="w-3 h-3 border-2 border-brand-gold border-t-transparent rounded-full animate-spin"></div>
+                                            Analizando Web...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <span className="text-xs">✨</span> Analizar {wizIdentity.website}
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        )}
+
+                        <div className="relative group">
+                            <textarea 
+                                value={wizContext}
+                                onChange={(e) => setWizContext(e.target.value)}
+                                className="w-full h-48 bg-black/50 border border-white/10 rounded-xl p-5 pb-12 text-white text-sm leading-relaxed focus:border-brand-gold outline-none resize-none custom-scrollbar placeholder-gray-700 transition-all z-10 relative"
+                                placeholder={`Ej: Soy una agencia de marketing. Vendemos gestión de redes desde $300 USD. Quiero que el bot sea agresivo en el cierre. Si preguntan por descuentos, diles que no, pero que ofrecemos garantía.`}
+                            />
+                            {/* EDUCATIONAL OVERLAY (Fades out when typing) - MOVED TO BOTTOM */}
+                            {!wizContext && !isRecording && (
+                                <div className="absolute bottom-4 left-4 right-16 p-2 pointer-events-none flex flex-col justify-end text-left opacity-50 z-20">
+                                    <p className="text-[10px] font-bold text-gray-400 mb-1">💡 Tip de Calibración:</p>
+                                    <p className="text-[9px] text-gray-500 leading-snug">Incluye: Qué vendes, precios base, tu diferencial y reglas que el bot no debe romper nunca.</p>
+                                </div>
+                            )}
+                            
+                            {/* MIC BUTTON */}
+                            <button 
+                                onClick={toggleRecording}
+                                className={`absolute bottom-4 right-4 p-3 rounded-full shadow-lg transition-all z-30 ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-brand-gold text-black hover:scale-110'}`}
+                                title="Dictar por voz"
+                            >
+                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
+                            </button>
+                        </div>
+
+                        <div className="flex gap-4 pt-2">
+                            <button onClick={() => setWizardStep('API_SETUP')} className="px-6 py-3 text-gray-500 font-bold text-xs uppercase hover:text-white transition-colors">Atrás</button>
+                            <button 
+                                onClick={() => { if(wizContext.length > 5) setWizardStep('PATH'); else showToast('Danos un poco más de contexto.', 'error'); }}
+                                className="flex-1 py-3 bg-white/10 hover:bg-white/20 text-white border border-white/10 rounded-xl font-black text-xs uppercase tracking-[0.2em] transition-all hover:scale-[1.02]"
+                            >
+                                Siguiente &rarr;
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* STEP 4: THE FORK (CHOICE) */}
+                {wizardStep === 'PATH' && (
+                    <div className="space-y-8 animate-fade-in">
+                        <div className="text-center mb-8">
+                            <h3 className="text-xl font-black text-white uppercase tracking-widest">Elije tu Estrategia</h3>
+                            <p className="text-xs text-gray-400 mt-2 font-medium">¿Cómo quieres construir el cerebro?</p>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            {/* OPTION A: AI AUTO */}
+                            <button 
+                                onClick={executeNeuralPath}
+                                className="group relative bg-[#0a0a0a] border border-brand-gold/30 hover:border-brand-gold hover:bg-brand-gold/5 rounded-2xl p-6 text-left transition-all duration-300 hover:-translate-y-1 shadow-[0_0_30px_rgba(0,0,0,0.5)]"
+                            >
+                                <div className="absolute top-4 right-4 text-2xl group-hover:scale-125 transition-transform">⚡</div>
+                                <h4 className="text-lg font-black text-white mb-2 group-hover:text-brand-gold transition-colors">Auto-Completado Neural</h4>
+                                <p className="text-xs text-gray-400 leading-relaxed group-hover:text-gray-300">
+                                    La IA analiza tu contexto y deduce automáticamente tu Misión, Reglas y Manejo de Objeciones.
+                                </p>
+                                <div className="mt-6 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-brand-gold/70 group-hover:text-brand-gold">
+                                    <span>Recomendado</span> &rarr;
+                                </div>
+                            </button>
+
+                            {/* OPTION B: TEMPLATES */}
+                            <div className="bg-[#0a0a0a] border border-white/10 rounded-2xl p-6 text-left relative overflow-hidden">
+                                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-gray-800 to-gray-600"></div>
+                                <h4 className="text-lg font-black text-white mb-4">Biblioteca Táctica</h4>
+                                <div className="grid grid-cols-1 gap-2 max-h-[180px] overflow-y-auto custom-scrollbar pr-2">
+                                    {Object.entries(INDUSTRY_TEMPLATES).map(([key, tpl]) => (
+                                        <button 
+                                            key={key}
+                                            onClick={() => executeTemplatePath(key)}
+                                            className="flex items-center gap-3 p-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/20 transition-all text-left group"
+                                        >
+                                            <span className="text-xl group-hover:scale-110 transition-transform">{tpl.icon}</span>
+                                            <div>
+                                                <p className="text-xs font-bold text-white uppercase tracking-tight">{tpl.label}</p>
+                                                <p className="text-[9px] text-gray-500 truncate max-w-[120px]">{tpl.desc}</p>
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div className="text-center pt-4">
+                            <button onClick={() => setWizardStep('CONTEXT')} className="text-gray-500 font-bold text-xs uppercase hover:text-white transition-colors">Atrás</button>
+                        </div>
+                    </div>
+                )}
+
+                {/* LOADING STATE */}
+                {wizardStep === 'LOADING' && (
+                    <div className="py-20 text-center animate-fade-in flex flex-col items-center">
+                        <div className="w-20 h-20 border-4 border-brand-gold/20 border-t-brand-gold rounded-full animate-spin mb-8 shadow-[0_0_40px_rgba(212,175,55,0.2)]"></div>
+                        <h3 className="text-xl font-black text-white uppercase tracking-widest animate-pulse">Estructurando Red Neural</h3>
+                        <p className="text-xs text-gray-500 mt-3 font-mono">Aplicando arquitectura Elite++...</p>
+                    </div>
+                )}
+
+                {/* SOS / AUDIT BUTTON */}
+                {wizardStep !== 'LOADING' && (
+                    <div className="mt-8 pt-6 border-t border-white/5 flex justify-center animate-fade-in">
+                        <button 
+                            onClick={() => openSupportWhatsApp('Hola, estoy trabado en la configuración del Cerebro. ¿Me ayudan con una auditoría?')} 
+                            className="text-[9px] text-gray-500 hover:text-brand-gold font-bold uppercase tracking-widest flex items-center gap-2 transition-colors group"
+                        >
+                            <span className="grayscale group-hover:grayscale-0 transition-all">🆘</span> ¿Te sientes abrumado? Solicitar Auditoría Humana
+                        </button>
+                    </div>
+                )}
+
             </div>
         </div>
     </div>
