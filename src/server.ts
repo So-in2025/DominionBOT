@@ -48,15 +48,10 @@ app.use((req, res, next) => {
     next();
 });
 
-// UPDATED: More robust CORS configuration for Vercel + Local dev
-const allowedOrigins = [/\.vercel\.app$/, /localhost:\d{4}$/];
+// PERMISSIVE CORS: Allow all origins to resolve deployment/local issues.
 app.use(cors({
-    origin: function (origin, callback) {
-        if (!origin || allowedOrigins.some(regex => regex.test(origin))) {
-            callback(null, true);
-        } else {
-            callback(new Error('Not allowed by CORS'));
-        }
+    origin: (origin, callback) => {
+        callback(null, true);
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Cache-Control', 'ngrok-skip-browser-warning', 'Accept'],
