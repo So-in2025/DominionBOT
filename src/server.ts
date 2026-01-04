@@ -47,27 +47,17 @@ app.use((req, res, next) => {
     next();
 });
 
-// ROBUST CORS MIDDLEWARE v2: Handles credentials and dynamic origins.
-app.use((req, res, next) => {
-    const origin = req.headers.origin;
-    
-    // Dynamically set the origin. A wildcard '*' is not allowed by browsers
-    // when 'Access-Control-Allow-Credentials' is 'true'.
-    if (origin) {
-        res.setHeader('Access-Control-Allow-Origin', origin);
-    }
-    
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Cache-Control, ngrok-skip-browser-warning');
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-
-    // Handle the OPTIONS pre-flight request.
-    if (req.method === 'OPTIONS') {
-        return res.status(204).end();
-    }
-    
-    next();
-});
+// STANDARD CORS MIDDLEWARE (FIX): Replaces faulty manual implementation.
+// This configuration correctly handles credentials with dynamic origins (like Vercel + ngrok).
+const corsOptions = {
+    origin: true, // Reflects the request origin. Essential for credentials mode.
+    methods: 'GET,POST,PUT,DELETE,OPTIONS',
+    allowedHeaders: 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Cache-Control, ngrok-skip-browser-warning',
+    credentials: true
+};
+app.use(cors(corsOptions));
+// Ensure pre-flight requests are handled for all routes
+app.options('*', cors(corsOptions));
 
 
 app.use(express.json({ limit: '10mb' }) as any);

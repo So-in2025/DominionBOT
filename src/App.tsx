@@ -1,6 +1,7 @@
 
 
 
+
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Conversation, BotSettings, Message, View, ConnectionStatus, User, LeadStatus, PromptArchetype, Testimonial, SystemSettings } from './types';
 import Header from './components/Header';
@@ -186,7 +187,7 @@ const LandingPage: React.FC<{
             <HowItWorksSection />
             <SecurityCanvas />
             <NeuralArchitectureSection settings={settings} />
-            <TestimonialsCarousel isLoggedIn={isLoggedIn} token={token} showToast={showToast} />
+            <TestimonialsCarousel isLoggedIn={!!token} token={token} showToast={showToast} />
             
             <footer className="relative z-10 w-full border-t border-white/5 bg-brand-black/95 backdrop-blur-2xl px-12 py-10 flex flex-col md:flex-row justify-between items-center gap-12">
                 <div className="text-center md:text-left space-y-4">
@@ -734,7 +735,7 @@ export function App() {
         case View.RADAR: return <RadarPanel token={token!} backendUrl={BACKEND_URL} showToast={showToast} />;
         case View.NETWORK: return <NetworkPanel token={token!} backendUrl={BACKEND_URL} currentUser={currentUser} settings={settings} onUpdateSettings={handleUpdateSettings} showToast={showToast} />; {/* NEW: Render NetworkPanel */}
         case View.SETTINGS: return <SettingsPanel token={token!} settings={settings} isLoading={isLoadingSettings} onUpdateSettings={isFunctionalityDisabled ? ()=>{} : handleUpdateSettings} onOpenLegal={setLegalModalType} showToast={showToast} />;
-        case View.CONNECTION: return <ConnectionPanel user={currentUser} status={connectionStatus} qrCode={qrCode} pairingCode={pairingCode} onConnect={async (ph) => { await fetch(`${BACKEND_URL}/api/connect`, { method: 'POST', headers: getAuthHeaders(token!), body: JSON.stringify({ phoneNumber: ph }) }); }} onDisconnect={async () => { await fetch(`${BACKEND_URL}/api/disconnect`, { headers: getAuthHeaders(token!) }); setConnectionStatus(ConnectionStatus.DISCONNECTED); }} onWipe={async () => { setConnectionStatus(ConnectionStatus.RESETTING); await new Promise(r => setTimeout(r, 1500)); await fetch(`${BACKEND_URL}/api/disconnect`, { headers: getAuthHeaders(token!) }); setConnectionStatus(ConnectionStatus.DISCONNECTED); }} />;
+        case View.CONNECTION: return <ConnectionPanel user={currentUser} status={connectionStatus} qrCode={qrCode} pairingCode={pairingCode} onConnect={async (ph) => { await fetch(`${BACKEND_URL}/api/connect`, { method: 'POST', headers: getAuthHeaders(token!), body: JSON.stringify({ phoneNumber: ph }) }); }} onDisconnect={async () => { await fetch(`${BACKEND_URL}/api/disconnect`, { headers: getAuthHeaders(token!) }); setConnectionStatus(ConnectionStatus.DISCONNECTED); }} onWipe={async () => { setConnectionStatus(ConnectionStatus.RESETTING); await new Promise(r => setTimeout(r, 1500)); await fetch(`${BACKEND_URL}/api/disconnect`, { headers: getAuthHeaders(token!) }); setConnectionStatus(ConnectionStatus.DISCONNECTED); }} showToast={showToast} />;
         case View.BLACKLIST: return <BlacklistPanel settings={settings} conversations={conversations} onUpdateSettings={handleUpdateSettings} />;
         case View.CHATS: default:
             return (

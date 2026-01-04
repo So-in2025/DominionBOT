@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { ConnectionStatus, User } from '../types';
 
@@ -10,6 +9,7 @@ interface ConnectionPanelProps {
     onDisconnect: () => void;
     onWipe: () => void;
     user: User | null;
+    showToast: (message: string, type: 'success' | 'error' | 'info') => void;
 }
 
 const StatusIndicator: React.FC<{ status: ConnectionStatus }> = ({ status }) => {
@@ -28,7 +28,7 @@ const StatusIndicator: React.FC<{ status: ConnectionStatus }> = ({ status }) => 
     );
 };
 
-const ConnectionPanel: React.FC<ConnectionPanelProps> = ({ status, qrCode, pairingCode, onConnect, onDisconnect, onWipe, user }) => {
+const ConnectionPanel: React.FC<ConnectionPanelProps> = ({ status, qrCode, pairingCode, onConnect, onDisconnect, onWipe, user, showToast }) => {
     const [linkMode, setLinkMode] = useState<'QR' | 'NUMBER'>('QR');
     const [phoneNumber, setPhoneNumber] = useState(user?.whatsapp_number || '');
     const [qrError, setQrError] = useState(false);
@@ -75,6 +75,12 @@ const ConnectionPanel: React.FC<ConnectionPanelProps> = ({ status, qrCode, pairi
         if(confirm("⚠️ HARD RESET: Esto eliminará todas las credenciales de sesión en el servidor y te obligará a escanear de nuevo.\n\nÚsalo SOLO si no recibes mensajes o la conexión está 'bugeada'.")) {
             onWipe();
         }
+    };
+    
+    const handleCopyUrl = () => {
+        const url = 'https://dominion-backend.trycloudflare.com';
+        navigator.clipboard.writeText(url);
+        showToast('URL Pública copiada al portapapeles.', 'success');
     };
 
     const renderContent = () => {
@@ -215,6 +221,17 @@ const ConnectionPanel: React.FC<ConnectionPanelProps> = ({ status, qrCode, pairi
                         <div>
                             <h3 className="text-2xl font-black text-white uppercase tracking-tighter">Nodo Sincronizado</h3>
                             <p className="text-gray-500 mt-2 text-xs font-medium">Todo listo. La IA ya puede operar sobre tu cuenta.</p>
+                        </div>
+                        
+                        <div className="pt-6 border-t border-white/5 space-y-4">
+                            <h4 className="text-[10px] font-black text-brand-gold uppercase tracking-[0.2em]">URL Pública Activa (Cloudflare)</h4>
+                            <div className="bg-black/50 border border-white/10 rounded-xl p-3 flex items-center justify-between gap-2">
+                                <span className="text-xs font-mono text-green-400 truncate">https://dominion-backend.trycloudflare.com</span>
+                                <button onClick={handleCopyUrl} className="p-2 bg-white/10 rounded-lg text-gray-400 hover:text-white transition-colors" title="Copiar URL">
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                                </button>
+                            </div>
+                            <p className="text-[9px] text-gray-500">Esta es la URL de tu backend. Úsala para conectar tu frontend o servicios externos.</p>
                         </div>
                         
                         <div className="pt-6 border-t border-white/5 space-y-4">
