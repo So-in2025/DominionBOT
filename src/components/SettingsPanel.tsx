@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import { BotSettings, PromptArchetype, NeuralRouterConfig } from '../types';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -123,22 +124,18 @@ const SpeechRecognition = (window as any).SpeechRecognition || (window as any).w
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUpdateSettings, onOpenLegal, showToast }) => {
   const [current, setCurrent] = useState<BotSettings | null>(null);
-  const [isAdvancedMode, setIsAdvancedMode] = useState(false); 
   
-  // WIZARD STATE 
+  // WIZARD STATE (kept separate as it's a distinct flow)
   const [wizardStep, setWizardStep] = useState<'IDENTITY' | 'API_SETUP' | 'CONTEXT' | 'PATH' | 'LOADING'>('IDENTITY');
-  
-  // DATA STATE
   const [wizIdentity, setWizIdentity] = useState({ name: '', website: '' });
   const [wizApiKey, setWizApiKey] = useState('');
   const [wizContext, setWizContext] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [showWebTooltip, setShowWebTooltip] = useState(false);
   const [isAnalyzingWeb, setIsAnalyzingWeb] = useState(false);
-  
-  const [wizNeuralConfig, setWizNeuralConfig] = useState<NeuralRouterConfig | undefined>(undefined);
-
   const [isProcessing, setIsProcessing] = useState(false);
+  const [wizIsAdvanced, setWizIsAdvanced] = useState(false); // Wizard-specific mode
+  const [wizNeuralConfig, setWizNeuralConfig] = useState<NeuralRouterConfig | undefined>(undefined);
   
   // For standard settings saving
   const [isSaving, setIsSaving] = useState(false);
@@ -148,10 +145,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
   useEffect(() => {
     if (settings) {
         setCurrent({ ...settings, ignoredJids: settings.ignoredJids || [] });
-        if (settings.geminiApiKey) {
-            setWizApiKey(settings.geminiApiKey);
-        }
-        setIsAdvancedMode(settings.useAdvancedModel || false);
+        // Sync wizard-specific states if needed for pre-population
+        if (settings.geminiApiKey) setWizApiKey(settings.geminiApiKey);
+        if (settings.productName) setWizIdentity(prev => ({ ...prev, name: settings.productName }));
+        if (settings.ctaLink) setWizIdentity(prev => ({ ...prev, website: settings.ctaLink }));
+        setWizIsAdvanced(settings.useAdvancedModel || false);
         setWizNeuralConfig(settings.neuralConfig);
     }
   }, [settings]);
@@ -205,14 +203,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
       if (!current) return;
       setIsSaving(true);
       try {
+          // Payload is simply the 'current' state, which is the single source of truth
           const payload = {
               ...current,
-              useAdvancedModel: isAdvancedMode,
-              // SANITIZATION FIX: If Advanced Mode is active, clear the "Simple Mode" specific fields 
-              // to prevent "Ghost Data" (like 1200 USD) confusion in future switches.
-              priceText: isAdvancedMode ? '' : current.priceText,
-              // If advanced mode is on, ensure neuralConfig is included from state if modified
-              neuralConfig: isAdvancedMode ? (wizNeuralConfig || current.neuralConfig) : current.neuralConfig
+              // Sanitize price text if in advanced mode to avoid confusion
+              priceText: current.useAdvancedModel ? '' : current.priceText,
           };
           await onUpdateSettings(payload);
           showToast('Configuración sincronizada con el núcleo.', 'success');
@@ -240,7 +235,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
           const prompt = `
             Analiza el sitio web: ${wizIdentity.website}
             TU OBJETIVO: Configurar la "Personalidad de Venta" de una IA.
-            Redacta en PRIMERA PERSONA ("Soy el asistente de...", "Ofrezco...").
+            Redacta en PRIMERA PERSONA ("Soy el especialista en [Rubro]. Mi meta es vender [Productos principales]..."
+
+).
             NO hagas un resumen corporativo aburrido.
             ESTRUCTURA REQUERIDA:
             1. ROL Y OFERTA: "Soy el especialista en [Rubro]. Mi meta es vender [Productos principales]..."
@@ -279,7 +276,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
           return;
       }
       
-      if (isAdvancedMode) {
+      if (wizIsAdvanced) {
           if (!wizNeuralConfig?.masterIdentity) {
               showToast('Debes configurar al menos la Identidad Maestra.', 'error');
               return;
@@ -485,17 +482,17 @@ ${data.rules}
                         <div className="bg-brand-surface border border-white/5 rounded-3xl p-6 shadow-xl">
                             <h3 className="text-sm font-black text-white uppercase tracking-widest mb-6">Arquitectura</h3>
                             <div className="flex p-1 bg-black/40 border border-white/10 rounded-xl mb-4">
-                                <button onClick={() => setIsAdvancedMode(false)} className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${!isAdvancedMode ? 'bg-white/10 text-white' : 'text-gray-500'}`}>Lineal (Simple)</button>
-                                <button onClick={() => setIsAdvancedMode(true)} className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${isAdvancedMode ? 'bg-brand-gold text-black' : 'text-gray-500'}`}>Modular (Adv)</button>
+                                <button onClick={() => handleUpdate('useAdvancedModel', false)} className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${!current.useAdvancedModel ? 'bg-white/10 text-white' : 'text-gray-500'}`}>Lineal (Simple)</button>
+                                <button onClick={() => handleUpdate('useAdvancedModel', true)} className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${current.useAdvancedModel ? 'bg-brand-gold text-black' : 'text-gray-500'}`}>Modular (Adv)</button>
                             </div>
                             <p className="text-[9px] text-gray-500 leading-relaxed">
-                                {isAdvancedMode 
+                                {current.useAdvancedModel 
                                     ? "Sistema de enrutamiento inteligente. Define múltiples 'expertos' y un nodo maestro." 
                                     : "Modelo unificado. Una sola identidad y contexto para todo el flujo."}
                             </p>
                         </div>
                         
-                        {!isAdvancedMode && (
+                        {!current.useAdvancedModel && (
                             <div className="bg-brand-surface border border-white/5 rounded-3xl p-6 shadow-xl">
                                 <h3 className="text-sm font-black text-white uppercase tracking-widest mb-6">Personalidad</h3>
                                 <div className="space-y-6">
@@ -522,14 +519,10 @@ ${data.rules}
 
                     {/* RIGHT COL: Main Context / Modular Config */}
                     <div className="lg:col-span-2 space-y-8">
-                        {isAdvancedMode ? (
+                        {current.useAdvancedModel ? (
                             <AdvancedNeuralConfig 
-                                initialConfig={current.neuralConfig || { masterIdentity: current.productDescription, modules: [] }}
-                                onChange={(cfg) => {
-                                    setWizNeuralConfig(cfg);
-                                    // Live update current state mostly for safety, though handled on save
-                                    handleUpdate('neuralConfig', cfg); 
-                                }}
+                                initialConfig={current.neuralConfig}
+                                onChange={(cfg) => handleUpdate('neuralConfig', cfg)}
                             />
                         ) : (
                             <div className="bg-brand-surface border border-white/5 rounded-3xl p-8 shadow-xl h-full">
@@ -588,7 +581,7 @@ ${data.rules}
                 </div>
             </div>
 
-            <div className={`bg-brand-surface border border-white/10 rounded-[32px] p-8 md:p-12 shadow-2xl relative backdrop-blur-sm transition-all duration-500 ${isAdvancedMode && wizardStep === 'CONTEXT' ? 'max-w-4xl w-full mx-auto' : ''}`}>
+            <div className={`bg-brand-surface border border-white/10 rounded-[32px] p-8 md:p-12 shadow-2xl relative backdrop-blur-sm transition-all duration-500 ${wizIsAdvanced && wizardStep === 'CONTEXT' ? 'max-w-4xl w-full mx-auto' : ''}`}>
                 
                 {/* STEP 1: IDENTITY */}
                 {wizardStep === 'IDENTITY' && (
@@ -729,8 +722,8 @@ ${data.rules}
                         {/* MODE SELECTOR WITH HOVER TOOLTIPS */}
                         <div className="flex p-1 bg-black/40 border border-white/10 rounded-xl mb-6 relative">
                             <button 
-                                onClick={() => setIsAdvancedMode(false)}
-                                className={`group relative flex-1 py-3 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${!isAdvancedMode ? 'bg-white/10 text-white shadow-inner' : 'text-gray-500 hover:text-white'}`}
+                                onClick={() => setWizIsAdvanced(false)}
+                                className={`group relative flex-1 py-3 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${!wizIsAdvanced ? 'bg-white/10 text-white shadow-inner' : 'text-gray-500 hover:text-white'}`}
                             >
                                 Agente Lineal (Simple)
                                 {/* Tooltip */}
@@ -741,8 +734,8 @@ ${data.rules}
                                 </div>
                             </button>
                             <button 
-                                onClick={() => setIsAdvancedMode(true)}
-                                className={`group relative flex-1 py-3 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${isAdvancedMode ? 'bg-brand-gold text-black shadow-lg' : 'text-gray-500 hover:text-white'}`}
+                                onClick={() => setWizIsAdvanced(true)}
+                                className={`group relative flex-1 py-3 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${wizIsAdvanced ? 'bg-brand-gold text-black shadow-lg' : 'text-gray-500 hover:text-white'}`}
                             >
                                 <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86 3.86l-.477 2.387c-.037.184.011.373.13.514l1.392 1.624a1 1 0 00.707.362h2.242a2 2 0 001.022-.547l1.022-1.022a2 2 0 00.547-1.022l.477-2.387c.037-.184-.011-.373-.13-.514l-1.392-1.624a1 1 0 00-.707-.362z" /></svg>
                                 Enjambre Modular (Avanzado)
@@ -755,7 +748,7 @@ ${data.rules}
                             </button>
                         </div>
 
-                        {isAdvancedMode ? (
+                        {wizIsAdvanced ? (
                             // ADVANCED MODULAR INTERFACE INSIDE WIZARD - FIX: Removed max-h scroll container
                             <div className="pr-2 p-1">
                                 <AdvancedNeuralConfig 
@@ -813,7 +806,7 @@ ${data.rules}
 
                         <div className="flex gap-4 pt-4 border-t border-white/5">
                             <button onClick={() => setWizardStep('API_SETUP')} className="px-6 py-3 text-gray-500 font-bold text-xs uppercase hover:text-white transition-colors">Atrás</button>
-                            {isAdvancedMode ? (
+                            {wizIsAdvanced ? (
                                 <button 
                                     onClick={executeNeuralPath} 
                                     className="flex-1 py-3 bg-brand-gold text-black rounded-xl font-black text-xs uppercase tracking-[0.2em] transition-all hover:scale-[1.02] shadow-lg shadow-brand-gold/20"
@@ -889,7 +882,7 @@ ${data.rules}
                     <div className="py-20 text-center animate-fade-in flex flex-col items-center">
                         <div className="w-20 h-20 border-4 border-brand-gold/20 border-t-brand-gold rounded-full animate-spin mb-8 shadow-[0_0_40px_rgba(212,175,55,0.2)]"></div>
                         <h3 className="text-xl font-black text-white uppercase tracking-widest animate-pulse">Estructurando Red Neural</h3>
-                        <p className="text-xs text-gray-500 mt-3 font-mono">Aplicando arquitectura {isAdvancedMode ? 'Modular' : 'Elite'}...</p>
+                        <p className="text-xs text-gray-500 mt-3 font-mono">Aplicando arquitectura {wizIsAdvanced ? 'Modular' : 'Elite'}...</p>
                     </div>
                 )}
 
