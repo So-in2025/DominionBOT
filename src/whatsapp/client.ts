@@ -1,4 +1,3 @@
-
 import makeWASocket, {
   DisconnectReason,
   makeCacheableSignalKeyStore,
@@ -7,7 +6,8 @@ import makeWASocket, {
   Browsers,
   proto,
   GroupMetadata,
-  Contact
+  Contact,
+  WAMessageKey
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import pino from 'pino';
@@ -21,7 +21,8 @@ import { logService } from '../services/logService.js';
 import * as QRCode from 'qrcode';
 import { radarService } from '../services/radarService.js'; 
 import { Buffer } from 'buffer'; 
-import { campaignService } from '../services/campaignService.js'; // To access Watchdog state if needed, or implementing local check.
+import { campaignService } from '../services/campaignService.js'; 
+import { normalizeJid } from '../utils/jidUtils.js';
 
 const sessions = new Map<string, WASocket>();
 const qrCache = new Map<string, string>(); 
@@ -106,8 +107,6 @@ function extractMessageContent(msg: proto.IWebMessageInfo | proto.IMessage): str
     if (message.contactMessage) return '👤 [Contacto]';
     if (message.locationMessage) return '📍 [Ubicación]';
     
-    // If after all checks, we have a message object but couldn't extract content, it's likely something we don't handle.
-    // Returning null will ensure it's ignored, preventing "[Contenido Desconocido]" and other artifacts.
     return null;
 }
 
@@ -144,6 +143,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
             oldSock.ws?.close(); 
             oldSock.ev.removeAllListeners('connection.update');
             oldSock.ev.removeAllListeners('creds.update');
+            oldSock.ev.removeAllListeners('messages.update');
         } catch (e) {}
         sessions.delete(userId);
     }
@@ -171,23 +171,37 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
             browser: Browsers.macOS('Chrome'),
             agent: user?.settings?.proxyUrl ? new HttpsProxyAgent(user.settings.proxyUrl) as any : undefined,
             generateHighQualityLinkPreview: true,
-            shouldIgnoreJid: jid => jid?.endsWith('@broadcast') || jid?.endsWith('@newsletter'), // IGNORE NEWSLETTERS AT SOURCE
+            shouldIgnoreJid: jid => jid?.endsWith('@broadcast') || jid?.endsWith('@newsletter'), 
             syncFullHistory: true,
             markOnlineOnConnect: true, 
             defaultQueryTimeoutMs: 60000, 
             keepAliveIntervalMs: 10000, 
             retryRequestDelayMs: 2000,
             connectTimeoutMs: 60000,
-            // CRITICAL OPTIMIZATION: Do NOT query DB in getMessage. 
-            // This causes massive lag during history sync. Return empty placeholder.
-            getMessage: async (key) => {
-                return { conversation: '' };
-            }
+            // BLOQUE 5: HISTORIAL NO DEBE ROMPER CONTEXTO
+            getMessage: async () => undefined
         });
 
         sessions.set(userId, sock);
 
         sock.ev.on('creds.update', saveCreds);
+
+        // BLOQUE 3: DESINCRONIZACIÓN SIGNAL (MessageCounterError)
+        sock.ev.on('messages.update', async (updates) => {
+            for (const update of updates) {
+                // @ts-ignore
+                const err = update.error;
+                if (err?.message?.includes('MessageCounterError') || (update as any).update?.messageStubType === proto.WebMessageInfo.StubType.CIPHERTEXT) {
+                    logService.warn('[WA-CLIENT] 🔴 Signal desync detected (MessageCounterError). Forcing session purge.', userId);
+                    await clearBindedSession(userId);
+                    // PATCH: Reset attempts so immediate reconnection doesn't fail
+                    reconnectionAttempts.set(userId, 0); 
+                    await disconnectWhatsApp(userId);
+                    setTimeout(() => connectToWhatsApp(userId, phoneNumber), 2000);
+                    return;
+                }
+            }
+        });
 
         sock.ev.on('connection.update', async (update: any) => { 
             const { connection, lastDisconnect, qr, isNewLogin, pairingCode: newPairingCode } = update;
@@ -229,11 +243,10 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                 if (isLoggedOut) {
                     logService.warn(`[WA-CLIENT] ⚠️ Sesión cerrada por WhatsApp (401/LoggedOut). Purgando datos.`, userId);
                     await clearBindedSession(userId); 
-                    reconnectionAttempts.set(userId, 0); // Reset after purge
+                    reconnectionAttempts.set(userId, 0); 
                     setTimeout(() => connectToWhatsApp(userId, phoneNumber), 2000);
                 } else {
                     const currentAttempts = reconnectionAttempts.get(userId) || 0;
-                    // Exponential backoff: 3s, 4.5s, 6.75s, 10s, ... capped at 60s
                     const delay = Math.min(60000, 3000 * Math.pow(1.5, currentAttempts));
                     logService.warn(`[WA-CLIENT] Conexión interrumpida (Código: ${statusCode}). Reconectando en ${Math.round(delay/1000)}s... (Intento #${currentAttempts + 1})`, userId);
                     setTimeout(() => connectToWhatsApp(userId, phoneNumber), delay); 
@@ -241,7 +254,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
 
             } else if (connection === 'open') {
                 logService.info(`[WA-CLIENT] ✅ CONEXIÓN ESTABLECIDA.`, userId);
-                reconnectionAttempts.set(userId, 0); // Reset on success
+                reconnectionAttempts.set(userId, 0); 
                 qrCache.delete(userId);
                 codeCache.delete(userId);
                 
@@ -254,64 +267,71 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
             }
         });
 
-        // --- BULK HISTORY HYDRATION PROTOCOL ---
-        // Optimized Listener for Chat List updates
         sock.ev.on('chats.upsert', async (chats) => {
             if (!chats || chats.length === 0) return;
-            const items = chats.map(c => ({
-                jid: c.id,
-                name: c.name || undefined,
-                timestamp: typeof c.conversationTimestamp === 'number' ? c.conversationTimestamp : undefined
-            }));
+            const items = chats.map(c => {
+                const canonicalJid = normalizeJid(c.id);
+                if (!canonicalJid) return null;
+                return {
+                    jid: canonicalJid,
+                    name: c.name || undefined,
+                    timestamp: typeof c.conversationTimestamp === 'number' ? c.conversationTimestamp : undefined
+                };
+            }).filter(i => i !== null) as { jid: string; name?: string; timestamp?: number }[];
+            
             await conversationService.ensureConversationsExist(userId, items);
         });
 
-        // Optimized Listener for Contacts
         sock.ev.on('contacts.upsert', async (contacts) => {
             if (!contacts || contacts.length === 0) return;
-            const items = contacts.map(c => ({
-                jid: c.id,
-                name: c.name || c.notify || c.verifiedName || undefined
-            })).filter(c => c.name); // Only update if name exists
+            const items = contacts.map(c => {
+                const canonicalJid = normalizeJid(c.id);
+                if (!canonicalJid) return null;
+                return {
+                    jid: canonicalJid,
+                    name: c.name || c.notify || c.verifiedName || undefined
+                };
+            }).filter(c => c !== null && c.name) as { jid: string; name: string }[];
+            
             await conversationService.ensureConversationsExist(userId, items);
         });
 
         sock.ev.on('messages.upsert', async ({ messages, type }) => {
             if (!messages || messages.length === 0) return;
             
-            // Log for visibility of data flow
             if (type === 'append' && messages.length > 5) {
                 logService.info(`[HISTORY] 📥 Procesando batch de ${messages.length} mensajes...`, userId);
             }
             
             try {
-                // HARD FILTER: BLACKLIST CHECK AT INGRESS
-                // Get user settings ONCE for the batch to check ignoredJids
+                // Fetch User & Conversations ONCE for the batch
                 const user = await db.getUser(userId);
                 const ignoredJids = user?.settings.ignoredJids || [];
+                const userConversations = user?.conversations || {};
 
                 const messagesByJid: Record<string, typeof messages> = {};
                 
                 for (const msg of messages) {
-                    const jid = msg.key.remoteJid;
-                    if (!jid || jid === 'status@broadcast' || jid.endsWith('@newsletter')) continue; // FILTER CHANNELS
+                    const rawJid = msg.key.remoteJid;
+                    const canonicalJid = normalizeJid(rawJid); // BLOQUE 1
                     
-                    // BLOCK: If JID is in blacklist, completely ignore
-                    // We check against the phone number part of the JID
-                    const number = jid.split('@')[0];
+                    if (!canonicalJid || canonicalJid === 'status@broadcast' || canonicalJid.endsWith('@newsletter')) continue; 
+
+                    // BLOCK: Blacklist Check
+                    // canonicalJid ya fue validado arriba (normalizeJid guard)
+                    const number = canonicalJid.split('@')[0];
                     if (ignoredJids.some(ignored => number.includes(ignored))) {
-                        // logService.debug(`[BLOCKED] Mensaje ignorado de ${number}`, userId); // Optional verbose log
                         continue;
                     }
 
-                    if (!messagesByJid[jid]) messagesByJid[jid] = [];
-                    messagesByJid[jid].push(msg);
+                    if (!messagesByJid[canonicalJid]) messagesByJid[canonicalJid] = [];
+                    messagesByJid[canonicalJid].push(msg);
                 }
 
                 // Process each chat's batch
-                const chatProcessPromises = Object.keys(messagesByJid).map(async (jid) => {
-                    const chatMessages = messagesByJid[jid];
-                    const isGroup = jid.endsWith('@g.us');
+                const chatProcessPromises = Object.keys(messagesByJid).map(async (canonicalJid) => {
+                    const chatMessages = messagesByJid[canonicalJid];
+                    const isGroup = canonicalJid.endsWith('@g.us');
 
                     // --- GROUP LOGIC (RADAR ONLY) ---
                     if (isGroup) {
@@ -320,26 +340,39 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                                 if (msg.key.fromMe) continue;
                                 const text = extractMessageContent(msg);
                                 if (!text) continue;
-                                const sender = msg.key.participant || msg.participant || jid; 
+                                const sender = msg.key.participant || msg.participant || canonicalJid; 
                                 const senderName = msg.pushName || 'Unknown';
-                                radarService.processGroupMessage(userId, jid, jid, sender, senderName, text).catch(e => console.error(e));
+                                radarService.processGroupMessage(userId, canonicalJid, canonicalJid, sender, senderName, text).catch(e => console.error(e));
                             }
                         }
-                        return; // Stop here for groups
+                        return; 
                     }
 
                     // --- PRIVATE CHAT LOGIC (INBOX) ---
+                    
+                    // BLOQUE 2: ELIMINAR CHAT SI VOS INICIÁS LA CONVERSACIÓN
                     const firstMsg = chatMessages[0];
+                    const isOwnerMessage = firstMsg.key.fromMe;
+                    
+                    // Check existence in the fetched map using sanitizeKey for DB compatibility
+                    const safeJid = sanitizeKey(canonicalJid);
+                    // Deterministic lookup (Block 4 logic preview)
+                    const conversationExists = userConversations[safeJid] || userConversations[canonicalJid];
+
+                    if (isOwnerMessage && !conversationExists) {
+                        // IGNORAR TOTALMENTE: No crear chat, no guardar mensaje
+                        return;
+                    }
+
                     const bestName = firstMsg.pushName || (firstMsg as any).verifiedBizName || undefined;
-                    await conversationService.ensureConversationsExist(userId, [{ jid, name: bestName }]);
+                    
+                    // Hydrate conversation only if allowed (it exists or it's inbound)
+                    await conversationService.ensureConversationsExist(userId, [{ jid: canonicalJid, name: bestName }]);
 
                     for (const msg of chatMessages) {
                         try {
                             const messageText = extractMessageContent(msg);
                             
-                            // *** CRITICAL FIX: IGNORE UNPARSEABLE MESSAGES ***
-                            // If extractMessageContent returns null, it means it's a system message or something
-                            // we don't want to show. We skip it entirely to prevent duplicates and "Contenido Desconocido".
                             if (!messageText) {
                                 continue; 
                             }
@@ -351,23 +384,21 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                                 id: msg.key.id || Date.now().toString(),
                                 text: messageText,
                                 sender: msg.key.fromMe ? 'owner' : 'user', 
-                                // FIX: Changed to string to match type definition.
                                 timestamp: new Date(msgTimestamp * 1000).toISOString()
                             };
 
                             const senderName = msg.pushName || (msg as any).verifiedBizName || undefined;
 
-                            // 1. SAVE TO DB (Priority)
-                            await conversationService.addMessage(userId, jid, userMessage, senderName, isOldForAI);
+                            // 1. SAVE TO DB
+                            await conversationService.addMessage(userId, canonicalJid, userMessage, senderName, isOldForAI);
                             
-                            // Log ingestion only for new messages to avoid spam
                             if (!msg.key.fromMe && !isOldForAI) {
-                                logService.info(`[INBOX] 📩 Mensaje procesado de ${senderName || jid}: "${messageText.substring(0, 20)}..."`, userId);
+                                logService.info(`[INBOX] 📩 Mensaje procesado de ${senderName || canonicalJid}: "${messageText.substring(0, 20)}..."`, userId);
                             }
 
                             // 2. QUEUE FOR AI (If new and not from me)
                             if (!msg.key.fromMe && !isOldForAI && type === 'notify') {
-                                aiProcessingQueue.add(`${userId}::${jid}`);
+                                aiProcessingQueue.add(`${userId}::${canonicalJid}`);
                             }
                         } catch (innerError) {
                             console.error(`Error procesando mensaje individual:`, innerError);
@@ -402,7 +433,6 @@ export async function disconnectWhatsApp(userId: string) {
     qrCache.delete(userId);
     codeCache.delete(userId);
     
-    // DELAY CLEANUP TO ENSURE DB LOCKS ARE FREE
     await new Promise(resolve => setTimeout(resolve, 500));
     await clearBindedSession(userId); 
     await db.updateUser(userId, { whatsapp_number: '' });
@@ -411,6 +441,9 @@ export async function disconnectWhatsApp(userId: string) {
 
 export async function sendMessage(senderId: string, jid: string, text: string, imageUrl?: string): Promise<proto.WebMessageInfo | undefined> {
     let sock: WASocket | undefined;
+    const canonicalJid = normalizeJid(jid); // BLOQUE 1
+    if (!canonicalJid) throw new Error("Invalid JID");
+
     if (senderId === DOMINION_NETWORK_JID) {
         const systemSettings = await db.getSystemSettings();
         if (!systemSettings.dominionNetworkJid) {
@@ -430,15 +463,13 @@ export async function sendMessage(senderId: string, jid: string, text: string, i
         try {
             const base64Data = imageUrl.split(',')[1] || imageUrl;
             const buffer = Buffer.from(base64Data, 'base64');
-            // FIX: Cast the return value to resolve the type mismatch.
-            return (await sock.sendMessage(jid, { image: buffer, caption: text })) as proto.WebMessageInfo | undefined;
+            return (await sock.sendMessage(canonicalJid, { image: buffer, caption: text })) as proto.WebMessageInfo | undefined;
         } catch (e) {
-            console.error(`Error sending image to ${jid}:`, e);
+            console.error(`Error sending image to ${canonicalJid}:`, e);
             throw new Error("Failed to send image");
         }
     } else {
-        // FIX: Cast the return value to resolve the type mismatch.
-        return (await sock.sendMessage(jid, { text })) as proto.WebMessageInfo | undefined;
+        return (await sock.sendMessage(canonicalJid, { text })) as proto.WebMessageInfo | undefined;
     }
 }
 
@@ -450,11 +481,10 @@ export async function fetchUserGroups(userId: string): Promise<WhatsAppGroup[]> 
     
     try {
         const groups = await sock.groupFetchAllParticipating();
-        return Object.values(groups).map((g: GroupMetadata) => ({
-            id: g.id,
-            subject: g.subject,
-            size: g.participants.length
-        }));
+        return Object.values(groups).map((g: GroupMetadata) => {
+            const id = normalizeJid(g.id);
+            return id ? { id, subject: g.subject, size: g.participants.length } : null;
+        }).filter(g => g !== null) as WhatsAppGroup[];
     } catch (e: any) {
         logService.error(`[WA-CLIENT] Error fetching groups for ${userId}`, e);
         throw new Error("Error obteniendo grupos de WhatsApp.");
@@ -462,31 +492,42 @@ export async function fetchUserGroups(userId: string): Promise<WhatsAppGroup[]> 
 }
 
 async function _commonAiProcessingLogic(userId: string, jid: string, user: User, logPrefix: string = '[WA-CLIENT]') {
+    const canonicalJid = normalizeJid(jid); // BLOQUE 1
+    if (!canonicalJid) return;
+
     const sock = sessions.get(userId);
     
     const latestUser = await db.getUser(userId);
-    const safeJid = sanitizeKey(jid);
-    const latestConversation = latestUser?.conversations?.[safeJid] || latestUser?.conversations?.[jid];
+    
+    // BLOQUE 4: ACCESO DETERMINÍSTICO AL MAPA
+    const safeJid = sanitizeKey(canonicalJid);
+    const latestConversation = latestUser?.conversations?.[safeJid] || latestUser?.conversations?.[canonicalJid];
 
     if (!latestConversation) return;
+
+    // BLOQUE 6: IA SOLO CORRE CON CONTEXTO VÁLIDO
+    if (!latestConversation.messages || latestConversation.messages.length === 0) {
+        logService.warn('[AI] No context available, skipping', userId);
+        return;
+    }
 
     const isTestBot = latestConversation.isTestBotConversation;
 
     if (!isTestBot && !sock) return; 
 
     if (!isTestBot && sock) {
-        await sock.sendPresenceUpdate('composing', jid);
+        await sock.sendPresenceUpdate('composing', canonicalJid);
     }
 
     const aiResult = await generateBotResponse(latestConversation, latestUser || user, isTestBot);
 
     if (aiResult?.responseText) {
         if (isTestBot) {
-            logService.info(`${logPrefix} Generada respuesta simulada para ${jid}`, userId);
+            logService.info(`${logPrefix} Generada respuesta simulada para ${canonicalJid}`, userId);
             const botMessage: Message = { id: `bot-${Date.now()}`, text: aiResult.responseText, sender: 'bot', timestamp: new Date().toISOString() };
-            await conversationService.addMessage(userId, jid, botMessage);
+            await conversationService.addMessage(userId, canonicalJid, botMessage);
         } else if (sock) {
-            const sentMsg = await sock.sendMessage(jid, { text: aiResult.responseText });
+            const sentMsg = await sock.sendMessage(canonicalJid, { text: aiResult.responseText });
             if (sentMsg && sentMsg.key.id) {
                 const botMessage: Message = { 
                     id: sentMsg.key.id, 
@@ -494,14 +535,14 @@ async function _commonAiProcessingLogic(userId: string, jid: string, user: User,
                     sender: 'bot', 
                     timestamp: new Date((sentMsg.messageTimestamp as number) * 1000).toISOString() 
                 };
-                await conversationService.addMessage(userId, jid, botMessage);
+                await conversationService.addMessage(userId, canonicalJid, botMessage);
             }
         }
     }
     
     if (aiResult) {
         const freshUser = await db.getUser(userId);
-        const freshConvo = freshUser?.conversations?.[safeJid] || freshUser?.conversations?.[jid] || latestConversation;
+        const freshConvo = freshUser?.conversations?.[safeJid] || freshUser?.conversations?.[canonicalJid] || latestConversation;
 
         const updates: Partial<Conversation> = {
             status: aiResult.newStatus,
@@ -510,7 +551,6 @@ async function _commonAiProcessingLogic(userId: string, jid: string, user: User,
         };
 
         if (aiResult.newStatus === LeadStatus.HOT) {
-            // PROTOCOLO GUARDIA: Solo silenciar si NO está en modo de cierre autónomo
             if (!freshUser?.settings.isAutonomousClosing) {
                 updates.isMuted = true;
                 updates.suggestedReplies = aiResult.suggestedReplies;
@@ -526,34 +566,42 @@ async function _commonAiProcessingLogic(userId: string, jid: string, user: User,
 }
 
 export async function processAiResponseForJid(userId: string, jid: string, force: boolean = false) {
-    const normalizedJid = jid.replace(/@lid/g, '@s.whatsapp.net');
+    const canonicalJid = normalizeJid(jid); // BLOQUE 1
+    if (!canonicalJid) {
+        if (force) throw new Error(`Invalid JID: ${jid}`);
+        return;
+    }
     
     const user = await db.getUser(userId);
     if (!user) return;
 
-    const convs = await conversationService.getConversations(userId);
-    const conversation = convs.find(c => c.id === normalizedJid);
+    // BLOQUE 4: FORZAR IA DEBE SER DETERMINÍSTICO
+    // No usar .find, acceso directo al mapa
+    const safeJid = sanitizeKey(canonicalJid);
+    const conversation = user.conversations?.[safeJid] || user.conversations?.[canonicalJid];
 
     if (!conversation) {
-        logService.warn(`[WA-CLIENT] Force AI run failed. Conversation not found for JID: ${jid} (normalized to: ${normalizedJid})`, userId);
+        logService.warn(`[WA-CLIENT] Force AI run failed. Conversation not found for JID: ${canonicalJid}`, userId);
+        // Si es forzado, lanzamos error para debug
+        if (force) throw new Error(`Conversation missing for ${canonicalJid}`);
         return;
     }
 
     if (conversation.isTestBotConversation) {
         if (user.plan_status === 'suspended') return;
-        return _commonAiProcessingLogic(userId, normalizedJid, user, '[WA-CLIENT-ELITE-TEST]');
+        return _commonAiProcessingLogic(userId, canonicalJid, user, '[WA-CLIENT-ELITE-TEST]');
     }
 
     if (!force) {
         if (!user.settings.isActive || user.plan_status === 'suspended') return;
         
-        const isIgnored = user.settings.ignoredJids?.some(id => id.includes(normalizedJid.split('@')[0]));
+        const isIgnored = user.settings.ignoredJids?.some(id => id.includes(canonicalJid.split('@')[0]));
         if (isIgnored) return;
 
         if (conversation.isMuted || !conversation.isBotActive || conversation.status === LeadStatus.PERSONAL) return;
     } else {
-        logService.info(`[WA-CLIENT] ⚡ FORZANDO EJECUCIÓN IA para ${jid}`, userId);
+        logService.info(`[WA-CLIENT] ⚡ FORZANDO EJECUCIÓN IA para ${canonicalJid}`, userId);
     }
 
-    return _commonAiProcessingLogic(userId, normalizedJid, user);
+    return _commonAiProcessingLogic(userId, canonicalJid, user);
 }

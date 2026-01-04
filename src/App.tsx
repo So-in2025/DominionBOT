@@ -2,6 +2,10 @@
 
 
 
+
+
+
+
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Conversation, BotSettings, Message, View, ConnectionStatus, User, LeadStatus, PromptArchetype, Testimonial, SystemSettings } from './types';
 import Header from './components/Header';
@@ -400,7 +404,8 @@ export function App() {
                     );
 
                     // Create a map from current state for efficient merging
-                    const map = new Map(prev.map(c => [c.id, c]));
+                    const map = new Map<string, Conversation>();
+                    prev.forEach(c => map.set(c.id, c));
                     
                     for (const incoming of incomingConversations) {
                         const existing = map.get(incoming.id);

@@ -1,3 +1,4 @@
+
 /**
  * DOMINION BOT - Configuración de Infraestructura (FRONTEND-ONLY)
  * Este archivo está optimizado para ser procesado por Vite y no debe ser importado en el backend.
@@ -46,7 +47,7 @@ const getEnvUrl = (): { url: string; source: string } => {
     // 4. RED DE SEGURIDAD (FALLBACK DE PRODUCCIÓN)
     // Si el build de producción se ejecuta sin la variable VITE_BACKEND_URL, usará esta URL
     // en lugar de fallar o usar localhost. Es un último recurso.
-    const HARDCODED_BACKEND_URL = "https://unblanketed-waylon-arbitrarily.ngrok-free.dev";
+    const HARDCODED_BACKEND_URL = "https://bracelet-praise-calgary-learn.trycloudflare.com";
     return { url: HARDCODED_BACKEND_URL, source: 'Hardcoded Production Fallback' };
 };
 

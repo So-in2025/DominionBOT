@@ -1,10 +1,7 @@
-
-
-
 import { Buffer } from 'buffer';
 import { connectToWhatsApp, disconnectWhatsApp, sendMessage, getSessionStatus, processAiResponseForJid, fetchUserGroups, ELITE_BOT_JID, ELITE_BOT_NAME, DOMINION_NETWORK_JID } from '../whatsapp/client.js'; 
 import { conversationService } from '../services/conversationService.js';
-import { Message, LeadStatus, User, Conversation, SimulationScenario, EvaluationResult, Campaign, RadarSignal, InternalNote, SimulationRun, RadarSettings, IntentSignal, ConnectionOpportunity, NetworkProfile, PermissionStatus, WhatsAppGroup } from '../types.js'; 
+import { Message, LeadStatus, User, Conversation, SimulationScenario, EvaluationResult, Campaign, RadarSignal, InternalNote, SimulationRun, RadarSettings, IntentSignal, ConnectionOpportunity, NetworkProfile, PermissionStatus, WhatsAppGroup, ConnectionStatus } from '../types.js'; 
 import { db, sanitizeKey } from '../database.js'; 
 import { logService } from '../services/logService.js';
 import { campaignService } from '../services/campaignService.js'; 
@@ -17,8 +14,8 @@ import { Request as ExpressRequest, Response } from 'express';
 import { createHash } from 'crypto'; 
 import { generateContentWithFallback } from '../services/geminiService.js';
 import { Type } from "@google/genai";
+import { normalizeJid } from '../utils/jidUtils.js';
 
-// ... (AuthenticatedRequest interface and helper)
 interface AuthenticatedRequest<P = any, ResBody = any, ReqBody = any, ReqQuery = any> extends ExpressRequest<P, ResBody, ReqBody, ReqQuery> {
     user: { id: string; username: string; role: string; };
     body: ReqBody;
@@ -28,7 +25,6 @@ interface AuthenticatedRequest<P = any, ResBody = any, ReqBody = any, ReqQuery =
 
 const getClientUser = (req: AuthenticatedRequest) => ({ id: req.user.id, username: req.user.username });
 
-// ... (handleGetStatus, handleConnect, etc. remain the same)
 export const handleGetStatus = async (req: AuthenticatedRequest, res: any) => {
     try {
         const { id } = req.user;
@@ -67,16 +63,30 @@ export const handleSendMessage = async (req: AuthenticatedRequest<any, any, { to
     try {
         const { id } = req.user;
         const { to, text, imageUrl } = req.body;
-        const sentMsg = await sendMessage(id, to, text, imageUrl);
+        const canonicalJid = normalizeJid(to); // BLOQUE 1
+        if (!canonicalJid) {
+            return res.status(400).json({ message: 'JID inválido.' });
+        }
+
+        // AJUSTE DE SEGURIDAD: Filtro defensivo para no enviar mensajes directos a grupos o canales
+        if (canonicalJid.endsWith('@g.us') || canonicalJid.endsWith('@newsletter')) {
+            return res.status(400).json({ message: 'No se permite enviar mensajes a grupos o canales por esta vía.' });
+        }
+
+        const sentMsg = await sendMessage(id, canonicalJid, text, imageUrl);
 
         // Save message to conversation with the real ID from WhatsApp to ensure idempotency
         if (sentMsg && sentMsg.key.id) {
-            await conversationService.addMessage(id, to, { 
+            // AJUSTE MENOR #1: Fallback defensivo para timestamp
+            const msgTimestamp = sentMsg.messageTimestamp 
+                ? new Date(Number(sentMsg.messageTimestamp) * 1000).toISOString() 
+                : new Date().toISOString();
+
+            await conversationService.addMessage(id, canonicalJid, { 
                 id: sentMsg.key.id, 
                 text, 
                 sender: 'owner', 
-                // FIX: Changed timestamp to string to match type definition.
-                timestamp: new Date((sentMsg.messageTimestamp as number) * 1000).toISOString()
+                timestamp: msgTimestamp
             });
         }
         
@@ -91,12 +101,15 @@ export const handleUpdateConversation = async (req: AuthenticatedRequest<any, an
     try {
         const { id: userId } = req.user;
         const { id: conversationId, updates } = req.body;
+        const canonicalJid = normalizeJid(conversationId); // BLOQUE 1
+        if (!canonicalJid) return res.status(400).json({ message: 'ID de conversación inválido' });
         
         const user = await db.getUser(userId);
         if (!user) return res.status(404).json({ message: 'Usuario no encontrado.' });
         
-        const safeConvoId = sanitizeKey(conversationId);
-        const conversation: Conversation | undefined = user.conversations[safeConvoId];
+        const safeConvoId = sanitizeKey(canonicalJid);
+        // BLOQUE 4: Acceso Determinístico
+        const conversation: Conversation | undefined = user.conversations[safeConvoId] || user.conversations[canonicalJid];
 
         if (!conversation) return res.status(404).json({ message: 'Conversación no encontrada.' });
 
@@ -113,15 +126,18 @@ export const handleDeleteConversation = async (req: AuthenticatedRequest<{ id: s
     try {
         const { id: userId } = req.user;
         const { id: jid } = req.params;
+        const canonicalJid = normalizeJid(jid); // BLOQUE 1
+        if (!canonicalJid) return res.status(400).json({ message: 'ID de conversación inválido' });
+        
         const { blacklist } = req.body;
 
         // Perform physical removal
-        await db.removeUserConversation(userId, jid);
+        await db.removeUserConversation(userId, canonicalJid);
 
         if (blacklist) {
             const user = await db.getUser(userId);
             if (user) {
-                const number = jid.split('@')[0];
+                const number = canonicalJid.split('@')[0];
                 const currentIgnored = user.settings.ignoredJids || [];
                 if (!currentIgnored.includes(number)) {
                     await db.updateUserSettings(userId, { ignoredJids: [...currentIgnored, number] });
@@ -129,7 +145,7 @@ export const handleDeleteConversation = async (req: AuthenticatedRequest<{ id: s
             }
         }
 
-        logService.audit(`Conversación eliminada: ${jid}${blacklist ? ' (y bloqueada)' : ''}`, userId, req.user.username);
+        logService.audit(`Conversación eliminada: ${canonicalJid}${blacklist ? ' (y bloqueada)' : ''}`, userId, req.user.username);
         res.status(200).json({ message: 'Conversación eliminada.' });
     } catch (e: any) {
         logService.error('Error deleting conversation', e, getClientUser(req).id);
@@ -141,7 +157,10 @@ export const handleForceAiRun = async (req: AuthenticatedRequest<any, any, { id:
     try {
         const { id: userId } = req.user;
         const { id: conversationId } = req.body;
-        await processAiResponseForJid(userId, conversationId, true);
+        const canonicalJid = normalizeJid(conversationId); // BLOQUE 1
+        if (!canonicalJid) return res.status(400).json({ message: 'ID de conversación inválido' });
+
+        await processAiResponseForJid(userId, canonicalJid, true);
         res.status(200).json({ message: 'Ejecución de IA forzada.' });
     } catch (e: any) {
         logService.error('Error forcing AI run', e, getClientUser(req).id);
@@ -261,7 +280,6 @@ export const handleStartClientTestBot = async (req: AuthenticatedRequest<any, an
         ];
 
         // --- ELITE++ LOGIC ---
-        // If scenario is STANDARD_FLOW, try to use the Generated Custom Script
         if (scenario === 'STANDARD_FLOW' && user.simulationLab?.customScript && user.simulationLab.customScript.length > 0) {
             TEST_SCRIPT_CLIENT = user.simulationLab.customScript;
             logService.info(`[SIMULATOR] Usando script personalizado para ${user.username}`, userId);
@@ -374,7 +392,6 @@ export const handleStopClientTestBot = async (req: AuthenticatedRequest<any, any
 
 export const handleClearClientTestBotConversation = async (req: AuthenticatedRequest<any, any, { userId: string }>, res: any) => {
     const { id: userId } = req.user;
-    const { userId: targetUserId } = req.body; 
     
     try {
         const user = await db.getUser(userId);
@@ -400,7 +417,6 @@ export const handleClearClientTestBotConversation = async (req: AuthenticatedReq
     }
 };
 
-// ... (rest of the file: handleGetCampaigns, handleGetWhatsAppGroups, etc.)
 export const handleGetCampaigns = async (req: AuthenticatedRequest, res: any) => {
     try {
         const { id: userId } = req.user;
@@ -415,6 +431,13 @@ export const handleGetCampaigns = async (req: AuthenticatedRequest, res: any) =>
 export const handleGetWhatsAppGroups = async (req: AuthenticatedRequest, res: any) => {
     try {
         const { id: userId } = req.user;
+        
+        // AJUSTE MENOR #3: Validar estado de sesión antes de intentar fetch
+        const status = getSessionStatus(userId);
+        if (status.status !== ConnectionStatus.CONNECTED) {
+            return res.json([]); // Retornar vacío sin error si no está conectado
+        }
+
         const groups: WhatsAppGroup[] = await fetchUserGroups(userId);
         res.json(groups);
     } catch (error: any) {
@@ -551,18 +574,26 @@ export const handleConvertRadarSignal = async (req: AuthenticatedRequest<{ id: s
         const signal = await db.getRadarSignal(signalId);
         if (!signal) return res.status(404).json({ message: 'Señal no encontrada.' });
 
-        const existingConversation = (await db.getUserConversations(userId)).find(c => c.id === signal.senderJid);
+        const canonicalJid = normalizeJid(signal.senderJid); // BLOQUE 1
+        if (!canonicalJid) return res.status(400).json({ message: 'Sender JID inválido' });
+
+        // AJUSTE #2: Acceso determinístico O(1) usando sanitizeKey
+        const user = await db.getUser(userId);
+        if (!user) return res.status(404).json({ message: 'Usuario no encontrado.' });
+
+        const safeKey = sanitizeKey(canonicalJid);
+        const existingConversation = user.conversations?.[safeKey] || user.conversations?.[canonicalJid];
+        
         if (!existingConversation) {
              const newConversation: Conversation = {
-                id: signal.senderJid,
-                leadIdentifier: signal.senderJid.split('@')[0],
+                id: canonicalJid,
+                leadIdentifier: canonicalJid.split('@')[0],
                 leadName: signal.senderName || 'Lead de Radar',
                 status: LeadStatus.WARM, 
                 messages: [{ 
                     id: uuidv4(), 
                     text: signal.messageContent, 
                     sender: 'user', 
-                    // FIX: Changed to match type definition.
                     timestamp: signal.timestamp
                 }],
                 isBotActive: true,
@@ -572,18 +603,17 @@ export const handleConvertRadarSignal = async (req: AuthenticatedRequest<{ id: s
                     id: uuidv4(), 
                     note: `Convertido de Radar. Score: ${signal.strategicScore || signal.analysis.score}. Razón: ${signal.analysis.reasoning}`, 
                     author: 'AI', 
-                    // FIX: Changed `new Date()` to `new Date().toISOString()` to match string type.
                     timestamp: new Date().toISOString()
                 }],
                 isAiSignalsEnabled: true,
-                // FIX: Changed to match type definition.
                 firstMessageAt: signal.timestamp,
-                // FIX: Changed to string to match type definition.
                 lastActivity: new Date().toISOString(),
              };
              await db.saveUserConversation(userId, newConversation);
         } else {
-            const updatedTags = [...new Set([...(existingConversation.tags || []), 'RADAR_CONVERTED'])];
+            // AJUSTE MENOR #5: Preservar categorías de Radar al actualizar
+            const signalCategories = signal.analysis.category ? [signal.analysis.category] : [];
+            const updatedTags = [...new Set([...(existingConversation.tags || []), 'RADAR_CONVERTED', ...signalCategories])];
             await db.saveUserConversation(userId, { ...existingConversation, tags: updatedTags });
         }
 
@@ -630,11 +660,14 @@ export const handleGetRadarActivityLogs = async (req: AuthenticatedRequest, res:
 export const handleCreateIntentSignal = async (req: AuthenticatedRequest<any, any, { conversationId: string }>, res: any) => {
     const { id: userId } = req.user;
     const { conversationId } = req.body;
+    const canonicalJid = normalizeJid(conversationId); // BLOQUE 1
+    if (!canonicalJid) return res.status(400).json({ message: 'JID inválido' });
 
     try {
         const user = await db.getUser(userId);
         if (!user) return res.status(404).json({ message: 'Usuario no encontrado.' });
-        const conversation = user.conversations[sanitizeKey(conversationId)];
+        // BLOQUE 4: Acceso Determinístico
+        const conversation = user.conversations[sanitizeKey(canonicalJid)] || user.conversations[canonicalJid];
         if (!conversation) return res.status(404).json({ message: 'Conversación no encontrada.' });
         if (conversation.status !== LeadStatus.HOT) return res.status(400).json({ message: 'Solo se pueden compartir leads CALIENTES.' });
 
@@ -803,8 +836,6 @@ export const handleUpdateNetworkProfile = async (req: AuthenticatedRequest<any, 
     }
 };
 
-// AI PROXY HANDLERS
-// FIX: Changed res type from Response to any to fix .status() not found error
 export const handleVerifyApiKey = async (req: AuthenticatedRequest, res: any) => {
     try {
         const { id: userId } = req.user;
@@ -815,7 +846,6 @@ export const handleVerifyApiKey = async (req: AuthenticatedRequest, res: any) =>
             return res.status(400).json({ message: "API Key no configurada." });
         }
 
-        // Use a lightweight model for a simple ping
         await generateContentWithFallback({ 
             apiKey: apiKey,
             prompt: 'ping'
@@ -828,7 +858,6 @@ export const handleVerifyApiKey = async (req: AuthenticatedRequest, res: any) =>
     }
 };
 
-// FIX: Changed res type from Response to any to fix .status() not found error
 export const handleAnalyzeWebsite = async (req: AuthenticatedRequest<any, any, { websiteUrl: string }>, res: any) => {
     try {
         const { id: userId } = req.user;
@@ -843,12 +872,11 @@ export const handleAnalyzeWebsite = async (req: AuthenticatedRequest<any, any, {
         const prompt = `
             Analiza el sitio web: ${websiteUrl}
             TU OBJETIVO: Configurar la "Personalidad de Venta" de una IA.
-            Redacta en PRIMERA PERSONA ("Soy el especialista en [Rubro]. Mi meta es vender [Productos principales]...").
-            NO hagas un resumen corporativo aburrido.
+            Redacta en PRIMERA PERSONA.
             ESTRUCTURA REQUERIDA:
             1. ROL Y OFERTA: "Soy el especialista en [Rubro]. Mi meta es vender [Productos principales]..."
             2. PRECIOS Y PLANES: Lista los precios exactos encontrados (ej: "$180.000 ARS"). Si no hay, di "A cotizar".
-            3. GANCHO COMERCIAL: 2 o 3 frases cortas sobre por qué elegirnos (Valor Único). Convierte características en beneficios.
+            3. GANCHO COMERCIAL: 2 o 3 frases cortas sobre por qué elegirnos (Valor Único).
             4. CLIENTE OBJETIVO: A quién le estoy vendiendo.
           `;
         
@@ -866,7 +894,6 @@ export const handleAnalyzeWebsite = async (req: AuthenticatedRequest<any, any, {
     }
 };
 
-// FIX: Changed res type from Response to any to fix .status() not found error
 export const handleExecuteNeuralPath = async (req: AuthenticatedRequest<any, any, { identity: any; context: string }>, res: any) => {
     try {
         const { id: userId } = req.user;
@@ -912,7 +939,6 @@ export const handleExecuteNeuralPath = async (req: AuthenticatedRequest<any, any
     }
 };
 
-// FIX: Changed res type from Response to any to fix .status() not found error
 export const handleGenerateCampaignPrompt = async (req: AuthenticatedRequest<any, any, { message: string }>, res: any) => {
     try {
         const { id: userId } = req.user;
@@ -925,21 +951,8 @@ export const handleGenerateCampaignPrompt = async (req: AuthenticatedRequest<any
         }
         
         const prompt = `
-Actúa como un director de arte y experto en marketing visual. Basado en el siguiente texto de una campaña de WhatsApp, crea un prompt detallado y profesional para un generador de imágenes de IA como Midjourney o DALL-E 3.
-
-El prompt debe describir una imagen conceptual, poderosa y de alta calidad que capture la esencia del mensaje.
-
-Incluye los siguientes elementos en tu prompt:
-- **Estilo:** (ej: fotográfico, cinematográfico, ilustración 3D, minimalista, etc.)
-- **Composición:** (ej: primer plano, plano general, vista isométrica, etc.)
-- **Iluminación:** (ej: luz dorada del atardecer, neón, luz de estudio dramática, etc.)
-- **Paleta de colores:** (ej: tonos fríos y corporativos, colores vibrantes, monocromático, etc.)
-- **Emoción o atmósfera:** (ej: sensación de urgencia, lujo, confianza, innovación, etc.)
-
-**Texto de la campaña:**
-"${message}"
-
-**Tu prompt generado:**
+Actúa como un director de arte y experto en marketing visual. Basado en el siguiente texto de una campaña de WhatsApp, crea un prompt detallado para un generador de imágenes de IA.
+Texto: "${message}"
 `;
         const response = await generateContentWithFallback({
             apiKey: apiKey,
