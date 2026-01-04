@@ -74,6 +74,8 @@ export const handleSendMessage = async (req: AuthenticatedRequest<any, any, { to
             return res.status(400).json({ message: 'No se permite enviar mensajes a grupos o canales por esta vía.' });
         }
 
+        // AWAIT THE RESULT. If this throws, we jump to catch block and return 500.
+        // This is CRITICAL for the frontend rollback mechanism to work.
         const sentMsg = await sendMessage(id, canonicalJid, text, imageUrl);
 
         if (sentMsg && sentMsg.key.id) {
@@ -92,7 +94,8 @@ export const handleSendMessage = async (req: AuthenticatedRequest<any, any, { to
         res.status(200).json({ message: 'Mensaje enviado.' });
     } catch (e: any) {
         logService.error('Error sending message', e, getClientUser(req).id);
-        res.status(500).json({ message: 'Error interno del servidor.' });
+        // EXPLICIT 500 so the frontend can catch it and rollback the optimistic UI update
+        res.status(500).json({ message: e.message || 'Error de envío.' });
     }
 };
 

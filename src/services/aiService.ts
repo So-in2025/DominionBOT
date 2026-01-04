@@ -6,10 +6,10 @@ import { logService } from './logService.js';
 import { capabilityResolver } from './capabilityResolver.js';
 import { depthEngine } from './depthEngine.js';
 import { db } from '../database.js';
-import { generateContentWithFallback } from './geminiService.js'; // NEW IMPORT
+import { generateContentWithFallback } from './geminiService.js'; 
 
 const aiResponseCache = new Map<string, { timestamp: number; data: any }>();
-const CACHE_DURATION_MS = 5 * 60 * 1000; // 5 minutes
+const CACHE_DURATION_MS = 5 * 60 * 1000; 
 
 export const generateBotResponse = async (
   conversation: Conversation,
@@ -26,148 +26,96 @@ export const generateBotResponse = async (
       }
   }
 
-  // --- START: AI Caching ---
   const lastMessage = conversation.messages[conversation.messages.length - 1];
+  
+  // CACHE CHECK
   if (lastMessage && (lastMessage.sender === 'user' || lastMessage.sender === 'elite_bot')) {
       const cacheKey = `${user.id}::${lastMessage.text.trim()}`;
       if (aiResponseCache.has(cacheKey)) {
           const cached = aiResponseCache.get(cacheKey)!;
           if (Date.now() - cached.timestamp < CACHE_DURATION_MS) {
-              logService.info(`[AI-CACHE] HIT for user ${user.username}`, user.id);
               return cached.data;
           }
       }
   }
-  // --- END: AI Caching ---
 
   const cleanKey = user.settings.geminiApiKey?.trim();
-
-  if (!cleanKey) {
-      logService.error(`[AI-SERVICE] Usuario ${user.username} (ID: ${user.id}) intentó generar respuesta AI sin API Key de Gemini configurada.`, null, user.id, user.username);
-      if (isSimulation) {
-          return { responseText: "[ERROR SISTEMA] No has configurado tu API Key de Gemini. Ve a Configuración > Panel de Control de Gemini.", newStatus: LeadStatus.COLD, tags: ['ERROR_CONFIG'] };
-      }
-      return null; 
-  }
+  if (!cleanKey) return null;
   
-  // 1. RESOLVE CAPABILITIES (WITH DEPTH BRAKE)
   let capabilities = await capabilityResolver.resolve(user.id);
-  if (capabilities.depthLevel >= 10 && conversation.status === LeadStatus.COLD) {
-      logService.warn(`[AI-DEPTH-BRAKE] Applied: Lvl ${capabilities.depthLevel} -> Lvl 3 for COLD lead.`, user.id);
-      capabilities = depthEngine.resolve(3);
-  }
-
   const features = planService.getClientFeatures(user);
   const settings = user.settings;
 
-  // 2. Adjust History Depth based on Capabilities
   const memoryLimit = capabilities.memoryDepth || 15;
-  const historyText = conversation.messages.slice(-memoryLimit).map(m => {
-      let role = 'Vendedor';
+  
+  // FIX: Ensure clean sorting and filtering for context
+  const historyMessages = [...conversation.messages]
+      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+      .slice(-memoryLimit);
+
+  const historyText = historyMessages.map(m => {
+      // Map roles clearly for the AI
+      let role = 'Vendedor (IA)';
       if (m.sender === 'user' || m.sender === 'elite_bot') {
           role = 'Cliente';
       } else if (m.sender === 'owner') {
-          role = 'Vendedor_Humano';
+          role = 'Vendedor (Humano)';
       }
-      return `${role}: ${m.text}`;
+      // Remove any system tags or brackets that might confuse the AI
+      const cleanText = m.text.replace(/\[.*?\]/g, '').trim(); 
+      return `${role}: ${cleanText}`;
   }).join('\n');
 
-  const prompt = `## HISTORIAL DE CONVERSACIÓN (Últimos ${memoryLimit} msgs):\n${historyText}`;
+  const prompt = `
+HISTORIAL DE CONVERSACIÓN (Contexto reciente):
+${historyText}
 
-  // 3. CONSTRUCT SYSTEM INSTRUCTION
+INSTRUCCIÓN:
+Analiza el ÚLTIMO mensaje del Cliente y genera la respuesta del Vendedor.
+`;
+
   let systemInstruction = "";
 
   if (settings.useAdvancedModel && settings.neuralConfig) {
-      // --- ADVANCED MODULAR LOGIC ---
       const modulesContext = settings.neuralConfig.modules.map(m => `
 --- MÓDULO EXPERTO: ${m.name} ---
 [ACTIVADORES]: ${m.triggerKeywords}
-[INFORMACIÓN EXPERTA]:
+[INFORMACIÓN]:
 ${m.contextContent}
-${m.moduleUrl ? `[LINK DE CIERRE/RECURSO]: ${m.moduleUrl} (Úsalo si el cliente muestra interés en este tema)` : ''}
-----------------------------------
+${m.moduleUrl ? `[LINK RECURSO]: ${m.moduleUrl}` : ''}
 `).join('\n');
 
       systemInstruction = `
-# SISTEMA NEURAL MODULAR (ROUTER ACTIVO)
-Actúa como el Nodo Central de Inteligencia para "${settings.productName}".
+# SISTEMA NEURAL MODULAR
+Identidad: ${settings.neuralConfig.masterIdentity}
 
-## IDENTIDAD MAESTRA:
-${settings.neuralConfig.masterIdentity}
-
-## MÓDULOS DE CONOCIMIENTO:
+MÓDULOS DE CONOCIMIENTO:
 ${modulesContext}
 
-## REGLAS DE EJECUCIÓN:
-1. Analiza la intención del cliente.
-2. Si coincide con un MÓDULO EXPERTO, usa esa información como verdad absoluta.
-3. Si el módulo tiene un [LINK DE CIERRE/RECURSO], úsalo para cerrar o aportar valor.
-4. Responde como un humano en WhatsApp (breve, directo).
+REGLAS:
+1. Responde como un humano en WhatsApp (breve, directo).
+2. Usa la información de los módulos si aplica.
 `;
   } else {
-      // --- CLASSIC LINEAL LOGIC (HUMANIZED) ---
       systemInstruction = `
 # ROL: VENDEDOR EXPERTO (WhatsApp)
-Estás operando el WhatsApp comercial de "${settings.productName}".
-Tu objetivo es VENDER y ASISTIR, no dar discursos ni parecer un folleto.
+Negocio: "${settings.productName}".
+Contexto: ${settings.productDescription}
+Precio Base: ${settings.priceText}
+Link Cierre: ${settings.ctaLink}
 
-## 🧠 TU CEREBRO (DATOS DEL NEGOCIO):
-${settings.productDescription}
-- PRECIO OFICIAL: ${settings.priceText} (Úsalo solo si preguntan específicamente).
-- LINK DE CIERRE: ${settings.ctaLink}.
-
-## 🚫 REGLAS DE FORMATO (CRÍTICO):
-1. **NUNCA uses doble asterisco (**texto**).** WhatsApp NO lo reconoce. Rompe la ilusión humana inmediatamente.
-2. Usa un solo asterisco (*texto*) para negritas, pero ÚSALO POCO. Solo para resaltar precios o datos clave. El exceso de negritas parece spam.
-3. **NO uses listas con viñetas (- )** a menos que te pidan explícitamente "qué incluye". Escribe en párrafos cortos y fluidos.
-4. **NO SALUDES** como un robot ("Hola, soy el especialista..."). Si ya saludaste, ve al grano. Si el cliente ya sabe quién eres, no te presentes.
-5. **BREVEDAD:** Si puedes decirlo en 10 palabras, no uses 20. La gente en WhatsApp no lee biblias.
-6. **TONO:** Usa voseo natural si es Argentina ("¿Cómo estás?", "¿Qué te parece?"). Profesional pero cercano. Evita palabras como "estimado", "cordial saludo".
-
-## 🎯 OBJETIVO TÁCTICO:
-Lleva al cliente al cierre o a agendar. Si duda, resuelve la duda en una frase y vuelve a proponer el siguiente paso. No dejes el chat abierto sin una pregunta o call-to-action.
+REGLAS DE FORMATO:
+1. NUNCA uses "**". Usa "*" para negritas suaves.
+2. NO saludes si ya hay conversación. Ve al grano.
+3. Respuestas CORTAS (max 2 párrafos).
+4. Objetivo: Llevar al cierre o agendar.
 `;
   }
 
-  // --- LOGICA DE ESTADOS SMARTER (Protocolo Intervención) ---
-  const hasHumanIntervened = conversation.tags.includes('HUMAN_TOUCH');
-  
-  systemInstruction += `
-## TERMÓMETRO DE VENTA (ESTADOS):
-- **FRÍO (COLD):** Curiosidad inicial, sin compromiso.
-- **TIBIO (WARM):** Pregunta detalles, precios, dudas. Hay interés real.
-- **CALIENTE (HOT):** Pide CBU, Link de Pago, Dirección exacta o dice "Lo quiero". Cierre inminente.
-
-${hasHumanIntervened ? `
-⚠️ ALERTA: Un humano ya intervino.
-TU MISIÓN AHORA: Apoyo Táctico. Responde dudas técnicas. NO intentes cerrar agresivamente sobre el humano. Mantén el estado TIBIO (WARM) a menos que el cliente diga explícitamente "Compro ya".
-` : ''}
-`;
-
-  // --- GUARDIA AUTÓNOMA VS SHADOW MODE ---
-  if (features.close_assist) {
-      if (isSimulation || settings.isAutonomousClosing) {
-          systemInstruction += `
-## MODO AUTÓNOMO (CIERRE ACTIVO):
-- Si detectas intención de compra (HOT), TIENES PERMISO PARA CERRAR.
-- Pasa el precio "${settings.priceText}" y el link "${settings.ctaLink}" con confianza.
-- Frase de cierre sugerida: "Te dejo el link para confirmar ahora: [LINK]. ¿Te queda alguna duda?"
-`;
-      } else {
-          systemInstruction += `
-## MODO SHADOW (ASISTENTE SILENCIOSO):
-- Si el cliente está LISTO PARA COMPRAR (HOT):
-- 1. Cambia 'newStatus' a HOT.
-- 2. Deja 'responseText' VACÍO (o null).
-- 3. Genera 3 'suggestedReplies' perfectas para que el humano las envíe con un clic.
-`;
-      }
-  }
-  
   const responseSchema: any = {
       type: Type.OBJECT,
       properties: {
-          responseText: { type: Type.STRING, description: "El mensaje que se enviará por WhatsApp. Déjalo vacío si es momento de callar (Shadow Mode)." },
+          responseText: { type: Type.STRING },
           newStatus: { type: Type.STRING, enum: [LeadStatus.COLD, LeadStatus.WARM, LeadStatus.HOT] },
           tags: { type: Type.ARRAY, items: { type: Type.STRING } },
       },
@@ -176,12 +124,8 @@ TU MISIÓN AHORA: Apoyo Táctico. Responde dudas técnicas. NO intentes cerrar a
 
   if(features.close_assist) {
       responseSchema.properties.suggestedReplies = { type: Type.ARRAY, items: { type: Type.STRING } };
-      responseSchema.properties.recommendedAction = { type: Type.STRING };
   }
   
-  // Clean empty/null values from user inputs to avoid JSON errors
-  prompt.replace(/undefined/g, '');
-
   try {
       const response = await generateContentWithFallback({
           apiKey: cleanKey,
@@ -190,18 +134,13 @@ TU MISIÓN AHORA: Apoyo Táctico. Responde dudas técnicas. NO intentes cerrar a
           responseSchema: responseSchema
       });
 
-      if (!response || !response.text) {
-          throw new Error("Respuesta vacía del servicio de IA.");
-      }
+      if (!response || !response.text) throw new Error("Empty AI response");
       
-      const jsonText = response.text;
-      const result = JSON.parse(jsonText.trim());
+      const result = JSON.parse(response.text.trim());
 
-      // Fallback/Safety Defaults
       if (!features.lead_scoring) result.newStatus = LeadStatus.WARM;
       if (!features.close_assist) result.suggestedReplies = undefined;
       
-      // Cache Result
       if (lastMessage && (lastMessage.sender === 'user' || lastMessage.sender === 'elite_bot')) {
           const cacheKey = `${user.id}::${lastMessage.text.trim()}`;
           aiResponseCache.set(cacheKey, { timestamp: Date.now(), data: result });
@@ -210,61 +149,68 @@ TU MISIÓN AHORA: Apoyo Táctico. Responde dudas técnicas. NO intentes cerrar a
       return result;
 
   } catch (err: any) {
-      logService.error(`[AI-SERVICE] Fallo total de la matriz de IA para ${user.username}`, err, user.id);
-      // Fallback a una respuesta segura en caso de fallo total, pero HUMANIZADA
+      logService.error(`[AI-SERVICE] Error`, err, user.id);
       return { 
-          responseText: "Disculpa, dame un segundo que reviso eso y te confirmo.", 
+          responseText: "Disculpa, estoy verificando esa información. ¿Me aguardas un momento?", 
           newStatus: conversation.status, 
           tags: ['AI_FAILURE'] 
       };
   }
 };
 
-export const regenerateSimulationScript = async (userId: string) => {
+export const regenerateSimulationScript = async (userId: string): Promise<void> => {
+    const user = await db.getUser(userId);
+    if (!user || !user.settings.geminiApiKey) return;
+
+    const prompt = `
+        ACTÚA COMO: Diseñador de Pruebas de Software (QA) especializado en Chatbots de Venta.
+        
+        CONTEXTO DEL NEGOCIO A PROBAR:
+        Nombre: "${user.settings.productName}"
+        Descripción: "${user.settings.productDescription}"
+        
+        OBJETIVO:
+        Genera una secuencia de mensajes que un "Cliente Potencial" enviaría por WhatsApp para probar la capacidad de venta del bot.
+        La secuencia debe cubrir: Saludo -> Pregunta Específica -> Objeción de Precio -> Intención de Compra.
+        
+        FORMATO DE SALIDA (JSON ARRAY de Strings):
+        ["Mensaje 1", "Mensaje 2", "Mensaje 3", "Mensaje 4"]
+    `;
+
     try {
-        const user = await db.getUser(userId);
-        if (!user || !user.settings.geminiApiKey) return;
-
-        logService.info(`[SIM-LAB] Generando script de estrés para ${user.username}...`, userId);
-        
-        const prompt = `
-        ACT AS: Un cliente potencial escéptico y directo en WhatsApp.
-        CONTEXTO DE NEGOCIO: "${user.settings.productDescription}"
-        
-        TU TAREA:
-        Genera una secuencia de 5 mensajes cronológicos que simulen una compra difícil.
-        
-        REGLAS:
-        - Español Argentino.
-        - Mensajes cortos (tipo WhatsApp).
-        - Debe haber una objeción de precio o competencia.
-        
-        OUTPUT JSON: { "script": ["Mensaje 1", "Mensaje 2", ...] }
-        `;
-
-        const responseSchema = {
-            type: Type.OBJECT,
-            properties: {
-                script: { type: Type.ARRAY, items: { type: Type.STRING } }
-            }
-        };
-
         const response = await generateContentWithFallback({
             apiKey: user.settings.geminiApiKey,
             prompt: prompt,
-            responseSchema: responseSchema
+            responseSchema: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING }
+            }
         });
 
-        if (!response || !response.text) throw new Error("Empty AI response");
+        if (response && response.text) {
+            let script: string[] = [];
+            try {
+                script = JSON.parse(response.text);
+            } catch {
+                const cleanText = response.text.replace(/```json/g, '').replace(/```/g, '').trim();
+                script = JSON.parse(cleanText);
+            }
 
-        const json = JSON.parse(response.text || '{}');
-        if (json.script && Array.isArray(json.script)) {
-            const currentLab = user.simulationLab || { experiments: [], aggregatedScore: 0, topFailurePatterns: {} };
-            const updatedLab = { ...currentLab, customScript: json.script };
-            await db.updateUser(userId, { simulationLab: updatedLab });
+            if (Array.isArray(script)) {
+                const currentLab = user.simulationLab || { 
+                    experiments: [], 
+                    aggregatedScore: 0, 
+                    topFailurePatterns: {}, 
+                    customScript: [] 
+                };
+                
+                currentLab.customScript = script;
+                
+                await db.updateUser(userId, { simulationLab: currentLab });
+                logService.info(`[AI-SERVICE] Simulation script regenerated for ${userId}`, userId);
+            }
         }
-
-    } catch (e: any) {
-        logService.error(`[SIM-LAB] Fallo al generar script.`, e, userId);
+    } catch (e) {
+        logService.error('Error generating simulation script', e, userId);
     }
 };
