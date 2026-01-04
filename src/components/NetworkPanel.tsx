@@ -23,8 +23,7 @@ const NetworkPanel: React.FC<NetworkPanelProps> = ({ token, backendUrl, currentU
     const [activeTab, setActiveTab] = useState<'CONTRIBUTIONS' | 'OPPORTUNITIES' | 'SETTINGS'>('OPPORTUNITIES');
     const [isInitialLoading, setIsInitialLoading] = useState(true); 
     const [intentSignals, setIntentSignals] = useState<IntentSignal[]>([]);
-    const [opportunities, setOpportunities] = useState<ConnectionOpportunity[]>([]
-);
+    const [opportunities, setOpportunities] = useState<ConnectionOpportunity[]>([]);
     const [networkProfile, setNetworkProfile] = useState<NetworkProfile | null>(null);
 
     const fetchNetworkData = useCallback(async (silent = false) => {

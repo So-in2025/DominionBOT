@@ -12,6 +12,7 @@ interface HeaderProps {
   onToggleBot: () => void;
   isAutonomousClosing: boolean; // NUEVO
   onToggleAutonomous: () => void; // NUEVO
+  isNetworkGlobalEnabled?: boolean; // NEW PROP
   currentView: View;
   onNavigate: (view: View) => void;
   connectionStatus: ConnectionStatus;
@@ -29,6 +30,7 @@ const Header: React.FC<HeaderProps> = ({
     onToggleBot, 
     isAutonomousClosing,
     onToggleAutonomous,
+    isNetworkGlobalEnabled,
     currentView, 
     onNavigate, 
     connectionStatus,
@@ -116,8 +118,9 @@ const Header: React.FC<HeaderProps> = ({
                         <button className={navBtnClass(View.CHATS)} onClick={() => handleNavClick(View.CHATS)}>Mensajes</button>
                         <button className={navBtnClass(View.RADAR)} onClick={() => handleNavClick(View.RADAR)}>Radar</button>
                         <button className={navBtnClass(View.CAMPAIGNS)} onClick={() => handleNavClick(View.CAMPAIGNS)}>Campañas</button>
-                        <button className={navBtnClass(View.NETWORK)} onClick={() => handleNavClick(View.NETWORK)}>Red Dominion</button> {/* NEW: Network View */}
+                        {isNetworkGlobalEnabled && <button className={navBtnClass(View.NETWORK)} onClick={() => handleNavClick(View.NETWORK)}>Red Dominion</button>}
                         <button className={navBtnClass(View.DASHBOARD)} onClick={() => handleNavClick(View.DASHBOARD)}>Métricas</button>
+                        <button className={navBtnClass(View.BLACKLIST)} onClick={() => handleNavClick(View.BLACKLIST)}>Lista Negra</button>
                         <button className={navBtnClass(View.SETTINGS)} onClick={() => handleNavClick(View.SETTINGS)}>Ajustes</button>
                         <button className={navBtnClass(View.CONNECTION)} onClick={() => handleNavClick(View.CONNECTION)}>Conexión</button>
                     </>
@@ -130,8 +133,8 @@ const Header: React.FC<HeaderProps> = ({
                 <div className="flex items-center gap-2 sm:gap-4">
                     {!isSuperAdmin && (
                         <div className="flex items-center gap-4">
-                            {/* GUARDIA AUTÓNOMA TOGGLE */}
-                            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all ${isAutonomousClosing ? 'bg-indigo-900/40 border-indigo-500/50 shadow-[0_0_15px_rgba(99,102,241,0.3)]' : 'bg-black/50 border-white/10'}`} title="Modo Guardia: La IA cierra ventas sola (Ideal para la noche)">
+                            {/* GUARDIA AUTÓNOMA TOGGLE WITH TOOLTIP */}
+                            <div className={`relative group/guardia flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all cursor-help ${isAutonomousClosing ? 'bg-indigo-900/40 border-indigo-500/50 shadow-[0_0_15px_rgba(99,102,241,0.3)]' : 'bg-black/50 border-white/10'}`}>
                                 <span className={`text-[8px] md:text-[9px] font-black uppercase tracking-widest ${isAutonomousClosing ? 'text-indigo-400' : 'text-gray-500'}`}>
                                     {isAutonomousClosing ? 'GUARDIA ON' : 'GUARDIA OFF'}
                                 </span>
@@ -142,6 +145,17 @@ const Header: React.FC<HeaderProps> = ({
                                     <div className={`absolute top-0.5 w-2.5 h-2.5 md:w-3 md:h-3 bg-white rounded-full transition-all duration-300 ${isAutonomousClosing ? 'left-[14px] md:left-[18px]' : 'left-0.5'}`}></div>
                                 </button>
                                 {isAutonomousClosing && <span className="animate-pulse">🌙</span>}
+
+                                {/* EDUCATIONAL TOOLTIP */}
+                                <div className="absolute top-full right-0 mt-3 w-64 p-4 bg-[#0a0a0a] border border-indigo-500/30 rounded-xl shadow-2xl opacity-0 invisible group-hover/guardia:opacity-100 group-hover/guardia:visible transition-all duration-200 z-[200] pointer-events-none backdrop-blur-xl">
+                                    <div className="absolute -top-1 right-6 w-2 h-2 bg-[#0a0a0a] border-t border-l border-indigo-500/30 rotate-45"></div>
+                                    <p className="text-[10px] text-gray-300 leading-relaxed font-medium">
+                                        <strong className="text-indigo-400 block mb-1 uppercase tracking-widest text-xs">Modo Nocturno / Autónomo</strong>
+                                        Si activas esto, la IA <strong>NO te despertará</strong> (Shadow Mode) cuando consiga un cliente. 
+                                        <br/><br/>
+                                        Cerrará la venta sola enviando el link de pago directamente.
+                                    </p>
+                                </div>
                             </div>
 
                             {/* SISTEMA GLOBAL TOGGLE */}
@@ -222,13 +236,19 @@ const Header: React.FC<HeaderProps> = ({
                                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" /></svg>
                                 Campañas
                             </button>
-                            <button onClick={() => handleNavClick(View.NETWORK)} className={`w-full text-left px-4 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-3 ${currentView === View.NETWORK ? 'bg-brand-gold text-black' : 'text-gray-400'}`}> {/* NEW: Network */}
-                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9V3m0 18a9 9 0 009-9m-9 9a9 9 0 00-9-9" /></svg>
-                                Red Dominion
-                            </button>
+                            {isNetworkGlobalEnabled && (
+                                <button onClick={() => handleNavClick(View.NETWORK)} className={`w-full text-left px-4 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-3 ${currentView === View.NETWORK ? 'bg-brand-gold text-black' : 'text-gray-400'}`}> 
+                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9V3m0 18a9 9 0 009-9m-9 9a9 9 0 00-9-9" /></svg>
+                                    Red Dominion
+                                </button>
+                            )}
                             <button onClick={() => handleNavClick(View.DASHBOARD)} className={`w-full text-left px-4 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-3 ${currentView === View.DASHBOARD ? 'bg-brand-gold text-black' : 'text-gray-400'}`}>
                                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
                                 Métricas
+                            </button>
+                            <button onClick={() => handleNavClick(View.BLACKLIST)} className={`w-full text-left px-4 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-3 ${currentView === View.BLACKLIST ? 'bg-brand-gold text-black' : 'text-gray-400'}`}>
+                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                                Lista Negra
                             </button>
                             <button onClick={() => handleNavClick(View.CONNECTION)} className={`w-full text-left px-4 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-3 ${currentView === View.CONNECTION ? 'bg-brand-gold text-black' : 'text-gray-400'}`}>
                                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>

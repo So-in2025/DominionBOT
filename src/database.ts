@@ -44,6 +44,7 @@ const SystemSettingsSchema = new Schema({
     logLevel: { type: String, default: 'INFO' },
     dominionNetworkJid: { type: String, default: '5491110000000@s.whatsapp.net' },
     isOutboundKillSwitchActive: { type: Boolean, default: false },
+    isNetworkGlobalFeatureEnabled: { type: Boolean, default: false }, // NEW FEATURE FLAG
     dolarBlueRate: { type: Number, default: 1450 },
     planStandardPriceUSD: { type: Number, default: 19 },
     planSniperPriceUSD: { type: Number, default: 39 },
@@ -587,7 +588,7 @@ class Database {
   async getSystemSettings(): Promise<SystemSettings> {
       const doc = await SystemSettingsModel.findOne({ id: 'global' }).lean();
       const defaults: SystemSettings = { 
-          supportWhatsappNumber: '', logLevel: 'INFO', dominionNetworkJid: '5491110000000@s.whatsapp.net', isOutboundKillSwitchActive: false,
+          supportWhatsappNumber: '', logLevel: 'INFO', dominionNetworkJid: '5491110000000@s.whatsapp.net', isOutboundKillSwitchActive: false, isNetworkGlobalFeatureEnabled: false,
           dolarBlueRate: 1450, planStandardPriceUSD: 19, planSniperPriceUSD: 39, planNeuroBoostPriceUSD: 5,
           planStandardDescription: 'El punto de entrada para automatizar tu WhatsApp. Filtra consultas, responde al instante y califica la intención de compra para que no pierdas ventas por demora.',
           planSniperDescription: 'La experiencia Dominion completa. Diseñado para ventas de alto valor donde cada detalle importa. Entiende el matiz de la conversación y asiste en el cierre.',

@@ -15,12 +15,13 @@ const statusColorClass = {
   [LeadStatus.COLD]: 'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]',
   [LeadStatus.WARM]: 'bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.5)]',
   [LeadStatus.HOT]: 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)] animate-pulse',
+  [LeadStatus.PERSONAL]: 'bg-gray-500 shadow-[0_0_8px_rgba(107,114,128,0.5)]', // Added missing PERSONAL style
 };
 
 const ConversationListItem: React.FC<ConversationListItemProps> = ({ conversation, isSelected, onSelect, onDelete }) => {
   const [isDeleting, setIsDeleting] = useState(false);
   const lastMessage = conversation.messages[conversation.messages.length - 1];
-  const colorClass = statusColorClass[conversation.status];
+  const colorClass = statusColorClass[conversation.status] || 'bg-gray-500';
   
   // Display leadName as the main title and formatted leadIdentifier as subtitle
   const displayTitle = conversation.leadName;
@@ -28,15 +29,20 @@ const ConversationListItem: React.FC<ConversationListItemProps> = ({ conversatio
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    const blacklist = window.confirm(`¿BORRAR CHAT?\n\nEsto eliminará a "${displayTitle}" de tu lista.\n\n¿Quieres también BLOQUEARLO para que la IA no le responda nunca más?`);
     
+    // FIX: Removed the confusing prompt that accidentally banned users.
+    // Now it explicitly asks for DELETION only.
+    const confirmed = window.confirm(`¿Estás seguro de que quieres eliminar el chat de "${displayTitle}"?\n\nEsta acción solo borra el historial del panel. NO bloquea al usuario.`);
+    
+    if (!confirmed) return;
+
     setIsDeleting(true);
     try {
         const token = localStorage.getItem('saas_token');
         const res = await fetch(`${BACKEND_URL}/api/conversation/${encodeURIComponent(conversation.id)}`, {
             method: 'DELETE',
             headers: getAuthHeaders(token!),
-            body: JSON.stringify({ blacklist })
+            body: JSON.stringify({ blacklist: false }) // Force false to prevent accidents
         });
         if (res.ok) {
             onDelete?.(conversation.id);
@@ -82,6 +88,7 @@ const ConversationListItem: React.FC<ConversationListItemProps> = ({ conversatio
             <button 
                 onClick={handleDelete}
                 className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-red-500/20 text-gray-600 hover:text-red-500 rounded-lg transition-all"
+                title="Eliminar chat (Sin bloquear)"
             >
                 <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
             </button>

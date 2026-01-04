@@ -484,6 +484,7 @@ export interface SystemSettings {
     logLevel: LogLevel;
     dominionNetworkJid?: string;
     isOutboundKillSwitchActive?: boolean;
+    isNetworkGlobalFeatureEnabled?: boolean; // NEW FEATURE FLAG
     dolarBlueRate?: number;
     planStandardPriceUSD?: number;
     planSniperPriceUSD?: number;

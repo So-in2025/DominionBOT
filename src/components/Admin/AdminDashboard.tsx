@@ -1,7 +1,11 @@
 
 import React, { useEffect, useState } from 'react';
-import { User, LogEntry, GlobalDashboardMetrics, SystemSettings, LogLevel } from '../../types';
+import { User, LogEntry, GlobalDashboardMetrics, SystemSettings, LogLevel, Conversation, Message, LeadStatus } from '../../types';
 import { getAuthHeaders } from '../../config';
+import { conversationService } from '../../services/conversationService';
+import { processAiResponseForJid, ELITE_BOT_JID, ELITE_BOT_NAME } from '../../whatsapp/client';
+import { sanitizeKey, db } from '../../database';
+import { v4 as uuidv4 } from 'uuid';
 
 interface AdminDashboardProps {
     token: string;
@@ -355,6 +359,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
         updateSystemSettings({ isOutboundKillSwitchActive: newValue });
     };
 
+    const handleNetworkFeatureToggle = () => {
+        const newValue = !systemSettings.isNetworkGlobalFeatureEnabled;
+        updateSystemSettings({ isNetworkGlobalFeatureEnabled: newValue });
+        showToast(`Red Dominion Global ${newValue ? 'Activada' : 'Desactivada'}`, 'info');
+    };
+
     const testSupportLink = () => {
         if (!supportNumberInput) return;
         window.open(`https://wa.me/${supportNumberInput}`, '_blank');
@@ -474,69 +484,77 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
                             <div className="flex items-center gap-3 mb-6">
                                 <h3 className="text-sm font-black text-white uppercase tracking-widest">Configuración Global</h3>
                             </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 items-end">
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 items-end">
                                 <div className="space-y-3">
                                     <label className="text-[10px] font-bold text-brand-gold uppercase tracking-widest">WhatsApp Soporte</label>
                                     <div className="flex gap-2">
-                                        <input type="text" value={supportNumberInput} onChange={(e) => setSupportNumberInput(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-sm text-white" placeholder="549..." />
-                                        <button onClick={testSupportLink} className="p-4 bg-white/5 border border-white/10 rounded-xl text-gray-400 hover:text-white" title="Probar Link">
-                                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                                        </button>
+                                        <input 
+                                            type="text" 
+                                            value={supportNumberInput}
+                                            onChange={(e) => setSupportNumberInput(e.target.value)}
+                                            placeholder="549..."
+                                            className="flex-1 bg-black/50 border border-white/10 rounded-lg p-2 text-xs text-white"
+                                        />
+                                        <button onClick={handleSupportNumberSave} className="px-3 bg-white/10 hover:bg-white/20 text-white rounded-lg text-[10px] font-bold">Guardar</button>
+                                        <button onClick={testSupportLink} className="px-3 bg-green-500/20 text-green-400 rounded-lg text-[10px] font-bold">Probar</button>
                                     </div>
-                                    <button onClick={handleSupportNumberSave} className="w-full py-2 bg-white/10 text-xs rounded-lg hover:bg-white/20">Guardar Número</button>
                                 </div>
+
                                 <div className="space-y-3">
-                                    <label className="text-[10px] font-bold text-brand-gold uppercase tracking-widest">Nivel de Logs del Servidor (Tiempo Real)</label>
-                                     <select
-                                        value={systemSettings.logLevel}
+                                    <label className="text-[10px] font-bold text-brand-gold uppercase tracking-widest">Nivel de Logs</label>
+                                    <select 
+                                        value={systemSettings.logLevel} 
                                         onChange={(e) => handleLogLevelChange(e.target.value as LogLevel)}
-                                        className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-sm text-white"
+                                        className="w-full bg-black/50 border border-white/10 rounded-lg p-2 text-xs text-white"
                                     >
-                                        <option value="DEBUG">DEBUG (Todo)</option>
-                                        <option value="INFO">INFO (Normal)</option>
-                                        <option value="WARN">WARN (Advertencias)</option>
-                                        <option value="ERROR">ERROR (Solo Errores)</option>
+                                        <option value="INFO">INFO</option>
+                                        <option value="WARN">WARN</option>
+                                        <option value="ERROR">ERROR</option>
+                                        <option value="DEBUG">DEBUG</option>
+                                        <option value="AUDIT">AUDIT</option>
                                     </select>
-                                    <p className="text-[9px] text-gray-600 italic">Cambia la verbosidad de la terminal del servidor al instante.</p>
                                 </div>
+
                                 <div className="space-y-3">
-                                    <label className="text-[10px] font-bold text-red-500 uppercase tracking-widest flex items-center gap-2">
-                                        KILL SWITCH (Salida)
-                                        {systemSettings.isOutboundKillSwitchActive && <span className="animate-pulse">🔴</span>}
-                                    </label>
+                                    <label className="text-[10px] font-bold text-red-500 uppercase tracking-widest">Kill Switch (Global)</label>
                                     <button 
                                         onClick={handleKillSwitchToggle}
-                                        className={`w-full py-4 rounded-xl font-black text-xs uppercase tracking-[0.2em] transition-all border ${
-                                            systemSettings.isOutboundKillSwitchActive 
-                                            ? 'bg-red-600 text-white border-red-500 animate-pulse' 
-                                            : 'bg-black/40 text-gray-500 border-white/10 hover:border-white/30'
-                                        }`}
+                                        className={`w-full py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${systemSettings.isOutboundKillSwitchActive ? 'bg-red-600 text-white animate-pulse' : 'bg-green-600/20 text-green-400'}`}
                                     >
-                                        {systemSettings.isOutboundKillSwitchActive ? '⚠️ BLOQUEO ACTIVO' : 'SISTEMA NOMINAL'}
+                                        {systemSettings.isOutboundKillSwitchActive ? 'BLOQUEO ACTIVO' : 'SISTEMA ONLINE'}
                                     </button>
-                                    <p className="text-[9px] text-gray-600 italic">Corta el tráfico de campañas salientes globalmente.</p>
+                                </div>
+
+                                <div className="space-y-3">
+                                    <label className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Red Dominion</label>
+                                    <button 
+                                        onClick={handleNetworkFeatureToggle}
+                                        className={`w-full py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${systemSettings.isNetworkGlobalFeatureEnabled ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-400'}`}
+                                    >
+                                        {systemSettings.isNetworkGlobalFeatureEnabled ? 'RED ACTIVA' : 'RED DESACTIVADA'}
+                                    </button>
                                 </div>
                             </div>
                         </div>
 
-                        {/* Danger Zone */}
-                        <div className="bg-red-900/10 border border-red-500/20 rounded-2xl p-6">
-                            <h3 className="text-sm font-black text-red-500 uppercase tracking-widest mb-6">Zona de Peligro</h3>
-                            <div className="flex items-end gap-4">
-                                <div className="flex-1 space-y-2">
-                                    <label className="text-[9px] font-bold text-red-400 uppercase">Confirmación</label>
-                                    <input 
-                                        type="text" 
-                                        placeholder='Escribe "RESET" para confirmar' 
-                                        value={resetConfirmation}
-                                        onChange={(e) => setResetConfirmation(e.target.value)}
-                                        className="w-full bg-black/50 border border-red-500/30 rounded-xl p-3 text-red-500 text-xs font-black placeholder-red-900/50"
-                                    />
-                                </div>
+                        {/* Dangerous Zone */}
+                        <div className="bg-red-900/10 border border-red-500/20 rounded-2xl p-6 flex flex-col md:flex-row items-center justify-between gap-6">
+                            <div>
+                                <h3 className="text-red-500 font-black uppercase tracking-widest text-sm mb-1">Zona de Peligro</h3>
+                                <p className="text-xs text-red-300">Reseteo total de base de datos. Solo para desarrollo.</p>
+                            </div>
+                            <div className="flex gap-2">
+                                <input 
+                                    type="text" 
+                                    placeholder='Escribe "RESET"' 
+                                    value={resetConfirmation}
+                                    onChange={(e) => setResetConfirmation(e.target.value)}
+                                    className="bg-black/50 border border-red-500/30 rounded-lg px-3 py-2 text-xs text-red-200 outline-none focus:border-red-500"
+                                />
                                 <button 
-                                    onClick={executeReset}
+                                    onClick={executeReset} 
                                     disabled={resetConfirmation !== 'RESET'}
-                                    className="px-8 py-3 bg-red-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest disabled:opacity-50 hover:bg-red-500 transition-all"
+                                    className="px-6 py-2 bg-red-600 text-white font-black text-xs rounded-lg uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed hover:bg-red-500"
                                 >
                                     Hard Reset
                                 </button>
@@ -550,131 +568,109 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
                 return <LogTable logs={logs} getLogLevelPill={getLogLevelPill} />;
             case 'test_bot':
                 return (
-                    <div className="bg-brand-surface border border-white/5 rounded-2xl p-8 space-y-8">
-                        <div className="border-b border-white/10 pb-6">
-                            <h3 className="text-xl font-black text-white uppercase tracking-widest">Simulador de Bot Élite</h3>
-                            <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-2">Inyecta conversaciones de prueba en cuentas de clientes</p>
-                        </div>
+                    <div className="bg-brand-surface border border-white/5 rounded-2xl p-8 shadow-xl max-w-2xl mx-auto">
+                        <h3 className="text-xl font-black text-white uppercase tracking-widest mb-6">Simulador Elite Bot</h3>
                         
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                            <div className="space-y-4">
-                                <label className="block text-xs font-bold text-brand-gold uppercase tracking-widest">Cliente Objetivo</label>
+                        <div className="space-y-6">
+                            <div>
+                                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">Cliente Objetivo</label>
                                 <select 
-                                    className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-sm text-white outline-none focus:border-brand-gold"
-                                    value={selectedTestClient || ''}
+                                    value={selectedTestClient || ''} 
                                     onChange={(e) => setSelectedTestClient(e.target.value)}
+                                    className="w-full bg-black/50 border border-white/10 rounded-xl p-3 text-sm text-white"
                                 >
-                                    <option value="">-- Seleccionar --</option>
-                                    {clients.map(c => <option key={c.id} value={c.id}>{c.business_name} ({c.username})</option>)}
+                                    <option value="">Seleccionar Cliente...</option>
+                                    {clients.map(c => (
+                                        <option key={c.id} value={c.id}>{c.business_name} ({c.username})</option>
+                                    ))}
                                 </select>
                             </div>
-                            
-                            <div className="flex flex-col gap-4 justify-end">
+
+                            <div className="p-4 bg-blue-900/10 border border-blue-500/20 rounded-xl">
+                                <p className="text-xs text-blue-200 leading-relaxed">
+                                    Esto inyectará un chat simulado ("Simulador Neural") en la cuenta del cliente y ejecutará una conversación de venta automática para probar la IA.
+                                </p>
+                            </div>
+
+                            <div className="flex gap-4">
                                 <button 
-                                    onClick={handleStartTestBot}
+                                    onClick={handleStartTestBot} 
                                     disabled={!selectedTestClient || isTestBotRunning}
-                                    className="w-full py-4 bg-brand-gold text-black rounded-xl font-black text-xs uppercase tracking-[0.2em] hover:scale-[1.02] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="flex-1 py-4 bg-brand-gold text-black font-black text-xs uppercase tracking-widest rounded-xl hover:scale-105 transition-transform disabled:opacity-50"
                                 >
-                                    {isTestBotRunning ? 'Ejecutando...' : 'Iniciar Secuencia de Prueba'}
+                                    {isTestBotRunning ? 'Ejecutando...' : 'Iniciar Prueba'}
                                 </button>
                                 <button 
                                     onClick={handleClearTestBotConversation}
                                     disabled={!selectedTestClient}
-                                    className="w-full py-4 bg-white/5 text-gray-400 border border-white/10 rounded-xl font-black text-xs uppercase tracking-[0.2em] hover:bg-white/10 transition-all disabled:opacity-50"
+                                    className="px-6 py-4 bg-white/5 text-gray-400 font-bold text-xs uppercase rounded-xl hover:text-white hover:bg-white/10 transition-colors disabled:opacity-50"
                                 >
-                                    Limpiar Conversación
+                                    Limpiar
                                 </button>
                             </div>
-                        </div>
-                        
-                        <div className="bg-black/30 p-6 rounded-xl border border-white/5">
-                            <h4 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-4">Script de Prueba</h4>
-                            <ul className="space-y-2 text-xs text-gray-400 font-mono">
-                                <li>1. Hola, estoy interesado en tus servicios. ¿Cómo funciona?</li>
-                                <li>2. ¿Podrías explicarme un poco más sobre el plan PRO?</li>
-                                <li>3. ¿Cuál es el costo mensual?</li>
-                                <li>4. ¿Ofrecen alguna garantía o prueba?</li>
-                                <li>5. Suena interesante. Creo que estoy listo para ver una demo o empezar. ¿Qué debo hacer ahora?</li>
-                            </ul>
                         </div>
                     </div>
                 );
             case 'depth_control':
                 return (
-                    <section className="bg-brand-surface border border-white/5 rounded-2xl p-8 shadow-2xl">
-                        <div className="flex justify-between items-end border-b border-white/5 pb-6 mb-8">
-                            <div>
-                                <h3 className="text-xl font-black text-white uppercase tracking-widest flex items-center gap-3">
-                                    <span className="w-3 h-3 bg-purple-500 rounded-full animate-pulse shadow-[0_0_15px_rgba(168,85,247,0.8)]"></span>
-                                    Control de <span className="text-purple-400">Profundidad</span>
-                                </h3>
-                                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.3em] mt-2">Ajuste Neural Fino</p>
-                            </div>
+                    <div className="bg-brand-surface border border-white/5 rounded-2xl p-8 shadow-xl max-w-2xl mx-auto space-y-8">
+                        <h3 className="text-xl font-black text-white uppercase tracking-widest">Control de Profundidad</h3>
+                        
+                        <div>
+                            <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">Cliente</label>
+                            <select 
+                                value={selectedDepthClient || ''} 
+                                onChange={(e) => {
+                                    setSelectedDepthClient(e.target.value);
+                                    const client = clients.find(c => c.id === e.target.value);
+                                    if(client) setNewDepthLevel(client.depthLevel || 1);
+                                }}
+                                className="w-full bg-black/50 border border-white/10 rounded-xl p-3 text-sm text-white"
+                            >
+                                <option value="">Seleccionar Cliente...</option>
+                                {clients.map(c => (
+                                    <option key={c.id} value={c.id}>{c.business_name} (Lvl {c.depthLevel || 1})</option>
+                                ))}
+                            </select>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                            <div className="space-y-4">
-                                <label className="block text-xs font-bold text-brand-gold uppercase tracking-widest">Cliente Objetivo</label>
-                                <select 
-                                    className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-sm text-white outline-none focus:border-brand-gold"
-                                    value={selectedDepthClient || ''}
-                                    onChange={(e) => setSelectedDepthClient(e.target.value)}
-                                >
-                                    <option value="">-- Seleccionar --</option>
-                                    {clients.map(c => <option key={c.id} value={c.id}>{c.business_name} ({c.username}) (Nivel: {c.depthLevel || 1})</option>)}
-                                </select>
-                            </div>
-
-                            <div className="space-y-4">
-                                <label className="block text-xs font-bold text-brand-gold uppercase tracking-widest">Nivel Base de Profundidad</label>
-                                <input 
-                                    type="number" min="1" max="10" 
-                                    value={newDepthLevel} 
-                                    onChange={(e) => setNewDepthLevel(parseInt(e.target.value))} 
-                                    className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-sm text-white outline-none focus:border-brand-gold"
-                                />
-                                <button 
-                                    onClick={handleUpdateDepth} 
-                                    disabled={!selectedDepthClient} 
-                                    className="w-full py-3 bg-purple-600/20 text-purple-400 border border-purple-600/50 rounded-xl font-black text-xs uppercase hover:bg-purple-600 hover:text-white transition-all disabled:opacity-50"
-                                >
-                                    Actualizar Nivel Base
-                                </button>
-                            </div>
-
-                            <div className="md:col-span-2 space-y-4 pt-6 border-t border-white/5">
-                                <h4 className="text-sm font-black text-white uppercase tracking-widest">Aplicar Boost Temporal</h4>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest">Delta de Profundidad (+)</label>
+                        {selectedDepthClient && (
+                            <div className="space-y-6 animate-fade-in">
+                                <div className="p-6 bg-black/30 rounded-xl border border-white/5">
+                                    <h4 className="text-sm font-bold text-white mb-4">Nivel Base</h4>
+                                    <div className="flex gap-4 items-center">
                                         <input 
-                                            type="number" min="1" max="5" 
-                                            value={boostDelta} 
-                                            onChange={(e) => setBoostDelta(parseInt(e.target.value))} 
-                                            className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-sm text-white outline-none focus:border-brand-gold"
+                                            type="range" min="1" max="10" 
+                                            value={newDepthLevel} 
+                                            onChange={(e) => setNewDepthLevel(parseInt(e.target.value))}
+                                            className="flex-1 h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-brand-gold"
                                         />
+                                        <span className="text-2xl font-black text-brand-gold w-12 text-center">{newDepthLevel}</span>
                                     </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest">Duración (Horas)</label>
-                                        <input 
-                                            type="number" min="1" max="168" 
-                                            value={boostHours} 
-                                            onChange={(e) => setBoostHours(parseInt(e.target.value))} 
-                                            className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-sm text-white outline-none focus:border-brand-gold"
-                                        />
-                                    </div>
+                                    <button onClick={handleUpdateDepth} className="mt-4 w-full py-3 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-bold uppercase">
+                                        Actualizar Nivel Base
+                                    </button>
                                 </div>
-                                <button 
-                                    onClick={handleApplyBoost} 
-                                    disabled={!selectedDepthClient} 
-                                    className="w-full py-3 bg-brand-gold text-black rounded-xl font-black text-xs uppercase hover:scale-[1.02] transition-all disabled:opacity-50"
-                                >
-                                    Aplicar Boost Ahora
-                                </button>
-                                <p className="text-[9px] text-gray-600 italic mt-2">Un Boost temporal aumenta el nivel de profundidad sobre el base por un período limitado.</p>
+
+                                <div className="p-6 bg-purple-900/10 rounded-xl border border-purple-500/20">
+                                    <h4 className="text-sm font-bold text-purple-400 mb-4">Neuro-Boost (Temporal)</h4>
+                                    <div className="grid grid-cols-2 gap-4 mb-4">
+                                        <div>
+                                            <label className="text-[10px] text-gray-400 font-bold uppercase block mb-1">Potencia (+Lvl)</label>
+                                            <input type="number" value={boostDelta} onChange={e => setBoostDelta(parseInt(e.target.value))} className="w-full bg-black/50 border border-purple-500/30 rounded-lg p-2 text-white" />
+                                        </div>
+                                        <div>
+                                            <label className="text-[10px] text-gray-400 font-bold uppercase block mb-1">Duración (Horas)</label>
+                                            <input type="number" value={boostHours} onChange={e => setBoostHours(parseInt(e.target.value))} className="w-full bg-black/50 border border-purple-500/30 rounded-lg p-2 text-white" />
+                                        </div>
+                                    </div>
+                                    <button onClick={handleApplyBoost} className="w-full py-3 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-bold uppercase shadow-lg shadow-purple-600/20">
+                                        Aplicar Boost
+                                    </button>
+                                </div>
                             </div>
-                        </div>
-                    </section>
+                        )}
+                    </div>
                 );
             case 'network':
                 return <NetworkMonitor backendUrl={backendUrl} token={token} showToast={showToast} />;
@@ -682,24 +678,39 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
     };
 
     return (
-        <div className="flex-1 bg-brand-black p-6 md:p-10 overflow-y-auto custom-scrollbar font-sans relative">
-            <div className="max-w-7xl mx-auto space-y-8 relative z-10 pb-32">
-                <header className="flex justify-between items-end border-b border-white/5 pb-6">
+        <div className="flex-1 bg-brand-black p-6 md:p-10 overflow-y-auto custom-scrollbar font-sans relative z-10 animate-fade-in">
+            <div className="max-w-7xl mx-auto space-y-10 pb-32">
+                <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 border-b border-white/5 pb-8">
                     <div>
-                        <h1 className="text-3xl font-black text-white tracking-tighter uppercase">
-                            Panel <span className="text-brand-gold">Global</span>
-                        </h1>
-                        <p className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.3em] mt-1">NODO ADMINISTRATIVO SUPREMO</p>
+                        <h2 className="text-3xl font-black text-white tracking-tighter uppercase flex items-center gap-3">
+                            Panel <span className="text-brand-gold">Dios</span>
+                        </h2>
+                        <p className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.3em] mt-1">Administración de Infraestructura</p>
                     </div>
-                    <div className="flex bg-white/5 p-1 rounded-xl border border-white/10">
-                        <button onClick={() => setView('dashboard')} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${view === 'dashboard' ? 'bg-brand-gold text-black' : 'text-gray-400 hover:text-white'}`}>Dashboard</button>
-                        <button onClick={() => setView('clients')} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${view === 'clients' ? 'bg-brand-gold text-black' : 'text-gray-400 hover:text-white'}`}>Clientes</button>
-                        <button onClick={() => setView('logs')} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${view === 'logs' ? 'bg-brand-gold text-black' : 'text-gray-400 hover:text-white'}`}>Logs</button>
-                        <button onClick={() => setView('test_bot')} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${view === 'test_bot' ? 'bg-brand-gold text-black' : 'text-gray-400 hover:text-white'}`}>Simulador</button>
-                        <button onClick={() => setView('depth_control')} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${view === 'depth_control' ? 'bg-brand-gold text-black' : 'text-gray-400 hover:text-white'}`}>Profundidad</button>
-                        <button onClick={() => setView('network')} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${view === 'network' ? 'bg-brand-gold text-black' : 'text-gray-400 hover:text-white'}`}>Red</button>
+                    <div className="flex gap-4">
+                        <button onClick={onLogout} className="px-4 py-2 text-gray-500 hover:text-white text-[10px] font-bold uppercase tracking-widest transition-colors">Cerrar Sesión</button>
                     </div>
                 </header>
+
+                {/* Navigation */}
+                <div className="flex bg-brand-surface border border-white/5 p-1 rounded-xl w-full md:w-auto overflow-x-auto">
+                    {[
+                        { id: 'dashboard', label: 'Dashboard' },
+                        { id: 'clients', label: 'Clientes' },
+                        { id: 'logs', label: 'Logs' },
+                        { id: 'test_bot', label: 'Simulador' },
+                        { id: 'depth_control', label: 'Depth Engine' },
+                        { id: 'network', label: 'Red Dominion' }
+                    ].map(tab => (
+                        <button
+                            key={tab.id}
+                            onClick={() => setView(tab.id as AdminView)}
+                            className={`flex-1 px-6 py-3 rounded-lg text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all ${view === tab.id ? 'bg-brand-gold text-black shadow-lg shadow-brand-gold/20' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}
+                        >
+                            {tab.label}
+                        </button>
+                    ))}
+                </div>
 
                 {renderContent()}
             </div>

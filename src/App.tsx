@@ -700,8 +700,16 @@ export function App() {
   };
 
   const renderClientView = () => {
-      if (userRole === 'super_admin') return <AdminDashboard token={token!} backendUrl={BACKEND_URL} onAudit={(u) => { setAuditTarget(u); setCurrentView(View.AUDIT_MODE); }} showToast={showToast} onLogout={handleLogout} />;
-      if (currentView === View.AUDIT_MODE && auditTarget) return <AuditView user={auditTarget} onClose={() => setCurrentView(View.ADMIN_GLOBAL)} onUpdate={(user) => setAuditTarget(user)} showToast={showToast} />;
+      // PRIORITY 1: Audit Mode (Override default dashboard and Super Admin check)
+      // This ensures that when an admin clicks "Audit", they actually see the audit view.
+      if (currentView === View.AUDIT_MODE && auditTarget) {
+          return <AuditView user={auditTarget} onClose={() => setCurrentView(View.ADMIN_GLOBAL)} onUpdate={(user) => setAuditTarget(user)} showToast={showToast} />;
+      }
+
+      // PRIORITY 2: Admin Dashboard (Default if no specific view override and user is admin)
+      if (userRole === 'super_admin') {
+          return <AdminDashboard token={token!} backendUrl={BACKEND_URL} onAudit={(u) => { setAuditTarget(u); setCurrentView(View.AUDIT_MODE); }} showToast={showToast} onLogout={handleLogout} />;
+      }
       
       const handleUpdateSettings = async (newSettings: BotSettings) => {
           try {
@@ -782,6 +790,7 @@ export function App() {
               onToggleBot={() => setIsBotGloballyActive(!isBotGloballyActive)} 
               isAutonomousClosing={settings?.isAutonomousClosing || false}
               onToggleAutonomous={handleToggleAutonomous}
+              isNetworkGlobalEnabled={systemSettings?.isNetworkGlobalFeatureEnabled || false} // NEW: Pass global feature flag
               currentView={currentView} 
               onNavigate={handleNavigate} 
               connectionStatus={connectionStatus}
