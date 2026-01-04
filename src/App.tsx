@@ -1,11 +1,4 @@
 
-
-
-
-
-
-
-
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Conversation, BotSettings, Message, View, ConnectionStatus, User, LeadStatus, PromptArchetype, Testimonial, SystemSettings } from './types';
 import Header from './components/Header';
@@ -626,32 +619,46 @@ export function App() {
   // --- RENDER ---
   const isAppView = !!token && !showLanding;
   
-  const handleSendMessageOptimistic = (text: string) => {
+  const handleSendMessageOptimistic = async (text: string) => {
       if (!selectedConversationId || !token) return;
 
+      const tempId = `owner-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
       const ownerMessage: Message = {
-          // FIX 2: Blindar ID para evitar colisiones en UI o duplicados del backend
-          id: `owner-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          id: tempId,
           sender: 'owner',
           text,
-          // FIX: Changed to string to match type definition.
           timestamp: new Date().toISOString()
       };
 
-      // FIX: Corrected type for optimistic update.
+      // 1. Optimistic Add
       setConversations(prev => prev.map(c => 
           c.id === selectedConversationId 
-          // FIX 1: lastActivity debe ser ISO String para consistencia con backend y ordenamiento
           ? { ...c, messages: [...c.messages, ownerMessage], lastActivity: new Date().toISOString() } 
           : c
       ).sort((a, b) => new Date(b.lastActivity || 0).getTime() - new Date(a.lastActivity || 0).getTime()));
 
-      // Send to backend without waiting
-      fetch(`${BACKEND_URL}/api/send`, { 
-          method: 'POST', 
-          headers: getAuthHeaders(token), 
-          body: JSON.stringify({ to: selectedConversationId, text }) 
-      }).catch(() => showToast('Error al enviar mensaje', 'error'));
+      try {
+          // 2. Real Send
+          const res = await fetch(`${BACKEND_URL}/api/send`, { 
+              method: 'POST', 
+              headers: getAuthHeaders(token), 
+              body: JSON.stringify({ to: selectedConversationId, text }) 
+          });
+
+          if (!res.ok) {
+              throw new Error('Server rejected');
+          }
+          // On success, backend polling will eventually sync real ID
+      } catch (e) {
+          // 3. Rollback on Failure
+          showToast('Error: No se pudo enviar a WhatsApp.', 'error');
+          setConversations(prev => prev.map(c => 
+              c.id === selectedConversationId 
+              ? { ...c, messages: c.messages.filter(m => m.id !== tempId) } // Remove the ghost
+              : c
+          ));
+      }
   };
 
   // NEW: HANDLE INSTANT DELETE
