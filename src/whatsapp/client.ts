@@ -77,6 +77,11 @@ function extractMessageContent(msg: proto.IWebMessageInfo | proto.IMessage): str
     const message = (msg as any).message || msg; 
     if (!message) return null;
 
+    // Ignore messages that are purely system/protocol related and have no user-visible content.
+    if (message.protocolMessage || message.reactionMessage || message.pollUpdateMessage || message.keepInChatMessage || message.senderKeyDistributionMessage) {
+        return null; 
+    }
+
     // 1. Standard Text
     if (message.conversation) return message.conversation;
     if (message.extendedTextMessage?.text) return message.extendedTextMessage.text;
@@ -93,7 +98,7 @@ function extractMessageContent(msg: proto.IWebMessageInfo | proto.IMessage): str
     if (message.documentWithCaptionMessage?.message) return extractMessageContent(message.documentWithCaptionMessage.message);
     if (message.editedMessage?.message?.protocolMessage?.editedMessage) return extractMessageContent(message.editedMessage.message.protocolMessage.editedMessage);
 
-    // 4. Media Placeholders
+    // 4. Media Placeholders (if they have no caption)
     if (message.imageMessage) return '📷 [Imagen]';
     if (message.audioMessage) return '🎤 [Audio]';
     if (message.videoMessage) return '🎥 [Video]';
@@ -102,16 +107,8 @@ function extractMessageContent(msg: proto.IWebMessageInfo | proto.IMessage): str
     if (message.contactMessage) return '👤 [Contacto]';
     if (message.locationMessage) return '📍 [Ubicación]';
     
-    // 5. Fallback for unknown types (Ensures visibility)
-    if (Object.keys(message).length > 0) {
-        // Ignore strictly technical messages that have no user value
-        if (message.protocolMessage || message.reactionMessage || message.pollUpdateMessage || message.keepInChatMessage || message.senderKeyDistributionMessage) {
-            return null; 
-        }
-        // If it has content but we don't know what it is, show something so the chat appears
-        return '[Contenido Desconocido]'; 
-    }
-
+    // If after all checks, we have a message object but couldn't extract content, it's likely something we don't handle.
+    // Returning null will ensure it's ignored, preventing "[Contenido Desconocido]" and other artifacts.
     return null;
 }
 
@@ -330,20 +327,19 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                     }
 
                     // --- PRIVATE CHAT LOGIC (INBOX) ---
-                    // FIX 1: FORCE CONVERSATION EXISTENCE BEFORE PROCESSING
-                    // Ensure conversation exists even if messages are skipped later
                     const firstMsg = chatMessages[0];
                     const bestName = firstMsg.pushName || (firstMsg as any).verifiedBizName || undefined;
                     await conversationService.ensureConversationsExist(userId, [{ jid, name: bestName }]);
 
                     for (const msg of chatMessages) {
                         try {
-                            // FIX 3: RELAXED FILTERING (NO SILENT CONTINUE)
-                            let messageText = extractMessageContent(msg);
+                            const messageText = extractMessageContent(msg);
                             
+                            // *** CRITICAL FIX: IGNORE UNPARSEABLE MESSAGES ***
+                            // If extractMessageContent returns null, it means it's a system message or something
+                            // we don't want to show. We skip it entirely to prevent duplicates and "Contenido Desconocido".
                             if (!messageText) {
-                                // Fallback content so we don't lose the message/conversation bump
-                                messageText = '[Mensaje de Sistema/Contenido]'; 
+                                continue; 
                             }
 
                             const msgTimestamp = typeof msg.messageTimestamp === 'number' ? msg.messageTimestamp : (msg.messageTimestamp as any)?.low || Date.now() / 1000;

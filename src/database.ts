@@ -1,4 +1,3 @@
-
 import mongoose, { Schema, Model } from 'mongoose';
 import bcrypt from 'bcrypt';
 import { User, BotSettings, PromptArchetype, GlobalMetrics, GlobalTelemetry, Conversation, IntendedUse, LogEntry, Testimonial, SystemSettings, Campaign, RadarSignal, RadarSettings, GroupMarketMemory, DepthBoost, DepthLog, IntentSignal, ConnectionOpportunity, NetworkProfile, PermissionStatus } from './types.js';
@@ -447,10 +446,12 @@ class Database {
           conversationsArray = extractConversationsRecursive(rawConvos);
       }
       
-      // FIX: Filter out GROUPS (@g.us), BROADCASTS (@broadcast) AND NEWSLETTERS (@newsletter)
-      // This prevents "Noise" in the private chat list
+      // FIX: Filter out GROUPS (@g.us), BROADCASTS (@broadcast), NEWSLETTERS (@newsletter),
+      // and conversations with NO MESSAGES to prevent "ghost" chats.
       const filteredConvos = conversationsArray.filter(c => {
-          return c.id && !c.id.endsWith('@g.us') && !c.id.endsWith('@broadcast') && !c.id.endsWith('@newsletter');
+          const hasMessages = c.messages && c.messages.length > 0;
+          const isNotNoise = c.id && !c.id.endsWith('@g.us') && !c.id.endsWith('@broadcast') && !c.id.endsWith('@newsletter');
+          return hasMessages && isNotNoise;
       });
 
       // FIX: Ensure strict uniqueness by ID
