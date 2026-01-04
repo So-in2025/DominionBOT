@@ -1,3 +1,4 @@
+
 import { Buffer } from 'buffer';
 import { connectToWhatsApp, disconnectWhatsApp, sendMessage, getSessionStatus, processAiResponseForJid, fetchUserGroups, ELITE_BOT_JID, ELITE_BOT_NAME, DOMINION_NETWORK_JID } from '../whatsapp/client.js'; 
 import { conversationService } from '../services/conversationService.js';
@@ -125,14 +126,19 @@ export const handleUpdateConversation = async (req: AuthenticatedRequest<any, an
 export const handleDeleteConversation = async (req: AuthenticatedRequest<{ id: string }, any, { blacklist: boolean }>, res: any) => {
     try {
         const { id: userId } = req.user;
-        const { id: jid } = req.params;
-        const canonicalJid = normalizeJid(jid); // BLOQUE 1
-        if (!canonicalJid) return res.status(400).json({ message: 'ID de conversación inválido' });
-        
+        const { id: rawJid } = req.params;
         const { blacklist } = req.body;
 
-        // Perform physical removal
+        const canonicalJid = normalizeJid(rawJid);
+        if (!canonicalJid) return res.status(400).json({ message: 'ID de conversación inválido' });
+        
+        // 1. Intentar borrar con ID normalizado
         await db.removeUserConversation(userId, canonicalJid);
+        
+        // 2. Intentar borrar con ID crudo (para limpiar fantasmas antiguos)
+        if (rawJid !== canonicalJid) {
+             await db.removeUserConversation(userId, rawJid);
+        }
 
         if (blacklist) {
             const user = await db.getUser(userId);

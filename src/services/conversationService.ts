@@ -1,3 +1,4 @@
+
 import { Conversation, LeadStatus, Message } from '../types.js';
 import { db, sanitizeKey } from '../database.js';
 import { logService } from './logService.js';
@@ -67,7 +68,11 @@ class ConversationService {
               updates[safeJid] = conversation;
               hasUpdates = true;
           } else {
-              if (item.name && (!conversation.leadName || conversation.leadName === leadIdentifier)) {
+              // AGGRESSIVE NAME UPDATE:
+              // Si item.name existe y es diferente al actual, actualizamos.
+              // Esto corrige el problema de "Número arriba, número abajo".
+              // Respetamos 'Simulador Neural' para no romper el test bot.
+              if (item.name && conversation.leadName !== item.name && !isEliteBotJid) {
                   conversation.leadName = item.name;
                   updates[safeJid] = conversation;
                   hasUpdates = true;
@@ -139,12 +144,10 @@ class ConversationService {
             conversation.leadName = 'Simulador Neural'; 
         }
 
+        // AGGRESSIVE NAME UPDATE ON NEW MESSAGE
+        // Si llega un leadName nuevo (PushName) y es distinto al actual, actualizamos.
         if (leadName && leadName !== conversation.leadName && !isEliteBotJid) {
-             const currentIsNumber = !isNaN(Number(conversation.leadName.replace(/[^0-9]/g, '')));
-             const newIsNumber = !isNaN(Number(leadName.replace(/[^0-9]/g, '')));
-             if (currentIsNumber && !newIsNumber) {
-                 conversation.leadName = leadName;
-             }
+             conversation.leadName = leadName;
         }
     }
     

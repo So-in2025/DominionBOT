@@ -1,3 +1,4 @@
+
 import makeWASocket, {
   DisconnectReason,
   makeCacheableSignalKeyStore,
@@ -28,6 +29,15 @@ const sessions = new Map<string, WASocket>();
 const qrCache = new Map<string, string>(); 
 const codeCache = new Map<string, string>(); 
 const reconnectionAttempts = new Map<string, number>();
+
+// Fix: Implement CacheStore interface for msgRetryCounterCache
+const msgRetryCounterMap = new Map<string, any>();
+const retryCache = {
+    get: (key: string) => msgRetryCounterMap.get(key),
+    set: (key: string, value: any) => { msgRetryCounterMap.set(key, value) },
+    del: (key: string) => { msgRetryCounterMap.delete(key) },
+    flushAll: () => { msgRetryCounterMap.clear() }
+};
 
 // Silent logger to keep terminal clean, we use logService
 const logger = pino({ level: 'silent' }); 
@@ -178,6 +188,8 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
             keepAliveIntervalMs: 10000, 
             retryRequestDelayMs: 2000,
             connectTimeoutMs: 60000,
+            // CONFIGURACIÓN DE ESTABILIDAD: Cache de reintentos para evitar Bad MAC
+            msgRetryCounterCache: retryCache,
             // BLOQUE 5: HISTORIAL NO DEBE ROMPER CONTEXTO
             getMessage: async () => undefined
         });
@@ -234,14 +246,16 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
             if (connection === 'close') {
                 const disconnectError = lastDisconnect?.error as Boom;
                 const statusCode = disconnectError?.output?.statusCode;
-                const isLoggedOut = statusCode === DisconnectReason.loggedOut;
+                
+                // 401 (Logged Out) or 428 (Precondition Required - often corruption)
+                const isLoggedOut = statusCode === DisconnectReason.loggedOut || statusCode === 428;
 
                 qrCache.delete(userId);
                 codeCache.delete(userId);
                 sessions.delete(userId);
 
                 if (isLoggedOut) {
-                    logService.warn(`[WA-CLIENT] ⚠️ Sesión cerrada por WhatsApp (401/LoggedOut). Purgando datos.`, userId);
+                    logService.warn(`[WA-CLIENT] ⚠️ Sesión inválida o corrupta (${statusCode}). Purgando datos para re-enlace limpio.`, userId);
                     await clearBindedSession(userId); 
                     reconnectionAttempts.set(userId, 0); 
                     setTimeout(() => connectToWhatsApp(userId, phoneNumber), 2000);

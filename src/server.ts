@@ -16,13 +16,24 @@ import { v4 as uuidv4 } from 'uuid';
 import { regenerateSimulationScript } from './services/aiService.js'; 
 import { ngrokService } from './services/ngrokService.js'; // NEW IMPORT
 
-// ... (Global Error Handlers remain same)
+// ... (Global Error Handlers)
 (process as any).on('uncaughtException', (err: any) => {
+    // SILENCIADOR DE BAD MAC: Este error es de sesión corrupta, no del código.
+    if (err?.message?.includes('Bad MAC') || err?.message?.includes('Decryption failed')) {
+        console.warn('⚠️ [SIGNAL-ERROR] Corrupción de llaves detectada (Bad MAC). Se recomienda resetear la conexión desde el panel.');
+        return;
+    }
     console.error('🔥 [CRITICAL] Uncaught Exception:', err);
     logService.error('UNCAUGHT EXCEPTION - SERVER KEPT ALIVE', err);
 });
 
 (process as any).on('unhandledRejection', (reason: any, promise: any) => {
+    // SILENCIADOR DE BAD MAC EN PROMESAS
+    const msg = reason?.toString() || '';
+    if (msg.includes('Bad MAC') || msg.includes('Decryption failed')) {
+        return; // Ignorar ruido en logs
+    }
+
     console.error('🔥 [CRITICAL] Unhandled Rejection:', reason);
     if (reason?.output?.statusCode === 428 || reason?.message === 'Connection Closed') {
         logService.warn('WhatsApp Session Conflict (428) detected in background. Session needs reset.');
