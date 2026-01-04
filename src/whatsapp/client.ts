@@ -233,8 +233,11 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                     reconnectionAttempts.set(userId, 0); // Reset after purge
                     setTimeout(() => connectToWhatsApp(userId, phoneNumber), 2000);
                 } else {
-                    logService.warn(`[WA-CLIENT] Conexión interrumpida (Código: ${statusCode}). Reconectando en 3s...`, userId);
-                    setTimeout(() => connectToWhatsApp(userId, phoneNumber), 3000); 
+                    const currentAttempts = reconnectionAttempts.get(userId) || 0;
+                    // Exponential backoff: 3s, 4.5s, 6.75s, 10s, ... capped at 60s
+                    const delay = Math.min(60000, 3000 * Math.pow(1.5, currentAttempts));
+                    logService.warn(`[WA-CLIENT] Conexión interrumpida (Código: ${statusCode}). Reconectando en ${Math.round(delay/1000)}s... (Intento #${currentAttempts + 1})`, userId);
+                    setTimeout(() => connectToWhatsApp(userId, phoneNumber), delay); 
                 }
 
             } else if (connection === 'open') {

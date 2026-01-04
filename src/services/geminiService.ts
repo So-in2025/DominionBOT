@@ -1,4 +1,5 @@
 
+
 import { GoogleGenAI } from "@google/genai";
 import { db } from '../database.js';
 import { logService } from './logService.js';
@@ -62,7 +63,16 @@ export const generateContentWithFallback = async ({
             return response;
 
         } catch (err: any) {
-            logService.warn(`[GEMINI-FAILOVER] Fallo con ${modelName}. Mensaje: ${err.message}. Pasando al siguiente modelo.`, undefined, undefined);
+            const errorMessage = err.message || '';
+            // BLINDAJE ANTI-RATE LIMIT: Si el error es 429, no intentar con otros modelos.
+            if (errorMessage.includes('429') || errorMessage.includes('RESOURCE_EXHAUSTED')) {
+                logService.error(`[GEMINI-SERVICE] 🛑 RATE LIMIT ALCANZADO. Deteniendo fallback.`, err, undefined, undefined);
+                // Poner el modelo en un cooldown corto y abortar la cadena.
+                await db.setModelCooldown(modelName, Date.now() + (MODEL_COOLDOWN_MS / 4)); // 15 min cooldown para rate limit
+                throw new Error("Límite de peticiones a la API de IA alcanzado. Intenta más tarde.");
+            }
+
+            logService.warn(`[GEMINI-FAILOVER] Fallo con ${modelName}. Mensaje: ${errorMessage}. Pasando al siguiente modelo.`, undefined, undefined);
             await db.setModelCooldown(modelName, Date.now() + MODEL_COOLDOWN_MS);
         }
     }

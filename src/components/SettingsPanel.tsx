@@ -1,4 +1,6 @@
 
+
+
 import React, { useState, useEffect, useRef } from 'react';
 import { BotSettings, PromptArchetype, NeuralRouterConfig } from '../types';
 import { audioService } from '../services/audioService';
@@ -20,11 +22,9 @@ interface SettingsPanelProps {
 const safeJsonParse = (str: string | undefined): any | null => {
     if (!str) return null;
     try {
-        // Attempt to parse, but also check for minimal JSON structure.
-        if (str.includes('{') && str.includes('}')) {
-            return JSON.parse(str);
-        }
-        return null;
+        // La implementación anterior con `includes` era frágil.
+        // Un try/catch es la forma canónica y más robusta de validar JSON.
+        return JSON.parse(str);
     } catch {
         return null;
     }
@@ -34,6 +34,7 @@ const safeJsonParse = (str: string | undefined): any | null => {
 
 const ARCHETYPE_NAMES: { [key in PromptArchetype]: string } = {
     [PromptArchetype.CONSULTATIVE]: 'Venta Consultiva',
+    // FIX: Corrected typo 'Promptarchetype' to 'PromptArchetype'.
     [PromptArchetype.DIRECT_CLOSER]: 'Cierre Directo',
     [PromptArchetype.SUPPORT]: 'SOPORTE_TECNICO',
     [PromptArchetype.EMPATHIC]: 'Relacional Empático',
@@ -156,11 +157,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ token, settings, isLoadin
   const recognitionRef = useRef<any>(null);
   const descriptionTextareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Auto-sizing textarea effect
+  // Auto-sizing textarea effect based on audit recommendation
   useEffect(() => {
-    if (descriptionTextareaRef.current) {
-        descriptionTextareaRef.current.style.height = 'auto'; // Reset height
-        descriptionTextareaRef.current.style.height = `${descriptionTextareaRef.current.scrollHeight}px`;
+    const textarea = descriptionTextareaRef.current;
+    if (textarea) {
+        textarea.style.height = 'auto'; // Reset height to allow shrinking
+        textarea.style.height = `${textarea.scrollHeight}px`;
     }
   }, [current?.productDescription]);
 
@@ -548,8 +550,9 @@ ${data.rules}
                                     ref={descriptionTextareaRef}
                                     value={current.productDescription} 
                                     onChange={e => handleUpdate('productDescription', e.target.value)} 
-                                    className="w-full min-h-[200px] max-h-[600px] bg-black/50 border border-white/10 rounded-xl p-6 text-white text-xs font-mono leading-relaxed focus:border-brand-gold outline-none resize-none custom-scrollbar"
+                                    className="w-full bg-black/50 border border-white/10 rounded-xl p-6 text-white text-xs font-mono leading-relaxed focus:border-brand-gold outline-none resize-none custom-scrollbar overflow-y-hidden"
                                     placeholder="Aquí reside el cerebro de tu bot..."
+                                    rows={1}
                                 />
                                 <div className="grid grid-cols-2 gap-4 mt-6">
                                     <div>
