@@ -84,6 +84,7 @@ export const generateBotResponse = async (
 [ACTIVADORES]: ${m.triggerKeywords}
 [INFORMACIÓN EXPERTA]:
 ${m.contextContent}
+${m.moduleUrl ? `[LINK DE CIERRE/RECURSO]: ${m.moduleUrl} (Úsalo si el cliente muestra interés en este tema)` : ''}
 ----------------------------------
 `).join('\n');
 
@@ -100,7 +101,8 @@ ${modulesContext}
 ## REGLAS DE EJECUCIÓN:
 1. Analiza la intención del cliente.
 2. Si coincide con un MÓDULO EXPERTO, usa esa información como verdad absoluta.
-3. Responde como un humano en WhatsApp (breve, directo).
+3. Si el módulo tiene un [LINK DE CIERRE/RECURSO], úsalo para cerrar o aportar valor.
+4. Responde como un humano en WhatsApp (breve, directo).
 `;
   } else {
       // --- CLASSIC LINEAL LOGIC (HUMANIZED) ---

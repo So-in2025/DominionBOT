@@ -272,11 +272,13 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                 qrCache.delete(userId);
                 codeCache.delete(userId);
                 
-                if (isNewLogin) {
-                    const user = await db.getUser(userId);
-                    if (user && !user.whatsapp_number) {
-                        await db.updateUser(userId, { whatsapp_number: sock.user?.id?.split('@')[0] });
-                    }
+                // SIEMPRE asegurar que el número esté guardado en DB al conectar,
+                // para reparar casos donde se borró por error.
+                if (sock.user?.id) {
+                    const connectedNumber = sock.user.id.split('@')[0];
+                    await db.updateUser(userId, { whatsapp_number: connectedNumber });
+                    // Force Active on connect to avoid zombie state
+                    await db.updateUserSettings(userId, { isActive: true });
                 }
             }
         });
@@ -450,7 +452,8 @@ export async function disconnectWhatsApp(userId: string) {
     
     await new Promise(resolve => setTimeout(resolve, 500));
     await clearBindedSession(userId); 
-    await db.updateUser(userId, { whatsapp_number: '' });
+    // NO borrar el número de WhatsApp aquí. Solo se debe borrar si el usuario lo pide explícitamente (Wipe).
+    // await db.updateUser(userId, { whatsapp_number: '' }); 
     await db.updateUserSettings(userId, { isActive: false });
 }
 

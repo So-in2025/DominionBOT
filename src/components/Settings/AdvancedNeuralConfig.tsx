@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect } from 'react';
 import { NeuralRouterConfig, ContextShard } from '../../types';
 import { v4 as uuidv4 } from 'uuid';
@@ -36,7 +35,8 @@ const AdvancedNeuralConfig: React.FC<AdvancedNeuralConfigProps> = ({ initialConf
             id: newId,
             name: 'Nuevo Módulo',
             triggerKeywords: '',
-            contextContent: ''
+            contextContent: '',
+            moduleUrl: ''
         };
         setModules([...modules, newModule]);
         setExpandedModuleId(newId); // Auto-expand new module
@@ -145,15 +145,27 @@ const AdvancedNeuralConfig: React.FC<AdvancedNeuralConfigProps> = ({ initialConf
                                 {expandedModuleId === module.id && (
                                     <div className="p-4 border-t border-white/5 bg-black/20 animate-fade-in">
                                         <div className="space-y-4">
-                                            <div>
-                                                <label className="block text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-1">Nombre del Módulo</label>
-                                                <input 
-                                                    type="text" 
-                                                    value={module.name}
-                                                    onChange={(e) => updateModule(module.id, 'name', e.target.value)}
-                                                    className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-brand-gold font-bold focus:border-brand-gold outline-none"
-                                                    placeholder="Ej: Experto en Soporte"
-                                                />
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div>
+                                                    <label className="block text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-1">Nombre del Módulo</label>
+                                                    <input 
+                                                        type="text" 
+                                                        value={module.name}
+                                                        onChange={(e) => updateModule(module.id, 'name', e.target.value)}
+                                                        className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-brand-gold font-bold focus:border-brand-gold outline-none"
+                                                        placeholder="Ej: Experto en Soporte"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-1">Link Específico (CTA)</label>
+                                                    <input 
+                                                        type="text" 
+                                                        value={module.moduleUrl || ''}
+                                                        onChange={(e) => updateModule(module.id, 'moduleUrl', e.target.value)}
+                                                        className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-blue-300 font-mono focus:border-brand-gold outline-none"
+                                                        placeholder="Ej: https://calendly.com/soporte"
+                                                    />
+                                                </div>
                                             </div>
                                             <div>
                                                 <label className="block text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-1">Disparadores (Keywords)</label>

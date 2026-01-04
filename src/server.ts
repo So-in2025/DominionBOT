@@ -349,24 +349,32 @@ app.listen(Number(PORT), '0.0.0.0', async () => {
         const clients = await db.getAllClients();
         for (const client of clients) {
             const isActivePlan = client.plan_status === 'active' || client.plan_status === 'trial';
-            // AGGRESSIVE RECONNECT LOGIC: Connect if active/trial AND (isActive is TRUE OR (phoneNumber exists AND is valid))
-            // This ensures users who have a session but got flagged as inactive by error are recovered.
-            const hasLinkedNumber = client.whatsapp_number && client.whatsapp_number.length > 8;
             
-            if (isActivePlan && (client.settings.isActive || hasLinkedNumber)) {
+            // AGGRESSIVE RECONNECT LOGIC: 
+            // 1. If whatsapp_number exists, use it.
+            // 2. Fallback: If whatsapp_number is empty (wiped), check if username is a number (starts with 549...).
+            const hasNumber = client.whatsapp_number && client.whatsapp_number.length > 8;
+            const hasUsernameNumber = !hasNumber && client.username && client.username.startsWith('549') && client.username.length > 8;
+            const shouldReconnect = hasNumber || hasUsernameNumber;
+            
+            // We ignore isActive here to FORCE the attempt if plan is valid.
+            // But we will respect it later if we want to silence the bot, but CONNECTION should exist.
+            if (isActivePlan && shouldReconnect) {
                 logService.info(`[SERVER] 🔄 Intentando recuperar sesión para: ${client.username}`, client.id);
-                // If inactive but has number, re-activate in DB implicitly on successful connect logic
-                if (!client.settings.isActive && hasLinkedNumber) {
-                     logService.info(`[SERVER] Auto-reactivando bot apagado por seguridad para ${client.username}.`, client.id);
+                
+                // FORCE REACTIVATION if it was disabled by error
+                if (!client.settings.isActive) {
+                     logService.info(`[SERVER] Auto-reactivando bot para ${client.username}.`, client.id);
                      await db.updateUserSettings(client.id, { isActive: true });
                 }
                 
+                // If whatsapp_number is missing in DB but present in username, try to patch it implicitly on connect success
                 connectToWhatsApp(client.id).catch(err => {
                     logService.error(`[SERVER] Falló la reconexión inicial para el cliente ${client.username}`, err, client.id);
                 });
                 await new Promise(resolve => setTimeout(resolve, 500)); 
             } else {
-                logService.info(`[SERVER] No se reconectará el nodo para el cliente: ${client.username} (plan_status: ${client.plan_status}, bot activo: ${client.settings.isActive})`, client.id);
+                logService.info(`[SERVER] No se reconectará el nodo para el cliente: ${client.username} (plan: ${client.plan_status}, num: ${hasNumber || hasUsernameNumber})`, client.id);
             }
         }
         logService.info('[SERVER] Proceso de reconexión de nodos iniciado para todos los clientes elegibles.');

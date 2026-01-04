@@ -1,5 +1,4 @@
 
-
 export interface SimulationLab {
     experiments: SimulationRun[];
     aggregatedScore: number;
@@ -355,6 +354,7 @@ export interface ContextShard {
     name: string;
     triggerKeywords: string; // Comma separated keywords
     contextContent: string; // The specific prompt for this module
+    moduleUrl?: string; // NEW: Specific Link/CTA for this module
 }
 
 export interface NeuralRouterConfig {
