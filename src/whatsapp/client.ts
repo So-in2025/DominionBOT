@@ -136,7 +136,7 @@ export function getSocket(userId: string): WASocket | undefined {
 // ----------------------------------------------------------------------
 // CORE CONNECTION LOGIC (ARMORED)
 // ----------------------------------------------------------------------
-export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
+export async function connectToWhatsApp(userId: string, phoneNumber?: string, isManual: boolean = false) {
     // 1. MUTEX CHECK: If already connecting, abort to prevent race conditions.
     if (connectingLocks.has(userId)) {
         logService.debug(`[WA-CLIENT] 🔒 Conexión en progreso para ${userId}. Ignorando solicitud duplicada.`, userId);
@@ -144,9 +144,17 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
     }
 
     // 2. RECONNECTION LIMITER
+    // FIX: If isManual is true (triggered from UI), reset attempts to 0 to bypass lockout
+    if (isManual) {
+        reconnectionAttempts.set(userId, 0);
+        logService.info(`[WA-CLIENT] 🔄 Reseteo manual de intentos de conexión.`, userId);
+    }
+
     const attempts = reconnectionAttempts.get(userId) || 0;
+    
     if (attempts >= 10) { 
         logService.error(`[WA-CLIENT] 🛑 Máximo de reconexiones alcanzado para ${userId}. Pausa de seguridad (5m).`, userId);
+        // Auto-reset after 5m in case no manual intervention happens
         setTimeout(() => reconnectionAttempts.set(userId, 0), 60000 * 5); 
         return; 
     }
@@ -271,7 +279,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                     await clearBindedSession(userId); 
                     reconnectionAttempts.set(userId, 0); 
                     // Reconnect clean after 2s
-                    setTimeout(() => connectToWhatsApp(userId, phoneNumber), 2000);
+                    setTimeout(() => connectToWhatsApp(userId, phoneNumber, false), 2000);
                 } else {
                     // Soft Reconnect (Network issues, timeouts, etc)
                     const currentAttempts = reconnectionAttempts.get(userId) || 0;
@@ -280,7 +288,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                     const delay = isTransient ? 2000 : Math.min(30000, 2000 * Math.pow(1.5, currentAttempts)); 
                     
                     logService.info(`[WA-CLIENT] 🔄 Reconectando en ${Math.round(delay/1000)}s...`, userId);
-                    setTimeout(() => connectToWhatsApp(userId, phoneNumber), delay); 
+                    setTimeout(() => connectToWhatsApp(userId, phoneNumber, false), delay); 
                 }
 
             } else if (connection === 'open') {
@@ -418,7 +426,7 @@ export async function disconnectWhatsApp(userId: string) {
     
     qrCache.delete(userId);
     codeCache.delete(userId);
-    connectingLocks.delete(userId);
+    connectingLocks.delete(userId); // RELEASE LOCK
     
     await new Promise(resolve => setTimeout(resolve, 500));
     await clearBindedSession(userId); 

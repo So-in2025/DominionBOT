@@ -41,7 +41,8 @@ export const handleConnect = async (req: AuthenticatedRequest<any, any, { phoneN
     try {
         const { id } = req.user;
         const { phoneNumber } = req.body;
-        await connectToWhatsApp(id, phoneNumber);
+        // FIX: Force manual flag to true to reset reconnection limits
+        await connectToWhatsApp(id, phoneNumber, true);
         res.status(200).json({ message: 'Conexión iniciada.' });
     } catch (e: any) {
         logService.error('Error initiating connection', e, getClientUser(req).id);
