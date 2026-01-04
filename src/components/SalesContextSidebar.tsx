@@ -1,9 +1,4 @@
 
-
-
-
-
-
 import React, { useState } from 'react';
 import { Conversation, InternalNote, LeadStatus } from '../types';
 
@@ -38,19 +33,9 @@ const SalesContextSidebar: React.FC<SalesContextSidebarProps> = ({
   const handleAddNote = (e: React.FormEvent) => {
     e.preventDefault();
     if (newNote.trim()) {
-      const newNoteEntry: InternalNote = {
-        id: Date.now().toString(),
-        author: 'HUMAN',
-        // FIX: Changed `new Date()` to `new Date().toISOString()` to match the string type requirement for timestamps.
-        timestamp: new Date().toISOString(),
-        note: newNote.trim()
-      };
-      onAddNote(newNoteEntry.note); // Ensure the correct parameter is passed if onAddNote expects string
-      if (onUpdateConversation) {
-          onUpdateConversation(conversation.id, { 
-              internalNotes: [...(conversation.internalNotes || []), newNoteEntry] 
-          });
-      }
+      // FIX: Simplified to only call onAddNote, removing redundant logic and preventing double updates.
+      // The parent component is now responsible for creating the InternalNote object.
+      onAddNote(newNote.trim());
       setNewNote('');
     }
   };

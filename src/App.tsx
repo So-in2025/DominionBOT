@@ -1,5 +1,6 @@
 
 
+
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Conversation, BotSettings, Message, View, ConnectionStatus, User, LeadStatus, PromptArchetype, Testimonial, SystemSettings } from './types';
 import Header from './components/Header';
@@ -294,8 +295,9 @@ export function App() {
   }, [conversations, selectedConversationId]);
 
   useEffect(() => {
-    const handleResize = () => setIsMobileView(window.innerWidth < 768);
+    const handleResize = () => setIsMobileView(window.innerWidth < 1024); // Changed to 1024 to match lg breakpoint
     window.addEventListener('resize', handleResize);
+    handleResize();
     return () => window.removeEventListener('resize', handleResize);
   }, []);
   
@@ -737,7 +739,7 @@ export function App() {
         case View.CHATS: default:
             return (
                 <div className="flex-1 flex overflow-hidden relative">
-                    <div className={`${selectedConversationId ? 'hidden md:flex' : 'flex'} w-full md:w-auto h-full`}>
+                    <div className={`${selectedConversationId && isMobileView ? 'hidden' : 'flex'} w-full md:w-auto h-full`}>
                         <ConversationList 
                             conversations={conversations} 
                             selectedConversationId={selectedConversationId} 
@@ -797,6 +799,7 @@ export function App() {
               onToggleBot={() => setIsBotGloballyActive(!isBotGloballyActive)} 
               isAutonomousClosing={settings?.isAutonomousClosing || false}
               onToggleAutonomous={handleToggleAutonomous}
+              // FIX: Corrected property name from isNetworkGlobalEnabled to isNetworkGlobalFeatureEnabled to match SystemSettings type.
               isNetworkGlobalEnabled={systemSettings?.isNetworkGlobalFeatureEnabled || false} // NEW: Pass global feature flag
               currentView={currentView} 
               onNavigate={handleNavigate} 
@@ -807,7 +810,7 @@ export function App() {
           {isAppView && <PlanStatusBanner user={currentUser} />}
       </div>
 
-      <main className={`flex-1 relative ${isAppView ? 'flex overflow-hidden' : 'block'}`}>
+      <main className={`flex-1 relative ${isAppView ? 'flex overflow-hidden pb-20 lg:pb-0' : 'block'}`}>
         {backendError && <div className="absolute top-0 left-0 right-0 z-[200] flex items-center justify-center p-2 text-[10px] font-black shadow-xl animate-pulse bg-red-600/95 text-white"><span>⚠️ {backendError}</span></div>}
         {(!token || showLanding) ? <LandingPage onAuth={() => setAuthModal({ isOpen: true, mode: 'login' })} onRegister={() => setAuthModal({ isOpen: true, mode: 'register' })} visibleMessages={visibleMessages} isSimTyping={isSimTyping} simScrollRef={simScrollRef} onOpenLegal={setLegalModalType} isServerReady={true} isLoggedIn={!!token} token={token} showToast={showToast} isMobile={isMobileView} settings={systemSettings} /> : renderClientView()}
       </main>

@@ -1,5 +1,4 @@
 
-
 import React, { useRef, useEffect, useState } from 'react';
 import { Conversation, LeadStatus, InternalNote, BotSettings } from '../types';
 import MessageBubble from './MessageBubble';
@@ -167,8 +166,15 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const isBlacklisted = settings?.ignoredJids?.includes(currentNumber);
 
   const isBotActive = conversation.isBotActive && isBotGloballyActive && !conversation.isMuted && !isBlacklisted && !isPlanExpired;
-  const botStatusText = isBotActive ? "● Bot: Escuchando" : (conversation.isMuted ? "● Bot: Silenciado (Manual)" : "● Bot: Pausado");
-  const botStatusColor = isBotActive ? "text-green-500 animate-pulse" : "text-gray-500";
+  
+  const getBotStatus = () => {
+      if (conversation.status === LeadStatus.PERSONAL) return { text: "● Bot: Desactivado (Personal)", color: "text-gray-500" };
+      if (isBotActive) return { text: "● Bot: Escuchando", color: "text-green-500 animate-pulse" };
+      if (conversation.isMuted) return { text: "● Bot: Silenciado (Manual)", color: "text-gray-500" };
+      return { text: "● Bot: Pausado", color: "text-gray-500" };
+  };
+
+  const botStatus = getBotStatus();
 
   const showFomoOverlay = isPlanExpired && conversation.status === LeadStatus.HOT;
   const canShareToNetwork = 
@@ -214,8 +220,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 </h2>
                 <div className="flex flex-col">
                     <p className="text-[10px] text-gray-500 font-mono mt-0.5 tracking-wider">{displaySubtitle}</p>
-                    <p className={`text-[9px] font-black uppercase tracking-widest mt-0.5 ${botStatusColor}`}>
-                        {botStatusText}
+                    <p className={`text-[9px] font-black uppercase tracking-widest mt-0.5 ${botStatus.color}`}>
+                        {botStatus.text}
                     </p>
                 </div>
               </div>
@@ -262,7 +268,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                             className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-gold/10 hover:bg-brand-gold/20 text-brand-gold border border-brand-gold/30 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all disabled:opacity-50"
                         >
                             {isForcingAi ? <div className="w-3 h-3 border-2 border-brand-gold border-t-transparent rounded-full animate-spin"></div> : <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>}
-                            <span className="hidden md:inline">Ejecutar IA</span>
+                            <span className="hidden md:inline">Respuesta IA</span>
                         </button>
                     )}
 
@@ -371,17 +377,20 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
         <SalesContextSidebar 
           conversation={conversation}
           onUpdateTags={(tags) => onUpdateConversation?.(conversation.id, { tags })}
+// FIX: Corrected variable name, removed recursive call, and fixed logic to update conversation state.
           onAddNote={(note) => {
-            const newNote: InternalNote = {
+            if (!conversation) return;
+            const newNoteEntry: InternalNote = {
               id: Date.now().toString(),
               author: 'HUMAN',
-// FIX: Changed `new Date()` to `new Date().toISOString()` to match string type.
               timestamp: new Date().toISOString(),
               note
             };
-            onUpdateConversation?.(conversation.id, { 
-              internalNotes: [...(conversation.internalNotes || []), newNote] 
-            });
+            if (onUpdateConversation) {
+                onUpdateConversation(conversation.id, { 
+                    internalNotes: [...(conversation.internalNotes || []), newNoteEntry] 
+                });
+            }
           }}
           onUpdateConversation={onUpdateConversation}
         />

@@ -46,7 +46,7 @@ const LandingPageManager: React.FC<{
         onSave(localSettings);
     };
 
-    const handleChange = (key: keyof SystemSettings, value: string | number) => {
+    const handleChange = (key: keyof SystemSettings, value: string | number | undefined) => {
         setLocalSettings(prev => ({ ...prev!, [key]: value }));
     };
 
@@ -67,16 +67,19 @@ const LandingPageManager: React.FC<{
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="space-y-4 bg-black/30 p-4 rounded-lg border border-white/5">
                     <h4 className="text-xs font-bold text-white uppercase">Plan Standard</h4>
+                    <input type="text" value={localSettings.planStandardTitle || ''} onChange={e => handleChange('planStandardTitle', e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl p-2 text-sm text-white" placeholder="Título del Plan"/>
                     <input type="number" value={localSettings.planStandardPriceUSD || 19} onChange={e => handleChange('planStandardPriceUSD', Number(e.target.value))} className="w-full bg-black/50 border border-white/10 rounded-xl p-2 text-sm text-white" placeholder="Precio USD"/>
                     <textarea value={localSettings.planStandardDescription || ''} onChange={e => handleChange('planStandardDescription', e.target.value)} className="w-full h-24 bg-black/50 border border-white/10 rounded-xl p-2 text-xs text-white custom-scrollbar" placeholder="Descripción..."/>
                 </div>
                 <div className="space-y-4 bg-black/30 p-4 rounded-lg border border-white/5">
                     <h4 className="text-xs font-bold text-white uppercase">Plan Sniper</h4>
+                    <input type="text" value={localSettings.planSniperTitle || ''} onChange={e => handleChange('planSniperTitle', e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl p-2 text-sm text-white" placeholder="Título del Plan"/>
                     <input type="number" value={localSettings.planSniperPriceUSD || 39} onChange={e => handleChange('planSniperPriceUSD', Number(e.target.value))} className="w-full bg-black/50 border border-white/10 rounded-xl p-2 text-sm text-white" placeholder="Precio USD"/>
                     <textarea value={localSettings.planSniperDescription || ''} onChange={e => handleChange('planSniperDescription', e.target.value)} className="w-full h-24 bg-black/50 border border-white/10 rounded-xl p-2 text-xs text-white custom-scrollbar" placeholder="Descripción..."/>
                 </div>
                 <div className="space-y-4 bg-black/30 p-4 rounded-lg border border-white/5">
                     <h4 className="text-xs font-bold text-white uppercase">Neuro-Boost</h4>
+                    <input type="text" value={localSettings.planNeuroBoostTitle || ''} onChange={e => handleChange('planNeuroBoostTitle', e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl p-2 text-sm text-white" placeholder="Título del Plan"/>
                     <input type="number" value={localSettings.planNeuroBoostPriceUSD || 5} onChange={e => handleChange('planNeuroBoostPriceUSD', Number(e.target.value))} className="w-full bg-black/50 border border-white/10 rounded-xl p-2 text-sm text-white" placeholder="Precio USD"/>
                     <textarea value={localSettings.planNeuroBoostDescription || ''} onChange={e => handleChange('planNeuroBoostDescription', e.target.value)} className="w-full h-24 bg-black/50 border border-white/10 rounded-xl p-2 text-xs text-white custom-scrollbar" placeholder="Descripción..."/>
                 </div>

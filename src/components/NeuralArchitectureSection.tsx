@@ -14,6 +14,10 @@ const NeuralArchitectureSection: React.FC<NeuralArchitectureSectionProps> = ({ s
     const sniperPriceUSD = settings?.planSniperPriceUSD ?? 39;
     const neuroBoostPriceUSD = settings?.planNeuroBoostPriceUSD ?? 5;
     
+    const standardTitle = settings?.planStandardTitle ?? 'Protocolo Standard';
+    const sniperTitle = settings?.planSniperTitle ?? 'Protocolo Sniper';
+    const neuroBoostTitle = settings?.planNeuroBoostTitle ?? 'Inyección de Potencia';
+
     const standardDesc = settings?.planStandardDescription ?? 'El punto de entrada para automatizar tu WhatsApp. Filtra consultas, responde al instante y califica la intención de compra para que no pierdas ventas por demora.';
     const sniperDesc = settings?.planSniperDescription ?? 'La experiencia Dominion completa. Diseñado para ventas de alto valor donde cada detalle importa. Entiende el matiz de la conversación y asiste en el cierre.';
     const neuroBoostDesc = settings?.planNeuroBoostDescription ?? 'Potencia cognitiva bajo demanda para momentos críticos. Activa la máxima capacidad de razonamiento para lanzamientos o campañas de alta intensidad.';
@@ -55,7 +59,7 @@ const NeuralArchitectureSection: React.FC<NeuralArchitectureSectionProps> = ({ s
                             <span className="bg-white/10 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border border-white/10">Standard</span>
                             <span className="bg-brand-gold/10 text-brand-gold text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded">PRECIO FUNDADORES</span>
                         </div>
-                        <h3 className="text-2xl font-black text-white mb-2">Protocolo Standard</h3>
+                        <h3 className="text-2xl font-black text-white mb-2">{standardTitle}</h3>
                         <p className="text-sm text-gray-500 font-medium mb-8 min-h-[60px]">
                             {standardDesc}
                         </p>
@@ -93,7 +97,7 @@ const NeuralArchitectureSection: React.FC<NeuralArchitectureSectionProps> = ({ s
                             <span className="bg-brand-gold/10 text-brand-gold text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border border-brand-gold/20">Sniper</span>
                             <span className="bg-brand-gold text-black text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded">PRECIO FUNDADORES</span>
                         </div>
-                        <h3 className="text-2xl font-black text-white mb-2">Protocolo Sniper</h3>
+                        <h3 className="text-2xl font-black text-white mb-2">{sniperTitle}</h3>
                         <p className="text-sm text-gray-400 font-medium mb-8 min-h-[60px]">
                             {sniperDesc}
                         </p>
@@ -128,7 +132,7 @@ const NeuralArchitectureSection: React.FC<NeuralArchitectureSectionProps> = ({ s
                         <div className="flex justify-between items-center mb-6">
                             <span className="bg-purple-500/10 text-purple-400 text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border border-purple-500/20">Neuro-Boost</span>
                         </div>
-                        <h3 className="text-2xl font-black text-white mb-2">Inyección de Potencia</h3>
+                        <h3 className="text-2xl font-black text-white mb-2">{neuroBoostTitle}</h3>
                         <p className="text-sm text-gray-500 font-medium mb-8 min-h-[60px]">
                            {neuroBoostDesc}
                         </p>

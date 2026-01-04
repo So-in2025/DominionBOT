@@ -1,6 +1,5 @@
 
 
-
 import React, { useState, useEffect, useRef } from 'react';
 import { BotSettings, PromptArchetype, NeuralRouterConfig } from '../types';
 import { audioService } from '../services/audioService';
@@ -429,6 +428,11 @@ ${data.rules}
       audioService.play('action_success');
   };
 
+  const TOOLTIP_TEXTS = {
+    simple: "Ideal para la mayoría de los negocios. Una sola IA maneja todas las conversaciones con una personalidad y objetivo unificado.",
+    advanced: "Para agencias o negocios complejos. Permite crear 'expertos' para diferentes áreas (soporte, ventas, etc.) y un 'router' que dirige al cliente al experto correcto."
+  };
+
   if (isLoading || !current) return <div className="p-10 text-center text-gray-500 animate-pulse font-black uppercase tracking-widest">Cargando Núcleo...</div>;
 
   // VIEW: MAIN SETTINGS (If Wizard Completed)
@@ -465,24 +469,7 @@ ${data.rules}
                     {/* LEFT COL: General & Activation */}
                     <div className="space-y-8">
                         <div className="bg-brand-surface border border-white/5 rounded-3xl p-6 shadow-xl">
-                            <div className="flex items-center justify-between mb-6">
-                                <h3 className="text-sm font-black text-white uppercase tracking-widest">Estado del Bot</h3>
-                                <div onClick={() => handleUpdate('isActive', !current.isActive)} className={`w-12 h-6 rounded-full relative cursor-pointer transition-colors ${current.isActive ? 'bg-green-500' : 'bg-red-500/20'}`}>
-                                    <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transform transition-transform ${current.isActive ? 'translate-x-6' : 'translate-x-0.5'}`}></div>
-                                </div>
-                            </div>
-
-                            {/* PROTOCOLO GUARDIA TACTICAL SWITCH */}
-                            <div className="bg-indigo-900/10 border border-indigo-500/20 p-4 rounded-2xl mb-6 flex items-center justify-between">
-                                <div>
-                                    <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Guardia Autónoma</h4>
-                                    <p className="text-[9px] text-gray-500 font-medium">La IA cierra ventas sin intervención.</p>
-                                </div>
-                                <div onClick={() => handleUpdate('isAutonomousClosing', !current.isAutonomousClosing)} className={`w-10 h-5 rounded-full relative cursor-pointer transition-colors ${current.isAutonomousClosing ? 'bg-indigo-500' : 'bg-gray-800'}`}>
-                                    <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-sm transform transition-transform ${current.isAutonomousClosing ? 'translate-x-5' : 'translate-x-0.5'}`}></div>
-                                </div>
-                            </div>
-
+                            <h3 className="text-sm font-black text-white uppercase tracking-widest mb-6">Identidad y Credenciales</h3>
                             <div className="space-y-4">
                                 <div>
                                     <label className="block text-[9px] font-black text-brand-gold uppercase tracking-widest mb-1">Nombre Comercial</label>
@@ -713,23 +700,50 @@ ${data.rules}
                     <div className="space-y-6 animate-fade-in relative">
                         <div className="text-center mb-6">
                             <h3 className="text-xl font-black text-white uppercase tracking-widest">Definición de Inteligencia</h3>
-                            <p className="text-xs text-gray-400 mt-2 font-medium">Selecciona la arquitectura que mejor se adapte a la complejidad de tu negocio.</p>
+                            <p className="text-xs text-gray-400 mt-2 font-medium">Selecciona la arquitectura que mejor se adapte a tu negocio.</p>
                         </div>
 
-                        <div className="flex p-1 bg-black/40 border border-white/10 rounded-xl mb-6 relative">
+                        <div className="grid grid-cols-2 gap-4 mb-6">
+                            {/* Simple Button */}
                             <button 
                                 onClick={() => handleUpdate('useAdvancedModel', false)}
-                                className={`group relative flex-1 py-3 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${!current.useAdvancedModel ? 'bg-white/10 text-white shadow-inner' : 'text-gray-500 hover:text-white'}`}
+                                className={`group relative text-center p-6 border rounded-2xl transition-all duration-300 ${!current.useAdvancedModel ? 'bg-brand-gold/10 border-brand-gold shadow-lg shadow-brand-gold/10' : 'bg-white/5 border-white/10 hover:border-white/20'}`}
                             >
-                                Agente Lineal (Simple)
+                                <div className={`mx-auto w-12 h-12 rounded-lg flex items-center justify-center mb-4 transition-all ${!current.useAdvancedModel ? 'bg-brand-gold text-black' : 'bg-black/40 text-gray-400'}`}>
+                                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                                </div>
+                                <h4 className="text-sm font-black uppercase tracking-wider text-white">Negocio Único</h4>
+                                <p className="text-[10px] text-gray-500 font-bold uppercase">Lineal</p>
+                                {/* Desktop Tooltip */}
+                                <div className="hidden md:block absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-3 bg-black border border-white/10 rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 z-50 pointer-events-none">
+                                    <p className="text-xs text-gray-300 leading-relaxed font-medium text-left">{TOOLTIP_TEXTS.simple}</p>
+                                    <div className="absolute top-full left-1/2 -translate-x-1/2 w-2 h-2 bg-black border-b border-r border-white/10 rotate-45 -mt-1"></div>
+                                </div>
                             </button>
+
+                            {/* Advanced Button */}
                             <button 
                                 onClick={() => handleUpdate('useAdvancedModel', true)}
-                                className={`group relative flex-1 py-3 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${current.useAdvancedModel ? 'bg-brand-gold text-black shadow-lg' : 'text-gray-500 hover:text-white'}`}
+                                className={`group relative text-center p-6 border rounded-2xl transition-all duration-300 ${current.useAdvancedModel ? 'bg-brand-gold/10 border-brand-gold shadow-lg shadow-brand-gold/10' : 'bg-white/5 border-white/10 hover:border-white/20'}`}
                             >
-                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86 3.86l-.477 2.387c-.037.184.011.373.13.514l1.392 1.624a1 1 0 00.707.362h2.242a2 2 0 001.022-.547l1.022-1.022a2 2 0 00.547-1.022l.477-2.387c-.037-.184-.011-.373-.13-.514l-1.392-1.624a1 1 0 00-.707-.362z" /></svg>
-                                Enjambre Modular (Avanzado)
+                                <div className={`mx-auto w-12 h-12 rounded-lg flex items-center justify-center mb-4 transition-all ${current.useAdvancedModel ? 'bg-brand-gold text-black' : 'bg-black/40 text-gray-400'}`}>
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"> <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12s-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.368a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z" /> </svg>
+                                </div>
+                                <h4 className="text-sm font-black uppercase tracking-wider text-white">Agencia / Pro</h4>
+                                <p className="text-[10px] text-gray-500 font-bold uppercase">Modular</p>
+                                {/* Desktop Tooltip */}
+                                <div className="hidden md:block absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-3 bg-black border border-white/10 rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 z-50 pointer-events-none">
+                                    <p className="text-xs text-gray-300 leading-relaxed font-medium text-left">{TOOLTIP_TEXTS.advanced}</p>
+                                    <div className="absolute top-full left-1/2 -translate-x-1/2 w-2 h-2 bg-black border-b border-r border-white/10 rotate-45 -mt-1"></div>
+                                </div>
                             </button>
+                        </div>
+                        
+                        {/* Mobile Tooltip */}
+                        <div className="md:hidden p-4 bg-black/40 border border-white/10 rounded-xl text-center">
+                            <p className="text-xs text-gray-300 leading-relaxed font-medium">
+                                {!current.useAdvancedModel ? TOOLTIP_TEXTS.simple : TOOLTIP_TEXTS.advanced}
+                            </p>
                         </div>
 
                         {current.useAdvancedModel ? (

@@ -520,6 +520,9 @@ export interface SystemSettings {
     planStandardPriceUSD?: number;
     planSniperPriceUSD?: number;
     planNeuroBoostPriceUSD?: number;
+    planStandardTitle?: string;
+    planSniperTitle?: string;
+    planNeuroBoostTitle?: string;
     planStandardDescription?: string;
     planSniperDescription?: string;
     planNeuroBoostDescription?: string;

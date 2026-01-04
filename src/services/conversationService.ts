@@ -40,18 +40,20 @@ class ConversationService {
       let hasUpdates = false;
 
       for (const item of items) {
+          const normalizedJid = item.jid.replace(/@lid/g, '@s.whatsapp.net');
+          
           // FILTER: Ignore Status Broadcasts, Groups (@g.us), and Newsletters for the main Inbox
-          if (item.jid === 'status@broadcast' || item.jid.endsWith('@g.us') || item.jid.endsWith('@newsletter')) continue;
+          if (normalizedJid === 'status@broadcast' || normalizedJid.endsWith('@g.us') || normalizedJid.endsWith('@newsletter')) continue;
           
-          const safeJid = sanitizeKey(item.jid);
-          let conversation = conversations[safeJid] || conversations[item.jid] || updates[safeJid];
+          const safeJid = sanitizeKey(normalizedJid);
+          let conversation = conversations[safeJid] || conversations[normalizedJid] || updates[safeJid];
           
-          const leadIdentifier = item.jid.split('@')[0];
-          const isEliteBotJid = item.jid === ELITE_BOT_JID;
+          const leadIdentifier = normalizedJid.split('@')[0];
+          const isEliteBotJid = normalizedJid === ELITE_BOT_JID;
 
           if (!conversation) {
               conversation = {
-                id: item.jid,
+                id: normalizedJid,
                 leadIdentifier: leadIdentifier,
                 leadName: item.name || (isEliteBotJid ? 'Simulador Neural' : leadIdentifier),
                 status: LeadStatus.COLD,
@@ -84,12 +86,15 @@ class ConversationService {
 
   // Legacy single method (wraps bulk)
   async ensureConversationExists(userId: string, jid: string, name?: string, timestamp?: number) {
-      return this.ensureConversationsExist(userId, [{ jid, name, timestamp }]);
+      const normalizedJid = jid.replace(/@lid/g, '@s.whatsapp.net');
+      return this.ensureConversationsExist(userId, [{ jid: normalizedJid, name, timestamp }]);
   }
 
   async addMessage(userId: string, jid: string, message: Message, leadName?: string, isHistoryImport: boolean = false) {
+    const normalizedJid = jid.replace(/@lid/g, '@s.whatsapp.net');
+    
     // FILTER: Ignore messages from Groups and Newsletters
-    if (jid.endsWith('@g.us') || jid.endsWith('@newsletter')) return;
+    if (normalizedJid.endsWith('@g.us') || normalizedJid.endsWith('@newsletter')) return;
 
     // Retrieve fresh user data to ensure we don't overwrite with stale state
     const user = await db.getUser(userId);
@@ -100,23 +105,23 @@ class ConversationService {
 
     const conversations = user.conversations || {};
     // Handle potentially unsanitized keys from legacy data, but prefer sanitized
-    const safeJid = sanitizeKey(jid);
-    let conversation = conversations[safeJid] || conversations[jid];
+    const safeJid = sanitizeKey(normalizedJid);
+    let conversation = conversations[safeJid] || conversations[normalizedJid];
 
-    const isEliteBotJid = jid === ELITE_BOT_JID;
+    const isEliteBotJid = normalizedJid === ELITE_BOT_JID;
     
     // FIX: Force update lastActivity for ANY new message processing to ensure it shows up in Delta Polling,
     // even if it's a history backfill. This fixes "Ghost Messages".
     const effectiveLastActivity = new Date().toISOString();
 
     if (!conversation) {
-      const leadIdentifier = jid.split('@')[0];
+      const leadIdentifier = normalizedJid.split('@')[0];
       
       // Elite Bot is always active. History imports start inactive to avoid auto-replying to old messages.
       const initialBotState = isEliteBotJid ? true : (isHistoryImport ? false : true);
 
       conversation = {
-        id: jid,
+        id: normalizedJid,
         leadIdentifier: leadIdentifier,
         leadName: leadName || (isEliteBotJid ? 'Simulador Neural' : leadIdentifier),
         status: LeadStatus.COLD,
@@ -153,7 +158,7 @@ class ConversationService {
     // Blindaje de IDs (Message ID Safety) using crypto hash
     if (!message.id) {
         const timestamp = new Date(message.timestamp).getTime();
-        message.id = createHash('sha256').update(jid + message.text + message.sender + timestamp.toString()).digest('hex').slice(0, 16);
+        message.id = createHash('sha256').update(normalizedJid + message.text + message.sender + timestamp.toString()).digest('hex').slice(0, 16);
     }
 
     // IDEMPOTENCY CHECK: STRICTLY PREVENT DUPLICATES
@@ -187,7 +192,7 @@ class ConversationService {
         // pueda retomar el seguimiento autónomo en el siguiente turno.
         if (conversation.status === LeadStatus.HOT) {
             conversation.status = LeadStatus.WARM;
-            logService.info(`[ConversationService] Lead degradado HOT -> WARM por intervención humana en ${jid}`, userId);
+            logService.info(`[ConversationService] Lead degradado HOT -> WARM por intervención humana en ${normalizedJid}`, userId);
         }
     }
 

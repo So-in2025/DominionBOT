@@ -1,3 +1,4 @@
+
 import mongoose, { Schema, Model } from 'mongoose';
 import bcrypt from 'bcrypt';
 import { User, BotSettings, PromptArchetype, GlobalMetrics, GlobalTelemetry, Conversation, IntendedUse, LogEntry, Testimonial, SystemSettings, Campaign, RadarSignal, RadarSettings, GroupMarketMemory, DepthBoost, DepthLog, IntentSignal, ConnectionOpportunity, NetworkProfile, PermissionStatus } from './types.js';
@@ -51,6 +52,9 @@ const SystemSettingsSchema = new Schema({
     planStandardPriceUSD: { type: Number, default: 19 },
     planSniperPriceUSD: { type: Number, default: 39 },
     planNeuroBoostPriceUSD: { type: Number, default: 5 },
+    planStandardTitle: { type: String, default: 'Protocolo Standard' },
+    planSniperTitle: { type: String, default: 'Protocolo Sniper' },
+    planNeuroBoostTitle: { type: String, default: 'Inyección de Potencia' },
     planStandardDescription: { type: String, default: 'El punto de entrada para automatizar tu WhatsApp. Filtra consultas, responde al instante y califica la intención de compra para que no pierdas ventas por demora.' },
     planSniperDescription: { type: String, default: 'La experiencia Dominion completa. Diseñado para ventas de alto valor donde cada detalle importa. Entiende el matiz de la conversación y asiste en el cierre.' },
     planNeuroBoostDescription: { type: String, default: 'Potencia cognitiva bajo demanda para momentos críticos. Activa la máxima capacidad de razonamiento para lanzamientos o campañas de alta intensidad.' },
@@ -594,6 +598,9 @@ class Database {
       const defaults: SystemSettings = { 
           supportWhatsappNumber: '', logLevel: 'INFO', dominionNetworkJid: '5491110000000@s.whatsapp.net', isOutboundKillSwitchActive: false, isNetworkGlobalFeatureEnabled: false,
           dolarBlueRate: 1450, planStandardPriceUSD: 19, planSniperPriceUSD: 39, planNeuroBoostPriceUSD: 5,
+          planStandardTitle: 'Protocolo Standard',
+          planSniperTitle: 'Protocolo Sniper',
+          planNeuroBoostTitle: 'Inyección de Potencia',
           planStandardDescription: 'El punto de entrada para automatizar tu WhatsApp. Filtra consultas, responde al instante y califica la intención de compra para que no pierdas ventas por demora.',
           planSniperDescription: 'La experiencia Dominion completa. Diseñado para ventas de alto valor donde cada detalle importa. Entiende el matiz de la conversación y asiste en el cierre.',
           planNeuroBoostDescription: 'Potencia cognitiva bajo demanda para momentos críticos. Activa la máxima capacidad de razonamiento para lanzamientos o campañas de alta intensidad.'
