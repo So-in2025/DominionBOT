@@ -171,7 +171,17 @@ const BlacklistPanel: React.FC<BlacklistPanelProps> = ({ settings, conversations
                             </div>
 
                             <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-2">
-                                {filteredContacts.length === 0 ? (
+                                {conversations.length === 0 ? (
+                                    <div className="flex flex-col items-center justify-center py-20 opacity-50 text-center gap-4">
+                                        <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center">
+                                            <svg className="w-8 h-8 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" /></svg>
+                                        </div>
+                                        <div>
+                                            <p className="text-xs font-bold uppercase tracking-widest text-gray-300">Base de Datos Vacía</p>
+                                            <p className="text-[10px] text-gray-500 mt-1 max-w-[200px] mx-auto">No hay conversaciones activas. El selector se llenará automáticamente cuando recibas mensajes.</p>
+                                        </div>
+                                    </div>
+                                ) : filteredContacts.length === 0 ? (
                                     <div className="flex flex-col items-center justify-center py-20 opacity-30 text-center">
                                         <svg className="w-12 h-12 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
                                         <p className="text-xs font-bold uppercase tracking-widest">No hay contactos que coincidan con el filtro</p>

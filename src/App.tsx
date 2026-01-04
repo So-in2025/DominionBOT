@@ -373,7 +373,11 @@ export function App() {
   const fetchConversations = useCallback(async () => {
     if (!token) return;
     try {
-        const isDelta = !!lastPollCursor.current;
+        // FIX: FORCE FULL SYNC IF LOCAL LIST IS EMPTY
+        // This acts as a self-healing mechanism if the user deletes all chats
+        // and the delta logic gets stuck.
+        const isDelta = !!lastPollCursor.current && conversations.length > 0;
+        
         const endpoint = isDelta 
             ? `${BACKEND_URL}/api/conversations?since=${lastPollCursor.current}`
             : `${BACKEND_URL}/api/conversations`;
@@ -383,9 +387,14 @@ export function App() {
             const incomingConversations: Conversation[] = await res.json();
             
             // If delta request returned data, merge it.
-            // If initial load, it will be the full list.
+            // If initial load or forced full sync, it will be the full list.
             if (incomingConversations.length > 0 || !isDelta) {
                 setConversations(prev => {
+                    // If !isDelta, we are replacing the state with the full fetch
+                    if (!isDelta) return incomingConversations.sort((a, b) => 
+                        new Date(b.lastActivity || 0).getTime() - new Date(a.lastActivity || 0).getTime()
+                    );
+
                     // Create a map from current state for efficient merging
                     const map = new Map(prev.map(c => [c.id, c]));
                     
@@ -396,15 +405,8 @@ export function App() {
                             map.set(incoming.id, incoming);
                         } else {
                             // Merge updates
-                            // IMPORTANT: We preserve local message state if it's "ahead" (optimistic updates),
-                            // but usually the server is the source of truth for messages.
-                            // We merge properties.
                             map.set(incoming.id, {
                                 ...incoming,
-                                // If the incoming update has fewer messages than local (rare race condition or optimistic add),
-                                // we might want to be careful. But generally server wins.
-                                // However, for optimistic UI, we might have added a message locally that server hasn't echoed yet.
-                                // A robust merge would dedup by ID. For now, server replacement is safer for consistency.
                                 messages: incoming.messages 
                             });
                         }
@@ -422,7 +424,7 @@ export function App() {
             lastPollCursor.current = new Date(Date.now() - 5000).toISOString();
         }
     } catch (e) {}
-  }, [token]);
+  }, [token, conversations.length]); // Added dependency on length to trigger healing
 
   // AUTO-REFRESH HISTORY UPON CONNECTION
   useEffect(() => {
@@ -648,6 +650,8 @@ export function App() {
           setSelectedConversationId(null);
       }
       showToast('Conversación eliminada.', 'success');
+      // Trigger refresh to ensure backend sync
+      lastPollCursor.current = null;
   };
 
   const handleToggleBot = async (id: string) => {

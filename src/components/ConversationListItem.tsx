@@ -15,7 +15,7 @@ const statusColorClass = {
   [LeadStatus.COLD]: 'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]',
   [LeadStatus.WARM]: 'bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.5)]',
   [LeadStatus.HOT]: 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)] animate-pulse',
-  [LeadStatus.PERSONAL]: 'bg-gray-500 shadow-[0_0_8px_rgba(107,114,128,0.5)]', // Added missing PERSONAL style
+  [LeadStatus.PERSONAL]: 'bg-gray-500 shadow-[0_0_8px_rgba(107,114,128,0.5)]',
 };
 
 const ConversationListItem: React.FC<ConversationListItemProps> = ({ conversation, isSelected, onSelect, onDelete }) => {
@@ -23,16 +23,15 @@ const ConversationListItem: React.FC<ConversationListItemProps> = ({ conversatio
   const lastMessage = conversation.messages[conversation.messages.length - 1];
   const colorClass = statusColorClass[conversation.status] || 'bg-gray-500';
   
-  // Display leadName as the main title and formatted leadIdentifier as subtitle
   const displayTitle = conversation.leadName;
   const displaySubtitle = formatPhoneNumber(conversation.leadIdentifier);
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation();
     
-    // FIX: Removed the confusing prompt that accidentally banned users.
-    // Now it explicitly asks for DELETION only.
-    const confirmed = window.confirm(`¿Estás seguro de que quieres eliminar el chat de "${displayTitle}"?\n\nEsta acción solo borra el historial del panel. NO bloquea al usuario.`);
+    // SAFETY FIX: Explicitly clarify this is DELETE ONLY.
+    // We removed the ambiguity. Blocking must be done via the Blacklist Panel or Chat Header.
+    const confirmed = window.confirm(`¿Eliminar historial de "${displayTitle}"?\n\nEsta acción solo borra los mensajes del panel. EL USUARIO NO SERÁ BLOQUEADO.`);
     
     if (!confirmed) return;
 
@@ -42,7 +41,8 @@ const ConversationListItem: React.FC<ConversationListItemProps> = ({ conversatio
         const res = await fetch(`${BACKEND_URL}/api/conversation/${encodeURIComponent(conversation.id)}`, {
             method: 'DELETE',
             headers: getAuthHeaders(token!),
-            body: JSON.stringify({ blacklist: false }) // Force false to prevent accidents
+            // CRITICAL: Hardcoded to false to prevent accidental bans
+            body: JSON.stringify({ blacklist: false }) 
         });
         if (res.ok) {
             onDelete?.(conversation.id);
@@ -88,7 +88,7 @@ const ConversationListItem: React.FC<ConversationListItemProps> = ({ conversatio
             <button 
                 onClick={handleDelete}
                 className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-red-500/20 text-gray-600 hover:text-red-500 rounded-lg transition-all"
-                title="Eliminar chat (Sin bloquear)"
+                title="Solo Eliminar Historial (No Bloquea)"
             >
                 <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
             </button>
