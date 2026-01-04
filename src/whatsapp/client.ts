@@ -144,10 +144,10 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
     }
 
     // 2. RECONNECTION LIMITER
-    // FIX: If isManual is true (triggered from UI), reset attempts to 0 to bypass lockout
+    // FIX: Si es manual (botón del usuario), reseteamos los intentos para desbloquearlo.
     if (isManual) {
         reconnectionAttempts.set(userId, 0);
-        logService.info(`[WA-CLIENT] 🔄 Reseteo manual de intentos de conexión.`, userId);
+        logService.info(`[WA-CLIENT] 🔄 Reseteo manual de intentos de conexión (Usuario solicitó reconexión).`, userId);
     }
 
     const attempts = reconnectionAttempts.get(userId) || 0;
@@ -380,7 +380,14 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
                     if (!messageText) continue;
 
                     const msgTimestamp = typeof msg.messageTimestamp === 'number' ? msg.messageTimestamp : (msg.messageTimestamp as any)?.low || Date.now() / 1000;
-                    const isOldForAI = type === 'append' || (msgTimestamp < (Date.now() / 1000 - 300)); 
+                    
+                    // MEJORA AGRESIVA DE DETECCIÓN:
+                    // Window ampliada a 5 minutos (300s) para asegurar que la IA no ignore mensajes por lag del servidor o reloj.
+                    const isRecent = msgTimestamp > (Date.now() / 1000 - 300);
+                    const shouldRespond = type === 'notify' || (type === 'append' && isRecent);
+                    
+                    // Solo es viejo si NO debemos responder
+                    const isOldForAI = !shouldRespond;
 
                     const userMessage: Message = {
                         id: msg.key.id || Date.now().toString(),
@@ -391,9 +398,11 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
 
                     await conversationService.addMessage(userId, canonicalJid, userMessage, bestName, isOldForAI);
                     
+                    // IA TRIGGER
                     if (!isOwnerMessage && !isOldForAI) {
                         logService.info(`[INBOX] 📩 Mensaje de ${bestName || canonicalJid}: "${messageText.substring(0, 20)}..."`, userId);
-                        if (type === 'notify') aiProcessingQueue.add(`${userId}::${canonicalJid}`);
+                        // Añadir a la cola SIN CONDICIONES EXTRAS
+                        aiProcessingQueue.add(`${userId}::${canonicalJid}`);
                     }
                 }
             } catch (batchError) {
@@ -446,22 +455,36 @@ export async function sendMessage(senderId: string, jid: string, text: string, i
         sock = sessions.get(senderId);
     }
 
-    if (!sock) throw new Error(`WhatsApp no conectado (Sesión no encontrada).`);
+    if (!sock) {
+        // Retry fetch socket logic, maybe map wasn't updated fast enough?
+        // logService.warn(`[WA-CLIENT] Socket no encontrado en mapa para ${senderId}, re-verificando...`, senderId);
+        // This is where a stronger session manager would help. For now, strict fail.
+        throw new Error(`WhatsApp no conectado (Sesión no encontrada).`);
+    }
     
     // CRITICAL: Validate Socket State
     // @ts-ignore
     if (!sock.ws || !sock.ws.isOpen) {
+        // Attempt to clear zombie socket if it thinks it's closed
+        // sessions.delete(senderId); 
         throw new Error(`WhatsApp no conectado (Socket cerrado/zombie).`);
     }
     
     try {
+        logService.debug(`[WA-CLIENT] Enviando mensaje a ${canonicalJid}...`, senderId);
+        
+        let sentMsg: proto.WebMessageInfo | undefined;
+        
         if (imageUrl) {
             const base64Data = imageUrl.split(',')[1] || imageUrl;
             const buffer = Buffer.from(base64Data, 'base64');
-            return (await sock.sendMessage(canonicalJid, { image: buffer, caption: text })) as proto.WebMessageInfo | undefined;
+            sentMsg = (await sock.sendMessage(canonicalJid, { image: buffer, caption: text })) as proto.WebMessageInfo | undefined;
         } else {
-            return (await sock.sendMessage(canonicalJid, { text })) as proto.WebMessageInfo | undefined;
+            sentMsg = (await sock.sendMessage(canonicalJid, { text })) as proto.WebMessageInfo | undefined;
         }
+        
+        return sentMsg;
+
     } catch (e: any) {
         console.error(`[SEND-FAIL] Error enviando a ${canonicalJid}:`, e);
         throw new Error("Fallo en el envío del mensaje (Error de transporte).");
@@ -502,12 +525,16 @@ async function _commonAiProcessingLogic(userId: string, jid: string, user: User,
 
     const isTestBot = latestConversation.isTestBotConversation;
 
+    // LOOSEN RESTRICTION: Attempt send even if healthy check is ambiguous, rely on sendMessage throwing error
     if (!isTestBot && !isSocketHealthy) {
-        logService.warn(`${logPrefix} 🚫 IA abortada: Socket desconectado.`, userId);
-        return; 
+        // Double check map in case of rapid reconnect
+        if (!sessions.get(userId)) {
+             logService.warn(`${logPrefix} 🚫 IA abortada: Socket desconectado definitivamente.`, userId);
+             return; 
+        }
     }
 
-    if (!isTestBot && sock) {
+    if (!isTestBot && sock && isSocketHealthy) {
         await sock.sendPresenceUpdate('composing', canonicalJid);
     }
 
@@ -518,10 +545,11 @@ async function _commonAiProcessingLogic(userId: string, jid: string, user: User,
             // Simulador logic...
             const botMessage: Message = { id: `bot-${Date.now()}`, text: aiResult.responseText, sender: 'bot', timestamp: new Date().toISOString() };
             await conversationService.addMessage(userId, canonicalJid, botMessage);
-        } else if (sock) {
+        } else {
             try {
-                // REAL SEND
-                const sentMsg = await sock.sendMessage(canonicalJid, { text: aiResult.responseText });
+                // REAL SEND with forced normalization and error handling
+                // We use the exported sendMessage to ensure all checks (like normalizeJid) run
+                const sentMsg = await sendMessage(userId, canonicalJid, aiResult.responseText);
                 
                 if (sentMsg && sentMsg.key.id) {
                     const botMessage: Message = { 
