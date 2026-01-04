@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { NeuralRouterConfig, ContextShard } from '../../types';
 import { v4 as uuidv4 } from 'uuid';
@@ -17,8 +18,8 @@ const AdvancedNeuralConfig: React.FC<AdvancedNeuralConfigProps> = ({ initialConf
     // SYNC ON LOAD: Ensure local state updates when data arrives from backend
     useEffect(() => {
         if (initialConfig) {
-            setMasterIdentity(prev => initialConfig.masterIdentity !== undefined ? initialConfig.masterIdentity : prev);
-            setModules(prev => initialConfig.modules !== undefined ? initialConfig.modules : prev);
+            setMasterIdentity(initialConfig.masterIdentity || '');
+            setModules(initialConfig.modules || []);
         }
     }, [initialConfig]);
 
@@ -65,7 +66,7 @@ const AdvancedNeuralConfig: React.FC<AdvancedNeuralConfigProps> = ({ initialConf
                 <div className="flex justify-between items-end">
                     <div className="space-y-4">
                         <div className="inline-block p-3 rounded-full bg-brand-gold/10 border border-brand-gold/30">
-                            <svg className="w-8 h-8 text-brand-gold" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86 3.86l-.477 2.387c-.037.184.011.373.13.514l1.392 1.624a1 1 0 00.707.362h2.242a2 2 0 001.022-.547l1.022-1.022a2 2 0 00.547-1.022l.477-2.387c.037-.184-.011-.373-.13-.514l-1.392-1.624a1 1 0 00-.707-.362z" /></svg>
+                            <svg className="w-8 h-8 text-brand-gold" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86 3.86l-.477 2.387c-.037.184.011.373.13.514l1.392 1.624a1 1 0 00.707.362h2.242a2 2 0 001.022-.547l1.022-1.022a2 2 0 00.547-1.022l.477-2.387c-.037-.184-.011-.373-.13-.514l-1.392-1.624a1 1 0 00-.707-.362z" /></svg>
                         </div>
                         <div>
                             <h2 className="text-2xl font-black text-white uppercase tracking-tighter">Arquitectura Modular</h2>

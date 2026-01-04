@@ -407,7 +407,7 @@ export async function disconnectWhatsApp(userId: string) {
     await db.updateUserSettings(userId, { isActive: false });
 }
 
-export async function sendMessage(senderId: string, jid: string, text: string, imageUrl?: string) {
+export async function sendMessage(senderId: string, jid: string, text: string, imageUrl?: string): Promise<proto.WebMessageInfo | undefined> {
     let sock: WASocket | undefined;
     if (senderId === DOMINION_NETWORK_JID) {
         const systemSettings = await db.getSystemSettings();
@@ -428,13 +428,15 @@ export async function sendMessage(senderId: string, jid: string, text: string, i
         try {
             const base64Data = imageUrl.split(',')[1] || imageUrl;
             const buffer = Buffer.from(base64Data, 'base64');
-            await sock.sendMessage(jid, { image: buffer, caption: text });
+            // FIX: Cast the return value to resolve the type mismatch.
+            return (await sock.sendMessage(jid, { image: buffer, caption: text })) as proto.WebMessageInfo | undefined;
         } catch (e) {
             console.error(`Error sending image to ${jid}:`, e);
             throw new Error("Failed to send image");
         }
     } else {
-        await sock.sendMessage(jid, { text });
+        // FIX: Cast the return value to resolve the type mismatch.
+        return (await sock.sendMessage(jid, { text })) as proto.WebMessageInfo | undefined;
     }
 }
 
@@ -479,12 +481,20 @@ async function _commonAiProcessingLogic(userId: string, jid: string, user: User,
     if (aiResult?.responseText) {
         if (isTestBot) {
             logService.info(`${logPrefix} Generada respuesta simulada para ${jid}`, userId);
+            const botMessage: Message = { id: `bot-${Date.now()}`, text: aiResult.responseText, sender: 'bot', timestamp: new Date().toISOString() };
+            await conversationService.addMessage(userId, jid, botMessage);
         } else if (sock) {
-            await sock.sendMessage(jid, { text: aiResult.responseText });
+            const sentMsg = await sock.sendMessage(jid, { text: aiResult.responseText });
+            if (sentMsg && sentMsg.key.id) {
+                const botMessage: Message = { 
+                    id: sentMsg.key.id, 
+                    text: aiResult.responseText, 
+                    sender: 'bot', 
+                    timestamp: new Date((sentMsg.messageTimestamp as number) * 1000).toISOString() 
+                };
+                await conversationService.addMessage(userId, jid, botMessage);
+            }
         }
-
-        const botMessage: Message = { id: `bot-${Date.now()}`, text: aiResult.responseText, sender: 'bot', timestamp: new Date().toISOString() };
-        await conversationService.addMessage(userId, jid, botMessage);
     }
     
     if (aiResult) {

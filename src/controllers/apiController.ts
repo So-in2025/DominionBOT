@@ -64,9 +64,19 @@ export const handleSendMessage = async (req: AuthenticatedRequest<any, any, { to
     try {
         const { id } = req.user;
         const { to, text, imageUrl } = req.body;
-        await sendMessage(id, to, text, imageUrl);
-        // FIX: Changed timestamp to string to match type definition.
-        await conversationService.addMessage(id, to, { id: uuidv4(), text, sender: 'owner', timestamp: new Date().toISOString() });
+        const sentMsg = await sendMessage(id, to, text, imageUrl);
+
+        // Save message to conversation with the real ID from WhatsApp to ensure idempotency
+        if (sentMsg && sentMsg.key.id) {
+            await conversationService.addMessage(id, to, { 
+                id: sentMsg.key.id, 
+                text, 
+                sender: 'owner', 
+                // FIX: Changed timestamp to string to match type definition.
+                timestamp: new Date((sentMsg.messageTimestamp as number) * 1000).toISOString()
+            });
+        }
+        
         res.status(200).json({ message: 'Mensaje enviado.' });
     } catch (e: any) {
         logService.error('Error sending message', e, getClientUser(req).id);
