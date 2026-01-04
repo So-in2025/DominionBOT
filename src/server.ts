@@ -47,23 +47,22 @@ app.use((req, res, next) => {
     next();
 });
 
-// ROBUST CORS MIDDLEWARE: Replaces the standard cors package for explicit control.
+// ROBUST CORS MIDDLEWARE v2: Handles credentials and dynamic origins.
 app.use((req, res, next) => {
-    // Allows any domain to request data. Extremely permissive for development and ngrok.
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    const origin = req.headers.origin;
     
-    // Specifies the methods allowed when accessing the resource.
+    // Dynamically set the origin. A wildcard '*' is not allowed by browsers
+    // when 'Access-Control-Allow-Credentials' is 'true'.
+    if (origin) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+    }
+    
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    
-    // Specifies the headers allowed in a request.
     res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Cache-Control, ngrok-skip-browser-warning');
-    
-    // Indicates that the response to the request can be exposed when the credentials flag is true.
     res.setHeader('Access-Control-Allow-Credentials', 'true');
 
-    // Handle the OPTIONS pre-flight request. Browsers send this before the actual request.
+    // Handle the OPTIONS pre-flight request.
     if (req.method === 'OPTIONS') {
-        // A 204 No Content response is standard and efficient for pre-flight checks.
         return res.status(204).end();
     }
     
