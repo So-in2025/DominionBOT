@@ -179,6 +179,13 @@ app.post('/api/client/test-bot/start', authenticateToken, apiController.handleSt
 app.post('/api/client/test-bot/stop', authenticateToken, apiController.handleStopClientTestBot); 
 app.post('/api/client/test-bot/clear', authenticateToken, apiController.handleClearClientTestBotConversation);
 
+// AI Proxy Routes (NEW - FIX DEPLOYMENT)
+app.post('/api/ai/verify-key', authenticateToken, apiController.handleVerifyApiKey);
+app.post('/api/ai/analyze-website', authenticateToken, apiController.handleAnalyzeWebsite);
+app.post('/api/ai/execute-neural-path', authenticateToken, apiController.handleExecuteNeuralPath);
+app.post('/api/ai/generate-campaign-prompt', authenticateToken, apiController.handleGenerateCampaignPrompt);
+
+
 // Campaign Routes (NEW)
 app.get('/api/campaigns', authenticateToken, apiController.handleGetCampaigns);
 app.post('/api/campaigns', authenticateToken, apiController.handleCreateCampaign);

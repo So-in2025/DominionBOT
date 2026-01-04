@@ -1,7 +1,7 @@
+
 import React, { useEffect, useState } from 'react';
 import { BotSettings, DashboardMetrics, User } from '../types.js';
 import { getAuthHeaders } from '../config';
-import { GoogleGenAI } from '@google/genai';
 import TestBotSimulator from './Client/TestBotSimulator.js'; 
 import { openSupportWhatsApp } from '../utils/textUtils';
 import { audioService } from '../services/audioService.js';
@@ -156,13 +156,18 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
     }
     setApiKeyStatus('VERIFYING');
     try {
-        const ai = new GoogleGenAI({ apiKey: cleanKey });
-        await ai.models.generateContent({ 
-            model: 'gemini-2.5-flash', 
-            contents: [{ parts: [{text: 'ping'}] }] 
-        }); 
-        setApiKeyStatus('VALID');
-        showToast('Conexión Exitosa: API Key verificada y operativa.', 'success');
+        const res = await fetch(`${backendUrl}/api/ai/verify-key`, {
+            method: 'POST',
+            headers: getAuthHeaders(token)
+        });
+        
+        if (res.ok) {
+            setApiKeyStatus('VALID');
+            showToast('Conexión Exitosa: API Key verificada y operativa.', 'success');
+        } else {
+            const data = await res.json();
+            throw new Error(data.message);
+        }
     } catch (error: any) {
         setApiKeyStatus('INVALID');
         showToast(`Error de Verificación: ${error.message}`, 'error');

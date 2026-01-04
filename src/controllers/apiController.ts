@@ -1,5 +1,6 @@
 
 
+
 import { Buffer } from 'buffer';
 import { connectToWhatsApp, disconnectWhatsApp, sendMessage, getSessionStatus, processAiResponseForJid, fetchUserGroups, ELITE_BOT_JID, ELITE_BOT_NAME, DOMINION_NETWORK_JID } from '../whatsapp/client.js'; 
 import { conversationService } from '../services/conversationService.js';
@@ -14,6 +15,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { radarService } from '../services/radarService.js';
 import { Request as ExpressRequest, Response } from 'express';
 import { createHash } from 'crypto'; 
+import { generateContentWithFallback } from '../services/geminiService.js';
+import { Type } from "@google/genai";
 
 // ... (AuthenticatedRequest interface and helper)
 interface AuthenticatedRequest<P = any, ResBody = any, ReqBody = any, ReqQuery = any> extends ExpressRequest<P, ResBody, ReqBody, ReqQuery> {
@@ -797,5 +800,156 @@ export const handleUpdateNetworkProfile = async (req: AuthenticatedRequest<any, 
     } catch (error: any) {
         logService.error('Error updating network profile', error, userId, req.user.username);
         res.status(500).json({ message: 'Error interno del servidor.' });
+    }
+};
+
+// AI PROXY HANDLERS
+// FIX: Changed res type from Response to any to fix .status() not found error
+export const handleVerifyApiKey = async (req: AuthenticatedRequest, res: any) => {
+    try {
+        const { id: userId } = req.user;
+        const user = await db.getUser(userId);
+        const apiKey = user?.settings.geminiApiKey;
+
+        if (!apiKey) {
+            return res.status(400).json({ message: "API Key no configurada." });
+        }
+
+        // Use a lightweight model for a simple ping
+        await generateContentWithFallback({ 
+            apiKey: apiKey,
+            prompt: 'ping'
+        });
+
+        res.status(200).json({ message: "API Key válida." });
+    } catch (error: any) {
+        logService.error('Error verificando API key', error, getClientUser(req).id);
+        res.status(400).json({ message: error.message || "API Key inválida o error de red." });
+    }
+};
+
+// FIX: Changed res type from Response to any to fix .status() not found error
+export const handleAnalyzeWebsite = async (req: AuthenticatedRequest<any, any, { websiteUrl: string }>, res: any) => {
+    try {
+        const { id: userId } = req.user;
+        const { websiteUrl } = req.body;
+        const user = await db.getUser(userId);
+        const apiKey = user?.settings.geminiApiKey;
+
+        if (!apiKey) {
+            return res.status(400).json({ message: "API Key no configurada." });
+        }
+
+        const prompt = `
+            Analiza el sitio web: ${websiteUrl}
+            TU OBJETIVO: Configurar la "Personalidad de Venta" de una IA.
+            Redacta en PRIMERA PERSONA ("Soy el especialista en [Rubro]. Mi meta es vender [Productos principales]...").
+            NO hagas un resumen corporativo aburrido.
+            ESTRUCTURA REQUERIDA:
+            1. ROL Y OFERTA: "Soy el especialista en [Rubro]. Mi meta es vender [Productos principales]..."
+            2. PRECIOS Y PLANES: Lista los precios exactos encontrados (ej: "$180.000 ARS"). Si no hay, di "A cotizar".
+            3. GANCHO COMERCIAL: 2 o 3 frases cortas sobre por qué elegirnos (Valor Único). Convierte características en beneficios.
+            4. CLIENTE OBJETIVO: A quién le estoy vendiendo.
+          `;
+        
+        const response = await generateContentWithFallback({
+            apiKey: apiKey,
+            prompt: prompt,
+            tools: [{ googleSearch: {} }]
+        });
+        
+        res.status(200).json({ text: response.text });
+
+    } catch (error: any) {
+        logService.error('Error en /api/ai/analyze-website', error, getClientUser(req).id);
+        res.status(500).json({ message: error.message || 'Error interno del servidor.' });
+    }
+};
+
+// FIX: Changed res type from Response to any to fix .status() not found error
+export const handleExecuteNeuralPath = async (req: AuthenticatedRequest<any, any, { identity: any; context: string }>, res: any) => {
+    try {
+        const { id: userId } = req.user;
+        const { identity, context } = req.body;
+        const user = await db.getUser(userId);
+        const apiKey = user?.settings.geminiApiKey;
+
+        if (!apiKey) {
+            return res.status(400).json({ message: "API Key no configurada." });
+        }
+
+        const prompt = `
+            ACTÚA COMO: Consultor de Negocios de Élite.
+            INPUT DEL USUARIO:
+            Nombre Negocio: "${identity.name}"
+            Web: "${identity.website}"
+            Contexto/Descripción: "${context}"
+            TU TAREA:
+            Genera la configuración estratégica completa para un Chatbot de Ventas (Dominion Bot).
+            FORMATO JSON REQUERIDO:
+            {
+                "mission": "...", "idealCustomer": "...", "detailedDescription": "...",
+                "priceText": "...", "objections": [{ "objection": "...", "response": "..." }],
+                "rules": "...", "archetype": "..." 
+            }
+          `;
+
+        const response = await generateContentWithFallback({
+            apiKey: apiKey,
+            prompt,
+            responseSchema: { type: Type.OBJECT }
+        });
+        
+        res.status(200).json({ text: response.text });
+        
+    } catch (error: any) {
+        logService.error('Error en /api/ai/execute-neural-path', error, getClientUser(req).id);
+        if ((error as any).response && (error as any).response.text) {
+             res.status(500).json({ message: error.message, text: (error as any).response.text });
+        } else {
+             res.status(500).json({ message: error.message || 'Error interno del servidor.' });
+        }
+    }
+};
+
+// FIX: Changed res type from Response to any to fix .status() not found error
+export const handleGenerateCampaignPrompt = async (req: AuthenticatedRequest<any, any, { message: string }>, res: any) => {
+    try {
+        const { id: userId } = req.user;
+        const { message } = req.body;
+        const user = await db.getUser(userId);
+        const apiKey = user?.settings.geminiApiKey;
+
+        if (!apiKey) {
+            return res.status(400).json({ message: "API Key no configurada." });
+        }
+        
+        const prompt = `
+Actúa como un director de arte y experto en marketing visual. Basado en el siguiente texto de una campaña de WhatsApp, crea un prompt detallado y profesional para un generador de imágenes de IA como Midjourney o DALL-E 3.
+
+El prompt debe describir una imagen conceptual, poderosa y de alta calidad que capture la esencia del mensaje.
+
+Incluye los siguientes elementos en tu prompt:
+- **Estilo:** (ej: fotográfico, cinematográfico, ilustración 3D, minimalista, etc.)
+- **Composición:** (ej: primer plano, plano general, vista isométrica, etc.)
+- **Iluminación:** (ej: luz dorada del atardecer, neón, luz de estudio dramática, etc.)
+- **Paleta de colores:** (ej: tonos fríos y corporativos, colores vibrantes, monocromático, etc.)
+- **Emoción o atmósfera:** (ej: sensación de urgencia, lujo, confianza, innovación, etc.)
+
+**Texto de la campaña:**
+"${message}"
+
+**Tu prompt generado:**
+`;
+        const response = await generateContentWithFallback({
+            apiKey: apiKey,
+            prompt: prompt
+        });
+
+        res.status(200).json({ text: response.text });
+
+    } catch (error: any) {
+        logService.error('Error en /api/ai/generate-campaign-prompt', error, getClientUser(req).id);
+        res.status(500).json({ message: error.message || 'Error interno del servidor.' });
     }
 };

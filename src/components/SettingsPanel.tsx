@@ -1,13 +1,13 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { BotSettings, PromptArchetype, NeuralRouterConfig } from '../types';
-import { GoogleGenAI, Type } from '@google/genai';
 import { audioService } from '../services/audioService';
 import { openSupportWhatsApp } from '../utils/textUtils';
 import AdvancedNeuralConfig from './Settings/AdvancedNeuralConfig';
-import { generateContentWithFallback } from '../services/geminiService';
+import { getAuthHeaders, BACKEND_URL } from '../config';
 
 interface SettingsPanelProps {
+  token: string;
   settings: BotSettings | null;
   isLoading: boolean;
   onUpdateSettings: (newSettings: BotSettings) => void;
@@ -137,7 +137,7 @@ interface WizardState {
 // Polyfill simple para SpeechRecognition
 const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
-const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUpdateSettings, onOpenLegal, showToast }) => {
+const SettingsPanel: React.FC<SettingsPanelProps> = ({ token, settings, isLoading, onUpdateSettings, onOpenLegal, showToast }) => {
   // UNIFIED STATE: `current` is the single source of truth for all settings.
   const [current, setCurrent] = useState<BotSettings | null>(null);
   
@@ -256,27 +256,21 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
 
       setIsAnalyzingWeb(true);
       try {
-          const prompt = `
-            Analiza el sitio web: ${wizIdentity.website}
-            TU OBJETIVO: Configurar la "Personalidad de Venta" de una IA.
-            Redacta en PRIMERA PERSONA ("Soy el especialista en [Rubro]. Mi meta es vender [Productos principales]...").
-            NO hagas un resumen corporativo aburrido.
-            ESTRUCTURA REQUERIDA:
-            1. ROL Y OFERTA: "Soy el especialista en [Rubro]. Mi meta es vender [Productos principales]..."
-            2. PRECIOS Y PLANES: Lista los precios exactos encontrados (ej: "$180.000 ARS"). Si no hay, di "A cotizar".
-            3. GANCHO COMERCIAL: 2 o 3 frases cortas sobre por qué elegirnos (Valor Único). Convierte características en beneficios.
-            4. CLIENTE OBJETIVO: A quién le estoy vendiendo.
-          `;
-          
-          const response = await generateContentWithFallback({
-              apiKey: wizApiKey.trim(),
-              prompt: prompt,
-              tools: [{ googleSearch: {} }]
+          const res = await fetch(`${BACKEND_URL}/api/ai/analyze-website`, {
+              method: 'POST',
+              headers: getAuthHeaders(token!),
+              body: JSON.stringify({ websiteUrl: wizIdentity.website })
           });
 
-          const extractedText = response.text;
-          if (extractedText) {
-              setWizContext(prev => (prev ? prev + '\n\n' : '') + extractedText);
+          if (!res.ok) {
+              const errorData = await res.json();
+              throw new Error(errorData.message || 'Error del servidor');
+          }
+          
+          const data = await res.json();
+
+          if (data.text) {
+              setWizContext(prev => (prev ? prev + '\n\n' : '') + data.text);
               showToast('Sitio web analizado exitosamente.', 'success');
               audioService.play('action_success');
           } else {
@@ -333,42 +327,32 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
       setIsProcessing(true);
 
       try {
-          const prompt = `
-            ACTÚA COMO: Consultor de Negocios de Élite.
-            INPUT DEL USUARIO:
-            Nombre Negocio: "${wizIdentity.name}"
-            Web: "${wizIdentity.website}"
-            Contexto/Descripción: "${wizContext}"
-            TU TAREA:
-            Genera la configuración estratégica completa para un Chatbot de Ventas (Dominion Bot).
-            FORMATO JSON REQUERIDO:
-            {
-                "mission": "...", "idealCustomer": "...", "detailedDescription": "...",
-                "priceText": "...", "objections": [{ "objection": "...", "response": "..." }],
-                "rules": "...", "archetype": "..." 
-            }
-          `;
-
-          const res = await generateContentWithFallback({
-              apiKey: wizApiKey.trim(),
-              prompt,
-              responseSchema: { type: Type.OBJECT } // A generic object schema for JSON mode
+          const res = await fetch(`${BACKEND_URL}/api/ai/execute-neural-path`, {
+            method: 'POST',
+            headers: getAuthHeaders(token!),
+            body: JSON.stringify({ identity: wizIdentity, context: wizContext })
           });
-          
-          const data = safeJsonParse(res?.text);
 
-          if (!data) {
-              console.error("JSON Parse Error: AI returned invalid format.", "--- AI Raw Text:", res?.text);
+          if (!res.ok) {
+              const errorData = await res.json();
+              throw new Error(errorData.message || 'Error del servidor');
+          }
+
+          const data = await res.json();
+          const parsedData = safeJsonParse(data?.text);
+
+          if (!parsedData) {
+              console.error("JSON Parse Error: AI returned invalid format.", "--- AI Raw Text:", data?.text);
               showToast('Formato AI inválido. Intenta de nuevo.', 'error');
               setWizardStep('CONTEXT');
               return;
           }
 
-          finishWizard(data, 'AI');
+          finishWizard(parsedData, 'AI');
 
-      } catch (e) {
+      } catch (e: any) {
           console.error(e);
-          showToast('Error en la generación neural. Revisa tu API Key o intenta de nuevo.', 'error');
+          showToast(`Error en la generación neural: ${e.message}`, 'error');
           setWizardStep('CONTEXT'); 
       } finally {
           setIsProcessing(false);

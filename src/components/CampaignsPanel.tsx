@@ -2,7 +2,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Campaign, WhatsAppGroup, BotSettings } from '../types';
 import { getAuthHeaders } from '../config';
-import { generateContentWithFallback } from '../services/geminiService'; // NEW IMPORT
 
 interface CampaignsPanelProps {
     token: string;
@@ -203,38 +202,29 @@ export const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUr
         setGeneratedPrompt('');
 
         try {
-            const prompt = `
-Actúa como un director de arte y experto en marketing visual. Basado en el siguiente texto de una campaña de WhatsApp, crea un prompt detallado y profesional para un generador de imágenes de IA como Midjourney o DALL-E 3.
-
-El prompt debe describir una imagen conceptual, poderosa y de alta calidad que capture la esencia del mensaje.
-
-Incluye los siguientes elementos en tu prompt:
-- **Estilo:** (ej: fotográfico, cinematográfico, ilustración 3D, minimalista, etc.)
-- **Composición:** (ej: primer plano, plano general, vista isométrica, etc.)
-- **Iluminación:** (ej: luz dorada del atardecer, neón, luz de estudio dramática, etc.)
-- **Paleta de colores:** (ej: tonos fríos y corporativos, colores vibrantes, monocromático, etc.)
-- **Emoción o atmósfera:** (ej: sensación de urgencia, lujo, confianza, innovación, etc.)
-
-**Texto de la campaña:**
-"${message}"
-
-**Tu prompt generado:**
-`;
-            const response = await generateContentWithFallback({
-                apiKey: settings.geminiApiKey,
-                prompt: prompt
+            const res = await fetch(`${backendUrl}/api/ai/generate-campaign-prompt`, {
+                method: 'POST',
+                headers: getAuthHeaders(token),
+                body: JSON.stringify({ message: message })
             });
 
-            if (response && response.text) {
-                setGeneratedPrompt(response.text.trim());
+            if (!res.ok) {
+                const errorData = await res.json();
+                throw new Error(errorData.message || 'Error del servidor');
+            }
+
+            const data = await res.json();
+            
+            if (data && data.text) {
+                setGeneratedPrompt(data.text.trim());
                 showToast('Prompt generado con éxito.', 'success');
             } else {
                 throw new Error('La respuesta de la IA estaba vacía.');
             }
 
-        } catch (e) {
+        } catch (e: any) {
             console.error(e);
-            showToast('Error al generar el prompt. Revisa tu API Key de Gemini.', 'error');
+            showToast(`Error al generar el prompt: ${e.message}`, 'error');
         } finally {
             setIsGeneratingPrompt(false);
         }
