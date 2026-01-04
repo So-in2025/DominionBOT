@@ -123,34 +123,37 @@ interface WizardState {
 const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUpdateSettings, onOpenLegal, showToast }) => {
+  // UNIFIED STATE: `current` is the single source of truth for all settings.
   const [current, setCurrent] = useState<BotSettings | null>(null);
   
-  // WIZARD STATE (kept separate as it's a distinct flow)
+  // WIZARD STATE (for flow control and non-settings data only)
   const [wizardStep, setWizardStep] = useState<'IDENTITY' | 'API_SETUP' | 'CONTEXT' | 'PATH' | 'LOADING'>('IDENTITY');
   const [wizIdentity, setWizIdentity] = useState({ name: '', website: '' });
   const [wizApiKey, setWizApiKey] = useState('');
-  const [wizContext, setWizContext] = useState('');
+  const [wizContext, setWizContext] = useState(''); // Only for linear wizard context
   const [isRecording, setIsRecording] = useState(false);
   const [showWebTooltip, setShowWebTooltip] = useState(false);
   const [isAnalyzingWeb, setIsAnalyzingWeb] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [wizIsAdvanced, setWizIsAdvanced] = useState(false); // Wizard-specific mode
-  const [wizNeuralConfig, setWizNeuralConfig] = useState<NeuralRouterConfig | undefined>(undefined);
   
   // For standard settings saving
   const [isSaving, setIsSaving] = useState(false);
-
   const recognitionRef = useRef<any>(null);
 
   useEffect(() => {
     if (settings) {
-        setCurrent({ ...settings, ignoredJids: settings.ignoredJids || [] });
-        // Sync wizard-specific states if needed for pre-population
+        // Initialize the single source of truth.
+        // Ensure neuralConfig exists if advanced mode is on but config is missing.
+        const initialSettings = { ...settings, ignoredJids: settings.ignoredJids || [] };
+        if (initialSettings.useAdvancedModel && !initialSettings.neuralConfig) {
+            initialSettings.neuralConfig = { masterIdentity: '', modules: [] };
+        }
+        setCurrent(initialSettings);
+
+        // Sync wizard-specific states for pre-population if the wizard is ever re-run.
         if (settings.geminiApiKey) setWizApiKey(settings.geminiApiKey);
         if (settings.productName) setWizIdentity(prev => ({ ...prev, name: settings.productName }));
         if (settings.ctaLink) setWizIdentity(prev => ({ ...prev, website: settings.ctaLink }));
-        setWizIsAdvanced(settings.useAdvancedModel || false);
-        setWizNeuralConfig(settings.neuralConfig);
     }
   }, [settings]);
 
@@ -195,18 +198,15 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
 
   const handleUpdate = (field: keyof BotSettings, value: any) => {
     if (!current) return;
-    const newSettings = { ...current, [field]: value };
-    setCurrent(newSettings);
+    setCurrent(prev => ({ ...prev!, [field]: value }));
   };
 
   const handleSaveChanges = async () => {
       if (!current) return;
       setIsSaving(true);
       try {
-          // Payload is simply the 'current' state, which is the single source of truth
           const payload = {
               ...current,
-              // Sanitize price text if in advanced mode to avoid confusion
               priceText: current.useAdvancedModel ? '' : current.priceText,
           };
           await onUpdateSettings(payload);
@@ -276,24 +276,26 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
           return;
       }
       
-      if (wizIsAdvanced) {
-          if (!wizNeuralConfig?.masterIdentity) {
+      if (!current) return;
+
+      if (current.useAdvancedModel) {
+          if (!current.neuralConfig?.masterIdentity) {
               showToast('Debes configurar al menos la Identidad Maestra.', 'error');
               return;
           }
           setWizardStep('LOADING');
           setTimeout(() => {
-              if (!current) return;
-              const newSettings = {
+              const newSettings: BotSettings = {
                   ...current,
                   productName: wizIdentity.name,
                   ctaLink: wizIdentity.website || current.ctaLink,
-                  productDescription: wizNeuralConfig.masterIdentity, 
                   useAdvancedModel: true,
-                  neuralConfig: wizNeuralConfig,
                   geminiApiKey: wizApiKey.trim(),
                   isWizardCompleted: true,
-                  priceText: '' // SANITIZATION: Clear price text for advanced mode
+                  priceText: '',
+                  // CRITICAL FIX: Do NOT pollute productDescription when in advanced mode.
+                  // Leave it as it was.
+                  productDescription: current.productDescription || '',
               };
               onUpdateSettings(newSettings);
               showToast('🧠 Arquitectura Modular Activada.', 'success');
@@ -393,7 +395,7 @@ ${data.rules}
       const arch = (data.archetype as PromptArchetype) || PromptArchetype.CONSULTATIVE;
       const mapping = ARCHETYPE_MAPPING[arch] || ARCHETYPE_MAPPING[PromptArchetype.CONSULTATIVE];
 
-      const newSettings = {
+      const newSettings: BotSettings = {
           ...current,
           productName: wizIdentity.name,
           ctaLink: wizIdentity.website || current.ctaLink,
@@ -405,7 +407,9 @@ ${data.rules}
           intensityValue: mapping.intensityValue,
           geminiApiKey: wizApiKey.trim(), 
           isWizardCompleted: true,
-          useAdvancedModel: false 
+          useAdvancedModel: false,
+          // CRITICAL FIX: Clear neural config when finishing in linear mode to prevent data leakage.
+          neuralConfig: { masterIdentity: '', modules: [] }
       };
 
       onUpdateSettings(newSettings);
@@ -555,16 +559,14 @@ ${data.rules}
       );
   }
 
-  // VIEW: WIZARD - FIX: Adjusted padding and justification to prevent overlap
+  // VIEW: WIZARD
   return (
     <div className="flex-1 bg-brand-black flex flex-col items-center justify-start p-6 md:p-10 pt-24 md:pt-10 relative overflow-y-auto font-sans min-h-full">
-        {/* Background Ambient */}
         <div className="absolute top-0 left-0 w-full h-full bg-noise opacity-5 pointer-events-none fixed"></div>
         <div className="absolute -top-20 -right-20 w-96 h-96 bg-brand-gold/5 rounded-full blur-[100px] pointer-events-none fixed"></div>
 
         <div className="w-full max-w-2xl relative z-10">
             
-            {/* PROGRESS HEADER */}
             <div className="mb-10 text-center">
                 <h2 className="text-3xl md:text-4xl font-black text-white uppercase tracking-tighter mb-2">
                     Configuración <span className="text-brand-gold">Neural</span>
@@ -581,9 +583,8 @@ ${data.rules}
                 </div>
             </div>
 
-            <div className={`bg-brand-surface border border-white/10 rounded-[32px] p-8 md:p-12 shadow-2xl relative backdrop-blur-sm transition-all duration-500 ${wizIsAdvanced && wizardStep === 'CONTEXT' ? 'max-w-4xl w-full mx-auto' : ''}`}>
+            <div className={`bg-brand-surface border border-white/10 rounded-[32px] p-8 md:p-12 shadow-2xl relative backdrop-blur-sm transition-all duration-500 ${current.useAdvancedModel && wizardStep === 'CONTEXT' ? 'max-w-4xl w-full mx-auto' : ''}`}>
                 
-                {/* STEP 1: IDENTITY */}
                 {wizardStep === 'IDENTITY' && (
                     <div className="space-y-8 animate-fade-in">
                         <div className="text-center">
@@ -634,7 +635,6 @@ ${data.rules}
                     </div>
                 )}
 
-                {/* STEP 2: API SETUP */}
                 {wizardStep === 'API_SETUP' && (
                     <div className="space-y-8 animate-fade-in">
                         <div className="text-center">
@@ -648,19 +648,9 @@ ${data.rules}
                         <div className="bg-black/30 border border-brand-gold/20 p-6 rounded-2xl space-y-4">
                             <div>
                                 <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-2 ml-1">Gemini API Key</label>
-                                {/* Fake inputs to confuse browser password manager */}
-                                <div style={{ height: 0, overflow: 'hidden', opacity: 0, position: 'absolute', pointerEvents: 'none' }}>
-                                    <input type="text" name="fake_user_prevent_autofill_wiz" autoComplete="off" tabIndex={-1} />
-                                    <input type="password" name="fake_password_prevent_autofill_wiz" autoComplete="off" tabIndex={-1} />
-                                </div>
                                 <input 
                                     type="password"
-                                    name="gemini_api_key_setup_v3"
-                                    id="gemini_api_key_setup_v3"
                                     autoComplete="new-password"
-                                    data-lpignore="true"
-                                    readOnly={true}
-                                    onFocus={(e) => e.target.readOnly = false}
                                     value={wizApiKey}
                                     onChange={(e) => setWizApiKey(e.target.value)}
                                     placeholder="Pegar AI Studio Key aquí..."
@@ -677,9 +667,8 @@ ${data.rules}
                                 >
                                     <span>🔑</span> Obtener Key Gratis
                                 </a>
-                                {/* Placeholder for Tutorial Video */}
                                 <button 
-                                    onClick={() => showToast('Video tutorial próximamente. Usa el link de Google por ahora.', 'info')}
+                                    onClick={() => showToast('Video tutorial próximamente.', 'info')}
                                     className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-[10px] font-bold text-gray-300 uppercase tracking-wider transition-all"
                                 >
                                     <span>▶️</span> Ver Tutorial (1 min)
@@ -692,12 +681,7 @@ ${data.rules}
                             <button 
                                 onClick={() => { 
                                     if(wizApiKey.length > 20) {
-                                        // Save intermediate state to settings immediately so next steps can use it
-                                        if (current) {
-                                            const tempSettings = { ...current, geminiApiKey: wizApiKey.trim() };
-                                            setCurrent(tempSettings);
-                                            onUpdateSettings(tempSettings); // Persist early
-                                        }
+                                        handleUpdate('geminiApiKey', wizApiKey.trim());
                                         setWizardStep('CONTEXT'); 
                                     } else {
                                         showToast('Ingresa una API Key válida.', 'error'); 
@@ -711,7 +695,6 @@ ${data.rules}
                     </div>
                 )}
 
-                {/* STEP 3: CONTEXT (HYBRID: LINEAR VS MODULAR CHOICE) */}
                 {wizardStep === 'CONTEXT' && (
                     <div className="space-y-6 animate-fade-in relative">
                         <div className="text-center mb-6">
@@ -719,55 +702,35 @@ ${data.rules}
                             <p className="text-xs text-gray-400 mt-2 font-medium">Selecciona la arquitectura que mejor se adapte a la complejidad de tu negocio.</p>
                         </div>
 
-                        {/* MODE SELECTOR WITH HOVER TOOLTIPS */}
                         <div className="flex p-1 bg-black/40 border border-white/10 rounded-xl mb-6 relative">
                             <button 
-                                onClick={() => setWizIsAdvanced(false)}
-                                className={`group relative flex-1 py-3 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${!wizIsAdvanced ? 'bg-white/10 text-white shadow-inner' : 'text-gray-500 hover:text-white'}`}
+                                onClick={() => handleUpdate('useAdvancedModel', false)}
+                                className={`group relative flex-1 py-3 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${!current.useAdvancedModel ? 'bg-white/10 text-white shadow-inner' : 'text-gray-500 hover:text-white'}`}
                             >
                                 Agente Lineal (Simple)
-                                {/* Tooltip */}
-                                <div className="absolute top-full left-0 right-0 mt-2 p-3 bg-black border border-white/10 rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 pointer-events-none text-left">
-                                    <p className="text-[9px] text-gray-300 leading-relaxed font-medium normal-case">
-                                        Para la mayoría de los negocios. El bot actúa como un único agente con una identidad y conocimiento unificado. Ideal si vendes un producto principal o servicio específico.
-                                    </p>
-                                </div>
                             </button>
                             <button 
-                                onClick={() => setWizIsAdvanced(true)}
-                                className={`group relative flex-1 py-3 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${wizIsAdvanced ? 'bg-brand-gold text-black shadow-lg' : 'text-gray-500 hover:text-white'}`}
+                                onClick={() => handleUpdate('useAdvancedModel', true)}
+                                className={`group relative flex-1 py-3 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${current.useAdvancedModel ? 'bg-brand-gold text-black shadow-lg' : 'text-gray-500 hover:text-white'}`}
                             >
                                 <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86 3.86l-.477 2.387c-.037.184.011.373.13.514l1.392 1.624a1 1 0 00.707.362h2.242a2 2 0 001.022-.547l1.022-1.022a2 2 0 00.547-1.022l.477-2.387c.037-.184-.011-.373-.13-.514l-1.392-1.624a1 1 0 00-.707-.362z" /></svg>
                                 Enjambre Modular (Avanzado)
-                                {/* Tooltip */}
-                                <div className="absolute top-full left-0 right-0 mt-2 p-3 bg-black border border-white/10 rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 pointer-events-none text-left">
-                                    <p className="text-[9px] text-gray-300 leading-relaxed font-medium normal-case">
-                                        Para negocios complejos que requieren múltiples "especialistas". El sistema actúa como un "Router" inteligente que deriva a diferentes módulos según la intención.
-                                    </p>
-                                </div>
                             </button>
                         </div>
 
-                        {wizIsAdvanced ? (
-                            // ADVANCED MODULAR INTERFACE INSIDE WIZARD - FIX: Removed max-h scroll container
+                        {current.useAdvancedModel ? (
                             <div className="pr-2 p-1">
                                 <AdvancedNeuralConfig 
-                                    initialConfig={wizNeuralConfig}
-                                    onChange={(cfg) => setWizNeuralConfig(cfg)}
-                                    mode="WIZARD" // FIX: Passed mode prop
+                                    initialConfig={current.neuralConfig}
+                                    onChange={(cfg) => handleUpdate('neuralConfig', cfg)}
+                                    mode="WIZARD"
                                 />
                             </div>
                         ) : (
-                            // LINEAR CONTEXT INTERFACE
                             <div className="relative group animate-fade-in">
-                                {/* WEB ANALYSIS BUTTON */}
                                 {wizIdentity.website && (
                                     <div className="flex justify-end mb-2 px-1">
-                                        <button 
-                                            onClick={analyzeWebsite}
-                                            disabled={isAnalyzingWeb}
-                                            className="flex items-center gap-2 bg-brand-gold/10 border border-brand-gold/30 hover:bg-brand-gold/20 text-brand-gold px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all disabled:opacity-50"
-                                        >
+                                        <button onClick={analyzeWebsite} disabled={isAnalyzingWeb} className="flex items-center gap-2 bg-brand-gold/10 border border-brand-gold/30 hover:bg-brand-gold/20 text-brand-gold px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all disabled:opacity-50">
                                             {isAnalyzingWeb ? (
                                                 <>
                                                     <div className="w-3 h-3 border-2 border-brand-gold border-t-transparent rounded-full animate-spin"></div>
@@ -787,18 +750,7 @@ ${data.rules}
                                     className="w-full h-48 bg-black/50 border border-white/10 rounded-xl p-5 pb-12 text-white text-sm leading-relaxed focus:border-brand-gold outline-none resize-none custom-scrollbar placeholder-gray-700 transition-all z-10 relative"
                                     placeholder={`Ej: Soy una agencia de marketing. Vendemos gestión de redes desde $300 USD. Quiero que el bot sea agresivo en el cierre. Si preguntan por descuentos, diles que no, pero que ofrecemos garantía.`}
                                 />
-                                {!wizContext && !isRecording && (
-                                    <div className="absolute bottom-4 left-4 right-16 p-2 pointer-events-none flex flex-col justify-end text-left opacity-50 z-20">
-                                        <p className="text-[10px] font-bold text-gray-400 mb-1">💡 Tip de Calibración:</p>
-                                        <p className="text-[9px] text-gray-500 leading-snug">Incluye: Qué vendes, precios base, tu diferencial y reglas que el bot no debe romper nunca.</p>
-                                    </div>
-                                )}
-                                
-                                <button 
-                                    onClick={toggleRecording}
-                                    className={`absolute bottom-4 right-4 p-3 rounded-full shadow-lg transition-all z-30 ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-brand-gold text-black hover:scale-110'}`}
-                                    title="Dictar por voz"
-                                >
+                                <button onClick={toggleRecording} className={`absolute bottom-4 right-4 p-3 rounded-full shadow-lg transition-all z-30 ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-brand-gold text-black hover:scale-110'}`} title="Dictar por voz">
                                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
                                 </button>
                             </div>
@@ -806,16 +758,12 @@ ${data.rules}
 
                         <div className="flex gap-4 pt-4 border-t border-white/5">
                             <button onClick={() => setWizardStep('API_SETUP')} className="px-6 py-3 text-gray-500 font-bold text-xs uppercase hover:text-white transition-colors">Atrás</button>
-                            {wizIsAdvanced ? (
-                                <button 
-                                    onClick={executeNeuralPath} 
-                                    className="flex-1 py-3 bg-brand-gold text-black rounded-xl font-black text-xs uppercase tracking-[0.2em] transition-all hover:scale-[1.02] shadow-lg shadow-brand-gold/20"
-                                >
+                            {current.useAdvancedModel ? (
+                                <button onClick={executeNeuralPath} className="flex-1 py-3 bg-brand-gold text-black rounded-xl font-black text-xs uppercase tracking-[0.2em] transition-all hover:scale-[1.02] shadow-lg shadow-brand-gold/20">
                                     Finalizar Arquitectura
                                 </button>
                             ) : (
-                                <button 
-                                    onClick={() => { if(wizContext.length > 5) setWizardStep('PATH'); else showToast('Danos un poco más de contexto.', 'error'); }}
+                                <button onClick={() => { if(wizContext.length > 5) setWizardStep('PATH'); else showToast('Danos un poco más de contexto.', 'error'); }}
                                     className="flex-1 py-3 bg-white/10 hover:bg-white/20 text-white border border-white/10 rounded-xl font-black text-xs uppercase tracking-[0.2em] transition-all hover:scale-[1.02]"
                                 >
                                     Siguiente &rarr;
@@ -824,8 +772,7 @@ ${data.rules}
                         </div>
                     </div>
                 )}
-
-                {/* STEP 4: THE FORK (CHOICE) - ONLY FOR LINEAR MODE NOW */}
+                
                 {wizardStep === 'PATH' && (
                     <div className="space-y-8 animate-fade-in">
                         <div className="text-center mb-8">
@@ -834,7 +781,6 @@ ${data.rules}
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            {/* OPTION A: AI AUTO */}
                             <button 
                                 onClick={executeNeuralPath}
                                 className="group relative bg-[#0a0a0a] border border-brand-gold/30 hover:border-brand-gold hover:bg-brand-gold/5 rounded-2xl p-6 text-left transition-all duration-300 hover:-translate-y-1 shadow-[0_0_30px_rgba(0,0,0,0.5)]"
@@ -849,7 +795,6 @@ ${data.rules}
                                 </div>
                             </button>
 
-                            {/* OPTION B: TEMPLATES */}
                             <div className="bg-[#0a0a0a] border border-white/10 rounded-2xl p-6 text-left relative overflow-hidden">
                                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-gray-800 to-gray-600"></div>
                                 <h4 className="text-lg font-black text-white mb-4">Biblioteca Táctica</h4>
@@ -877,18 +822,16 @@ ${data.rules}
                     </div>
                 )}
 
-                {/* LOADING STATE */}
                 {wizardStep === 'LOADING' && (
                     <div className="py-20 text-center animate-fade-in flex flex-col items-center">
                         <div className="w-20 h-20 border-4 border-brand-gold/20 border-t-brand-gold rounded-full animate-spin mb-8 shadow-[0_0_40px_rgba(212,175,55,0.2)]"></div>
                         <h3 className="text-xl font-black text-white uppercase tracking-widest animate-pulse">Estructurando Red Neural</h3>
-                        <p className="text-xs text-gray-500 mt-3 font-mono">Aplicando arquitectura {wizIsAdvanced ? 'Modular' : 'Elite'}...</p>
+                        <p className="text-xs text-gray-500 mt-3 font-mono">Aplicando arquitectura {current.useAdvancedModel ? 'Modular' : 'Elite'}...</p>
                     </div>
                 )}
 
-                {/* SOS / AUDIT BUTTON */}
                 {wizardStep !== 'LOADING' && (
-                    <div className="mt-8 pt-6 border-t border-white/5 flex justify-center animate-fade-in">
+                     <div className="mt-8 pt-6 border-t border-white/5 flex justify-center animate-fade-in">
                         <button 
                             onClick={() => openSupportWhatsApp('Hola, estoy trabado en la configuración del Cerebro. ¿Me ayudan con una auditoría?')} 
                             className="text-[9px] text-gray-500 hover:text-brand-gold font-bold uppercase tracking-widest flex items-center gap-2 transition-colors group"
