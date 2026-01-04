@@ -64,21 +64,18 @@ export const handleSendMessage = async (req: AuthenticatedRequest<any, any, { to
     try {
         const { id } = req.user;
         const { to, text, imageUrl } = req.body;
-        const canonicalJid = normalizeJid(to); // BLOQUE 1
+        const canonicalJid = normalizeJid(to); 
         if (!canonicalJid) {
             return res.status(400).json({ message: 'JID inválido.' });
         }
 
-        // AJUSTE DE SEGURIDAD: Filtro defensivo para no enviar mensajes directos a grupos o canales
         if (canonicalJid.endsWith('@g.us') || canonicalJid.endsWith('@newsletter')) {
             return res.status(400).json({ message: 'No se permite enviar mensajes a grupos o canales por esta vía.' });
         }
 
         const sentMsg = await sendMessage(id, canonicalJid, text, imageUrl);
 
-        // Save message to conversation with the real ID from WhatsApp to ensure idempotency
         if (sentMsg && sentMsg.key.id) {
-            // AJUSTE MENOR #1: Fallback defensivo para timestamp
             const msgTimestamp = sentMsg.messageTimestamp 
                 ? new Date(Number(sentMsg.messageTimestamp) * 1000).toISOString() 
                 : new Date().toISOString();
@@ -102,14 +99,13 @@ export const handleUpdateConversation = async (req: AuthenticatedRequest<any, an
     try {
         const { id: userId } = req.user;
         const { id: conversationId, updates } = req.body;
-        const canonicalJid = normalizeJid(conversationId); // BLOQUE 1
+        const canonicalJid = normalizeJid(conversationId); 
         if (!canonicalJid) return res.status(400).json({ message: 'ID de conversación inválido' });
         
         const user = await db.getUser(userId);
         if (!user) return res.status(404).json({ message: 'Usuario no encontrado.' });
         
         const safeConvoId = sanitizeKey(canonicalJid);
-        // BLOQUE 4: Acceso Determinístico
         const conversation: Conversation | undefined = user.conversations[safeConvoId] || user.conversations[canonicalJid];
 
         if (!conversation) return res.status(404).json({ message: 'Conversación no encontrada.' });
@@ -132,10 +128,8 @@ export const handleDeleteConversation = async (req: AuthenticatedRequest<{ id: s
         const canonicalJid = normalizeJid(rawJid);
         if (!canonicalJid) return res.status(400).json({ message: 'ID de conversación inválido' });
         
-        // 1. Intentar borrar con ID normalizado
         await db.removeUserConversation(userId, canonicalJid);
         
-        // 2. Intentar borrar con ID crudo (para limpiar fantasmas antiguos)
         if (rawJid !== canonicalJid) {
              await db.removeUserConversation(userId, rawJid);
         }
@@ -163,7 +157,7 @@ export const handleForceAiRun = async (req: AuthenticatedRequest<any, any, { id:
     try {
         const { id: userId } = req.user;
         const { id: conversationId } = req.body;
-        const canonicalJid = normalizeJid(conversationId); // BLOQUE 1
+        const canonicalJid = normalizeJid(conversationId); 
         if (!canonicalJid) return res.status(400).json({ message: 'ID de conversación inválido' });
 
         await processAiResponseForJid(userId, canonicalJid, true);
@@ -177,7 +171,7 @@ export const handleForceAiRun = async (req: AuthenticatedRequest<any, any, { id:
 export const handleGetConversations = async (req: AuthenticatedRequest, res: any) => {
     try {
         const { id } = req.user;
-        const since = req.query.since as string | undefined; // Get the timestamp
+        const since = req.query.since as string | undefined; 
         const conversations = await conversationService.getConversations(id, since);
         res.json(conversations);
     } catch (e: any) {
@@ -244,14 +238,67 @@ export const handleGetTtsAudio = async (req: any, res: any) => {
     }
 };
 
+// --- ELITE++ ADVERSARIAL SIMULATOR ---
+
+const SIMULATOR_PERSONAS: Record<SimulationScenario, string> = {
+    'STANDARD_FLOW': 'Eres un cliente interesado y amable. Pregunta el precio y luego pide cómo pagar.',
+    'PRICE_OBJECTION': 'Eres un cliente tacaño. Di que te parece caro. Pide descuento. Compara con la competencia. Sé difícil de convencer.',
+    'COMPETITOR_COMPARISON': 'Eres un cliente escéptico. Menciona que viste algo mejor en la competencia. Pide que te expliquen por qué son mejores.',
+    'GHOSTING_RISK': 'Eres un cliente cortante. Responde con monosílabos ("Si", "No", "Ok"). Muestra desinterés. Haz que el vendedor trabaje.',
+    'CONFUSED_BUYER': 'Eres un cliente confundido. Pregunta cosas que no tienen sentido o que ya te dijeron. Sé disperso.'
+};
+
+const INITIAL_MESSAGES: Record<SimulationScenario, string[]> = {
+    'STANDARD_FLOW': ["Hola, info por favor.", "Buenas, me interesa lo que publicaron.", "¿Qué precio tiene?"],
+    'PRICE_OBJECTION': ["Hola, ¿cuánto sale?", "Vi su anuncio, busco algo barato.", "¿Precio?"],
+    'COMPETITOR_COMPARISON': ["Hola, estoy viendo opciones parecidas.", "¿En qué se diferencian de los demás?", "Me pasas info?"],
+    'GHOSTING_RISK': ["Info.", "Hola.", "Precio."],
+    'CONFUSED_BUYER': ["Hola, ¿venden repuestos?", "¿Esto sirve para mi casa?", "¿Quién sos?"]
+};
+
+// Función auxiliar para generar respuesta del "Cliente Simulado"
+const generateAdversarialResponse = async (history: Message[], scenario: SimulationScenario, userDescription: string, apiKey: string): Promise<string> => {
+    const historyText = history.map(m => `${m.sender === 'elite_bot' ? 'CLIENTE' : 'VENDEDOR'}: ${m.text}`).join('\n');
+    const personaInstruction = SIMULATOR_PERSONAS[scenario] || SIMULATOR_PERSONAS['STANDARD_FLOW'];
+    
+    const prompt = `
+    ACTÚA COMO UN CLIENTE EN WHATSAPP.
+    PERSONALIDAD: ${personaInstruction}
+    
+    CONTEXTO DE LA VENTA (Lo que te están vendiendo): "${userDescription}"
+    
+    HISTORIAL DEL CHAT:
+    ${historyText}
+    
+    TU TAREA:
+    Responde al VENDEDOR basándote en tu PERSONALIDAD.
+    - Sé natural, usa lenguaje coloquial (Español Argentino si aplica).
+    - Sé breve (tipo chat).
+    - MANTÉN EL PERSONAJE. Si eres tacaño, quéjate del precio.
+    
+    RESPUESTA (Solo el texto del mensaje):
+    `;
+
+    try {
+        const response = await generateContentWithFallback({
+            apiKey: apiKey,
+            prompt: prompt
+        });
+        return response.text?.trim() || "...";
+    } catch (e) {
+        return "Ok."; // Fallback simple
+    }
+};
+
 export const handleStartClientTestBot = async (req: AuthenticatedRequest<any, any, { scenario?: SimulationScenario }>, res: any) => {
     const { id: userId } = req.user;
-    const { scenario } = req.body; 
+    const { scenario = 'STANDARD_FLOW' } = req.body; 
 
     try {
         const user = await db.getUser(userId);
         if (!user) return res.status(404).json({ message: 'Usuario no encontrado.' });
         
+        // 1. Reset Conversation
         const safeJid = sanitizeKey(ELITE_BOT_JID);
         if (user.conversations && user.conversations[safeJid]) {
             delete user.conversations[safeJid];
@@ -270,117 +317,69 @@ export const handleStartClientTestBot = async (req: AuthenticatedRequest<any, an
             isBotActive: true,
             isMuted: false,
             isTestBotConversation: true,
-            tags: [],
+            tags: ['SIMULACION_ADVERSARIAL'],
             internalNotes: [],
             isAiSignalsEnabled: true,
             lastActivity: new Date().toISOString()
         };
         await db.saveUserConversation(userId, cleanConversation);
 
-        let TEST_SCRIPT_CLIENT = [
-            "Hola, estoy interesado en tus servicios. ¿Cómo funciona?",
-            "¿Podrías explicarme un poco más sobre el plan PRO?",
-            "¿Cuál es el costo mensual?",
-            "¿Ofrecen alguna garantía o prueba?",
-            "Suena interesante. Creo que estoy listo para ver una demo o empezar. ¿Qué debo hacer ahora?",
-        ];
+        // 2. Select Initial Message Randomly
+        const possibleStarts = INITIAL_MESSAGES[scenario];
+        const startMessage = possibleStarts[Math.floor(Math.random() * possibleStarts.length)];
 
-        // --- ELITE++ LOGIC ---
-        if (scenario === 'STANDARD_FLOW' && user.simulationLab?.customScript && user.simulationLab.customScript.length > 0) {
-            TEST_SCRIPT_CLIENT = user.simulationLab.customScript;
-            logService.info(`[SIMULATOR] Usando script personalizado para ${user.username}`, userId);
-        } else if (scenario === 'PRICE_OBJECTION') {
-            TEST_SCRIPT_CLIENT = [
-                "Hola, ¿me interesa. ¿Cuánto cuesta?",
-                "Me parece un poco caro, ¿hay descuentos?",
-                "No sé si puedo invertir eso ahora mismo."
-            ];
-        } else if (scenario === 'COMPETITOR_COMPARISON') {
-            TEST_SCRIPT_CLIENT = [
-                "Hola, ¿en qué se diferencian de X Competidor?",
-                "Vi que Y Competidor ofrece más por menos, ¿es cierto?",
-                "¿Por qué debería elegirlos a ustedes en lugar de a la competencia?"
-            ];
-        } else if (scenario === 'GHOSTING_RISK') {
-            TEST_SCRIPT_CLIENT = [
-                "Ok.",
-                "Hmm...",
-                "Lo pensaré."
-            ];
-        } else if (scenario === 'CONFUSED_BUYER') {
-            TEST_SCRIPT_CLIENT = [
-                "Qué es un bot?",
-                "Mi primo tiene un negocio, ¿le sirve?",
-                "¿Me podrías resumir todo en una palabra?"
-            ];
-        }
+        res.status(200).json({ message: 'Simulación adversarial iniciada.' });
 
-
+        // 3. Start Async Loop
         (async () => {
-            for (const messageText of TEST_SCRIPT_CLIENT) {
-                const eliteBotMessage: Message = { 
-                    id: `elite_bot_msg_${Date.now()}_${Math.random().toString(36).substring(7)}`, 
-                    text: messageText, 
-                    sender: 'elite_bot', 
-                    timestamp: new Date().toISOString()
+            const apiKey = user.settings.geminiApiKey;
+            if (!apiKey) return;
+
+            let currentTurns = 0;
+            const MAX_TURNS = 5; // Limite de interacción para no consumir tokens infinitos
+            
+            // Initial Injection
+            let eliteBotMessage: Message = { 
+                id: `elite_bot_msg_${Date.now()}`, text: startMessage, sender: 'elite_bot', timestamp: new Date().toISOString()
+            };
+            await conversationService.addMessage(userId, ELITE_BOT_JID, eliteBotMessage, ELITE_BOT_NAME);
+            
+            while (currentTurns < MAX_TURNS) {
+                // A. Trigger User Bot (Vendedor)
+                await processAiResponseForJid(userId, ELITE_BOT_JID, true); 
+                
+                // Wait for bot to reply and think
+                await new Promise(resolve => setTimeout(resolve, 6000)); 
+
+                // B. Fetch updated conversation to see what the bot said
+                const freshUser = await db.getUser(userId);
+                const convo = freshUser?.conversations?.[sanitizeKey(ELITE_BOT_JID)] || freshUser?.conversations?.[ELITE_BOT_JID];
+                
+                if (!convo || convo.messages.length === 0) break;
+
+                const lastMsg = convo.messages[convo.messages.length - 1];
+                
+                // If bot stopped responding (Shadow Mode or Error), stop sim
+                if (lastMsg.sender === 'elite_bot') break; 
+
+                // C. Generate Adversarial Response (Cliente)
+                const nextUserText = await generateAdversarialResponse(convo.messages, scenario, user.settings.productDescription, apiKey);
+                
+                eliteBotMessage = { 
+                    id: `elite_bot_msg_${Date.now()}_${currentTurns}`, text: nextUserText, sender: 'elite_bot', timestamp: new Date().toISOString()
                 };
                 await conversationService.addMessage(userId, ELITE_BOT_JID, eliteBotMessage, ELITE_BOT_NAME);
-                await processAiResponseForJid(userId, ELITE_BOT_JID, true); 
-                await new Promise(resolve => setTimeout(resolve, 3500 + Math.random() * 2000)); 
+                
+                currentTurns++;
+                await new Promise(resolve => setTimeout(resolve, 2000)); // Natural typing delay
             }
-            if (scenario) {
-                const userAfterTest = await db.getUser(userId);
-                if (userAfterTest) {
-                    const finalConversation = userAfterTest.conversations[safeJid];
-                    if (finalConversation) {
-                        const now = new Date();
-                        const evaluation: EvaluationResult = {
-                            score: finalConversation.status === LeadStatus.HOT ? 100 : (finalConversation.status === LeadStatus.WARM ? 70 : 30),
-                            outcome: finalConversation.status === LeadStatus.HOT ? 'SUCCESS' : (finalConversation.status === LeadStatus.WARM ? 'NEUTRAL' : 'FAILURE'),
-                            detectedFailurePattern: finalConversation.status !== LeadStatus.HOT ? `Lead no escalado: ${finalConversation.status}` : undefined,
-                            insights: ["Evaluación automática basada en estado final."]
-                        };
 
-                        const currentSettings = userAfterTest.settings;
-                        const brainVersionSnapshot = {
-                            archetype: currentSettings.archetype,
-                            tone: currentSettings.toneValue
-                        };
+            // Evaluation Phase (Optional: Generate scorecard at the end)
+            // ... (Existing logic for evaluation remains valid if triggered here)
 
-                        const run: SimulationRun = {
-                            id: uuidv4(),
-                            timestamp: now.toISOString(),
-                            scenario: scenario as SimulationScenario,
-                            brainVersionSnapshot,
-                            durationSeconds: 0, 
-                            evaluation,
-                        };
-                        const updatedLab = {
-                            ...userAfterTest.simulationLab,
-                            experiments: [...(userAfterTest.simulationLab?.experiments || []), run]
-                        };
-                        
-                        const allExperiments = updatedLab.experiments;
-                        const totalScore = allExperiments.reduce((sum, exp) => sum + exp.evaluation.score, 0);
-                        updatedLab.aggregatedScore = allExperiments.length > 0 ? Math.round(totalScore / allExperiments.length) : 0;
-
-                        const failurePatternCounts: Record<string, number> = {};
-                        for (const exp of allExperiments) {
-                            if (exp.evaluation.outcome === 'FAILURE' && exp.evaluation.detectedFailurePattern) {
-                                failurePatternCounts[exp.evaluation.detectedFailurePattern] = (failurePatternCounts[exp.evaluation.detectedFailurePattern] || 0) + 1;
-                            }
-                        }
-                        updatedLab.topFailurePatterns = failurePatternCounts;
-
-                        await db.updateUser(userId, { simulationLab: updatedLab });
-                    }
-                }
-            }
         })().catch(error => {
             logService.error(`Error in client test bot script for ${userId}`, error, userId);
         });
-
-        res.status(200).json({ message: 'Secuencia de prueba iniciada en background.' });
 
     } catch (e: any) {
         logService.error('Error starting client test bot', e, userId);

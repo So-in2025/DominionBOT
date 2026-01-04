@@ -19,8 +19,10 @@ import { ngrokService } from './services/ngrokService.js'; // NEW IMPORT
 // ... (Global Error Handlers)
 (process as any).on('uncaughtException', (err: any) => {
     // SILENCIADOR DE BAD MAC: Este error es de sesión corrupta, no del código.
+    // Evita que la consola se llene de basura criptográfica.
     if (err?.message?.includes('Bad MAC') || err?.message?.includes('Decryption failed')) {
-        console.warn('⚠️ [SIGNAL-ERROR] Corrupción de llaves detectada (Bad MAC). Se recomienda resetear la conexión desde el panel.');
+        // Log discreto para monitoreo
+        // console.warn('⚠️ [SIGNAL-ERROR] Corrupción de llaves detectada (Bad MAC). El cliente intentará autorecuperarse.');
         return;
     }
     console.error('🔥 [CRITICAL] Uncaught Exception:', err);
@@ -30,7 +32,7 @@ import { ngrokService } from './services/ngrokService.js'; // NEW IMPORT
 (process as any).on('unhandledRejection', (reason: any, promise: any) => {
     // SILENCIADOR DE BAD MAC EN PROMESAS
     const msg = reason?.toString() || '';
-    if (msg.includes('Bad MAC') || msg.includes('Decryption failed')) {
+    if (msg.includes('Bad MAC') || msg.includes('Decryption failed') || msg.includes('No session found')) {
         return; // Ignorar ruido en logs
     }
 

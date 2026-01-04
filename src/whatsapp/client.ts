@@ -138,12 +138,14 @@ export function getSocket(userId: string): WASocket | undefined {
 
 export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
     const attempts = reconnectionAttempts.get(userId) || 0;
-    if (attempts >= 5) {
-        logService.error(`[WA-CLIENT] Máximo de reconexiones alcanzado para ${userId}. Abortando.`, userId);
-        return; // Abort
+    if (attempts >= 10) { // Aumentado límite de reintentos a 10 para ser más resiliente
+        logService.error(`[WA-CLIENT] Máximo de reconexiones alcanzado para ${userId}. Pausa de seguridad.`, userId);
+        // Reset counter after timeout to allow future retries
+        setTimeout(() => reconnectionAttempts.set(userId, 0), 60000 * 5); 
+        return; 
     }
     reconnectionAttempts.set(userId, attempts + 1);
-    logService.warn(`[WA-CLIENT] Intento de conexión #${attempts + 1} para ${userId}`, userId);
+    logService.info(`[WA-CLIENT] Intento de conexión #${attempts + 1} para ${userId}`, userId);
 
     const oldSock = sessions.get(userId);
     if (oldSock) {
@@ -164,7 +166,6 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
     await new Promise(resolve => setTimeout(resolve, 2000));
 
     try {
-        logService.info(`[WA-CLIENT] Iniciando motor WhatsApp (Intento Limpio) para: ${userId}`, userId);
         const { state, saveCreds } = await useMongoDBAuthState(userId);
         const { version } = await fetchLatestBaileysVersion();
         
@@ -182,15 +183,18 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
             agent: user?.settings?.proxyUrl ? new HttpsProxyAgent(user.settings.proxyUrl) as any : undefined,
             generateHighQualityLinkPreview: true,
             shouldIgnoreJid: jid => jid?.endsWith('@broadcast') || jid?.endsWith('@newsletter'), 
-            syncFullHistory: true,
-            markOnlineOnConnect: true, 
+            
+            // --- ESTABILIDAD CRÍTICA ---
+            // 1. Desactivar syncFullHistory: Evita sobrecarga inicial y corrupción de llaves.
+            syncFullHistory: false, 
+            // 2. Mark Online: False para reducir eventos push innecesarios al conectar.
+            markOnlineOnConnect: false, 
+            
             defaultQueryTimeoutMs: 60000, 
-            keepAliveIntervalMs: 10000, 
-            retryRequestDelayMs: 2000,
+            keepAliveIntervalMs: 20000, // Aumentado keep-alive
+            retryRequestDelayMs: 5000, // Mayor delay entre reintentos internos
             connectTimeoutMs: 60000,
-            // CONFIGURACIÓN DE ESTABILIDAD: Cache de reintentos para evitar Bad MAC
             msgRetryCounterCache: retryCache,
-            // BLOQUE 5: HISTORIAL NO DEBE ROMPER CONTEXTO
             getMessage: async () => undefined
         });
 
@@ -198,22 +202,9 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
 
         sock.ev.on('creds.update', saveCreds);
 
-        // BLOQUE 3: DESINCRONIZACIÓN SIGNAL (MessageCounterError)
-        sock.ev.on('messages.update', async (updates) => {
-            for (const update of updates) {
-                // @ts-ignore
-                const err = update.error;
-                if (err?.message?.includes('MessageCounterError') || (update as any).update?.messageStubType === proto.WebMessageInfo.StubType.CIPHERTEXT) {
-                    logService.warn('[WA-CLIENT] 🔴 Signal desync detected (MessageCounterError). Forcing session purge.', userId);
-                    await clearBindedSession(userId);
-                    // PATCH: Reset attempts so immediate reconnection doesn't fail
-                    reconnectionAttempts.set(userId, 0); 
-                    await disconnectWhatsApp(userId);
-                    setTimeout(() => connectToWhatsApp(userId, phoneNumber), 2000);
-                    return;
-                }
-            }
-        });
+        // --- MANEJO DE ERRORES SIGNAL SIN PURGADO ---
+        // Eliminado el bloque que detectaba Bad MAC y borraba la sesión.
+        // Ahora Baileys intentará manejarlo internamente solicitando nuevas llaves si es posible.
 
         sock.ev.on('connection.update', async (update: any) => { 
             const { connection, lastDisconnect, qr, isNewLogin, pairingCode: newPairingCode } = update;
@@ -247,22 +238,31 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                 const disconnectError = lastDisconnect?.error as Boom;
                 const statusCode = disconnectError?.output?.statusCode;
                 
-                // 401 (Logged Out) or 428 (Precondition Required - often corruption)
-                const isLoggedOut = statusCode === DisconnectReason.loggedOut || statusCode === 428;
+                // SOLO desconectar permanentemente si es 401 (Logged Out explícito).
+                // Para 428 (Precondition Required), 515 (Stream), etc., hacemos "Soft Retry" (reconectar sin borrar).
+                const isLoggedOut = statusCode === DisconnectReason.loggedOut;
 
                 qrCache.delete(userId);
                 codeCache.delete(userId);
                 sessions.delete(userId);
 
                 if (isLoggedOut) {
-                    logService.warn(`[WA-CLIENT] ⚠️ Sesión inválida o corrupta (${statusCode}). Purgando datos para re-enlace limpio.`, userId);
+                    logService.warn(`[WA-CLIENT] ⚠️ Sesión cerrada por WhatsApp (401). Se requiere re-escaneo.`, userId);
                     await clearBindedSession(userId); 
                     reconnectionAttempts.set(userId, 0); 
                     setTimeout(() => connectToWhatsApp(userId, phoneNumber), 2000);
                 } else {
+                    // SOFT RECONNECT STRATEGY
                     const currentAttempts = reconnectionAttempts.get(userId) || 0;
-                    const delay = Math.min(60000, 3000 * Math.pow(1.5, currentAttempts));
-                    logService.warn(`[WA-CLIENT] Conexión interrumpida (Código: ${statusCode}). Reconectando en ${Math.round(delay/1000)}s... (Intento #${currentAttempts + 1})`, userId);
+                    // Exponential backoff limitado a 30s
+                    const delay = Math.min(30000, 2000 * Math.pow(1.5, currentAttempts)); 
+                    
+                    if (statusCode === 428) {
+                         logService.warn(`[WA-CLIENT] Conexión inestable (428). Reiniciando socket en ${Math.round(delay/1000)}s...`, userId);
+                    } else {
+                         logService.warn(`[WA-CLIENT] Conexión interrumpida (Código: ${statusCode}). Reconectando en ${Math.round(delay/1000)}s...`, userId);
+                    }
+                    
                     setTimeout(() => connectToWhatsApp(userId, phoneNumber), delay); 
                 }
 
@@ -314,7 +314,8 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
             if (!messages || messages.length === 0) return;
             
             if (type === 'append' && messages.length > 5) {
-                logService.info(`[HISTORY] 📥 Procesando batch de ${messages.length} mensajes...`, userId);
+                // Silenciar logs de carga masiva
+                // logService.info(`[HISTORY] 📥 Procesando batch...`, userId);
             }
             
             try {

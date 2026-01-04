@@ -63,16 +63,16 @@ export const generateBotResponse = async (
   // 2. Adjust History Depth based on Capabilities
   const memoryLimit = capabilities.memoryDepth || 15;
   const historyText = conversation.messages.slice(-memoryLimit).map(m => {
-      let role = 'Dominion_Bot';
+      let role = 'Vendedor';
       if (m.sender === 'user' || m.sender === 'elite_bot') {
           role = 'Cliente';
       } else if (m.sender === 'owner') {
-          role = 'Agente_Humano';
+          role = 'Vendedor_Humano';
       }
       return `${role}: ${m.text}`;
   }).join('\n');
 
-  const prompt = `## HISTORIAL DE SEÑALES (Profundidad: ${memoryLimit} msgs):\n${historyText}`;
+  const prompt = `## HISTORIAL DE CONVERSACIÓN (Últimos ${memoryLimit} msgs):\n${historyText}`;
 
   // 3. CONSTRUCT SYSTEM INSTRUCTION
   let systemInstruction = "";
@@ -81,45 +81,49 @@ export const generateBotResponse = async (
       // --- ADVANCED MODULAR LOGIC ---
       const modulesContext = settings.neuralConfig.modules.map(m => `
 --- MÓDULO EXPERTO: ${m.name} ---
-[PALABRAS CLAVE / INTENCIÓN]: ${m.triggerKeywords}
-[CONTEXTO ESPECÍFICO (FUENTE DE VERDAD)]:
+[ACTIVADORES]: ${m.triggerKeywords}
+[INFORMACIÓN EXPERTA]:
 ${m.contextContent}
 ----------------------------------
 `).join('\n');
 
       systemInstruction = `
-# SISTEMA NEURAL MODULAR v1.0 (ROUTER ACTIVO)
-Eres el Nodo Central de Inteligencia para "${settings.productName}".
-Tu Nivel de Profundidad Cognitiva es ${capabilities.depthLevel}.
+# SISTEMA NEURAL MODULAR (ROUTER ACTIVO)
+Actúa como el Nodo Central de Inteligencia para "${settings.productName}".
 
-## TU MISIÓN GLOBAL (IDENTIDAD MAESTRA):
+## IDENTIDAD MAESTRA:
 ${settings.neuralConfig.masterIdentity}
 
-## MÓDULOS DE CONOCIMIENTO DISPONIBLES:
+## MÓDULOS DE CONOCIMIENTO:
 ${modulesContext}
 
-## REGLAS DE ENRUTAMIENTO Y VERDAD:
-1. Analiza el último mensaje del cliente and el historial.
-2. Si la intención coincide con un MÓDULO EXPERTO, ADOPTA ESA PERSONALIDAD TOTALMENTE.
-3. **CANDADO COGNITIVO (PRECIOS):** Tu única fuente de verdad para precios es el texto dentro del [CONTEXTO ESPECÍFICO].
-4. Responde de forma fluida.
+## REGLAS DE EJECUCIÓN:
+1. Analiza la intención del cliente.
+2. Si coincide con un MÓDULO EXPERTO, usa esa información como verdad absoluta.
+3. Responde como un humano en WhatsApp (breve, directo).
 `;
   } else {
-      // --- CLASSIC LINEAL LOGIC ---
+      // --- CLASSIC LINEAL LOGIC (HUMANIZED) ---
       systemInstruction = `
-# CONSTITUCIÓN DOMINION BOT v2.9 (ELITE - Depth Level ${capabilities.depthLevel})
-Eres un Agente Comercial Autónomo operando en Mendoza, Argentina para "${settings.productName}".
+# ROL: VENDEDOR EXPERTO (WhatsApp)
+Estás operando el WhatsApp comercial de "${settings.productName}".
+Tu objetivo es VENDER y ASISTIR, no dar discursos ni parecer un folleto.
 
-## REGLAS DE ORO:
-- Responde en Español Argentino Profesional (Voseo).
-- PROHIBIDO: Emojis excesivos, mencionar que eres una IA.
-- PROHIBIDO ALUCINAR PRECIOS: Tu única verdad es: "${settings.priceText}".
-- Sé directo y eficiente.
-
-## CONTEXTO DE PRODUCTO:
+## 🧠 TU CEREBRO (DATOS DEL NEGOCIO):
 ${settings.productDescription}
-- Precio: ${settings.priceText}.
-- Link de Cierre: ${settings.ctaLink}.
+- PRECIO OFICIAL: ${settings.priceText} (Úsalo solo si preguntan específicamente).
+- LINK DE CIERRE: ${settings.ctaLink}.
+
+## 🚫 REGLAS DE FORMATO (CRÍTICO):
+1. **NUNCA uses doble asterisco (**texto**).** WhatsApp NO lo reconoce. Rompe la ilusión humana inmediatamente.
+2. Usa un solo asterisco (*texto*) para negritas, pero ÚSALO POCO. Solo para resaltar precios o datos clave. El exceso de negritas parece spam.
+3. **NO uses listas con viñetas (- )** a menos que te pidan explícitamente "qué incluye". Escribe en párrafos cortos y fluidos.
+4. **NO SALUDES** como un robot ("Hola, soy el especialista..."). Si ya saludaste, ve al grano. Si el cliente ya sabe quién eres, no te presentes.
+5. **BREVEDAD:** Si puedes decirlo en 10 palabras, no uses 20. La gente en WhatsApp no lee biblias.
+6. **TONO:** Usa voseo natural si es Argentina ("¿Cómo estás?", "¿Qué te parece?"). Profesional pero cercano. Evita palabras como "estimado", "cordial saludo".
+
+## 🎯 OBJETIVO TÁCTICO:
+Lleva al cliente al cierre o a agendar. Si duda, resuelve la duda en una frase y vuelve a proponer el siguiente paso. No dejes el chat abierto sin una pregunta o call-to-action.
 `;
   }
 
@@ -127,17 +131,14 @@ ${settings.productDescription}
   const hasHumanIntervened = conversation.tags.includes('HUMAN_TOUCH');
   
   systemInstruction += `
-## PROTOCOLO DE CALIFICACIÓN INTELIGENTE:
-- **FRÍO (COLD):** Consulta inicial o sin intención clara.
-- **TIBIO (WARM):** El cliente tiene dudas, pide detalles, pregunta "qué incluye" o muestra interés pero TIENE PREGUNTAS. 
-- **CALIENTE (HOT):** El cliente NO TIENE MÁS DUDAS. Está pidiendo el link de pago, el CBU, o confirmando que va a comprar AHORA MISMO.
+## TERMÓMETRO DE VENTA (ESTADOS):
+- **FRÍO (COLD):** Curiosidad inicial, sin compromiso.
+- **TIBIO (WARM):** Pregunta detalles, precios, dudas. Hay interés real.
+- **CALIENTE (HOT):** Pide CBU, Link de Pago, Dirección exacta o dice "Lo quiero". Cierre inminente.
 
 ${hasHumanIntervened ? `
-### ATENCIÓN: INTERVENCIÓN HUMANA DETECTADA (HUMAN_TOUCH)
-Un Agente Humano ya participó en este chat. 
-TU NUEVA MISIÓN: Quédate en estado TIBIO (WARM) y responde CUALQUIER duda técnica o de confianza que surja. 
-NO actives el modo CALIENTE (HOT) a menos que el cliente esté 100% listo para el pago final y no tenga ninguna otra duda pendiente. 
-Tu prioridad es APOYAR al humano, no callarte prematuramente.
+⚠️ ALERTA: Un humano ya intervino.
+TU MISIÓN AHORA: Apoyo Táctico. Responde dudas técnicas. NO intentes cerrar agresivamente sobre el humano. Mantén el estado TIBIO (WARM) a menos que el cliente diga explícitamente "Compro ya".
 ` : ''}
 `;
 
@@ -145,15 +146,18 @@ Tu prioridad es APOYAR al humano, no callarte prematuramente.
   if (features.close_assist) {
       if (isSimulation || settings.isAutonomousClosing) {
           systemInstruction += `
-## PROTOCOLO DE CIERRE AUTÓNOMO (GUARDIA ACTIVA - isAutonomousClosing=TRUE):
-- SI EL LEAD ES CALIENTE: Tienes permiso total para cerrar la venta de forma autónoma. NO te silencies. 
-- Genera una 'responseText' de cierre convincente.
-- Usa el precio exacto "${settings.priceText}" y el link "${settings.ctaLink}".
+## MODO AUTÓNOMO (CIERRE ACTIVO):
+- Si detectas intención de compra (HOT), TIENES PERMISO PARA CERRAR.
+- Pasa el precio "${settings.priceText}" y el link "${settings.ctaLink}" con confianza.
+- Frase de cierre sugerida: "Te dejo el link para confirmar ahora: [LINK]. ¿Te queda alguna duda?"
 `;
       } else {
           systemInstruction += `
-## PROTOCOLO "HOT-SHADOW" (MODO MANUAL - isAutonomousClosing=FALSE):
-- SI EL LEAD ES CALIENTE (y solo si está 100% para cerrar sin dudas): NO generes 'responseText'. Genera 3 'suggestedReplies' para que el humano las use.
+## MODO SHADOW (ASISTENTE SILENCIOSO):
+- Si el cliente está LISTO PARA COMPRAR (HOT):
+- 1. Cambia 'newStatus' a HOT.
+- 2. Deja 'responseText' VACÍO (o null).
+- 3. Genera 3 'suggestedReplies' perfectas para que el humano las envíe con un clic.
 `;
       }
   }
@@ -161,7 +165,7 @@ Tu prioridad es APOYAR al humano, no callarte prematuramente.
   const responseSchema: any = {
       type: Type.OBJECT,
       properties: {
-          responseText: { type: Type.STRING },
+          responseText: { type: Type.STRING, description: "El mensaje que se enviará por WhatsApp. Déjalo vacío si es momento de callar (Shadow Mode)." },
           newStatus: { type: Type.STRING, enum: [LeadStatus.COLD, LeadStatus.WARM, LeadStatus.HOT] },
           tags: { type: Type.ARRAY, items: { type: Type.STRING } },
       },
@@ -173,11 +177,9 @@ Tu prioridad es APOYAR al humano, no callarte prematuramente.
       responseSchema.properties.recommendedAction = { type: Type.STRING };
   }
   
-  systemInstruction += `
-## FORMATO DE SALIDA (JSON):
-${JSON.stringify(Object.keys(responseSchema.properties))}
-`;
-  
+  // Clean empty/null values from user inputs to avoid JSON errors
+  prompt.replace(/undefined/g, '');
+
   try {
       const response = await generateContentWithFallback({
           apiKey: cleanKey,
@@ -193,9 +195,11 @@ ${JSON.stringify(Object.keys(responseSchema.properties))}
       const jsonText = response.text;
       const result = JSON.parse(jsonText.trim());
 
+      // Fallback/Safety Defaults
       if (!features.lead_scoring) result.newStatus = LeadStatus.WARM;
       if (!features.close_assist) result.suggestedReplies = undefined;
       
+      // Cache Result
       if (lastMessage && (lastMessage.sender === 'user' || lastMessage.sender === 'elite_bot')) {
           const cacheKey = `${user.id}::${lastMessage.text.trim()}`;
           aiResponseCache.set(cacheKey, { timestamp: Date.now(), data: result });
@@ -205,10 +209,10 @@ ${JSON.stringify(Object.keys(responseSchema.properties))}
 
   } catch (err: any) {
       logService.error(`[AI-SERVICE] Fallo total de la matriz de IA para ${user.username}`, err, user.id);
-      // Fallback a una respuesta segura en caso de fallo total
+      // Fallback a una respuesta segura en caso de fallo total, pero HUMANIZADA
       return { 
-          responseText: "Disculpa, estoy experimentando una alta demanda. Un agente te atenderá en breve.", 
-          newStatus: conversation.status, // Mantener estado actual
+          responseText: "Disculpa, dame un segundo que reviso eso y te confirmo.", 
+          newStatus: conversation.status, 
           tags: ['AI_FAILURE'] 
       };
   }
@@ -222,24 +226,18 @@ export const regenerateSimulationScript = async (userId: string) => {
         logService.info(`[SIM-LAB] Generando script de estrés para ${user.username}...`, userId);
         
         const prompt = `
-        ACT AS: Un cliente potencial escéptico y directo.
-        
-        CONTEXTO DE NEGOCIO (Lo que estás evaluando comprar):
-        "${user.settings.productDescription}"
+        ACT AS: Un cliente potencial escéptico y directo en WhatsApp.
+        CONTEXTO DE NEGOCIO: "${user.settings.productDescription}"
         
         TU TAREA:
-        Genera una secuencia de 5 a 7 mensajes cronológicos que simulen una interacción de compra natural y desafiante.
-        Debes empezar desde un "Hola" frío, pasar por preguntas sobre el producto, objeciones de precio, y terminar preguntando cómo comprar (o dudando).
+        Genera una secuencia de 5 mensajes cronológicos que simulen una compra difícil.
         
         REGLAS:
-        - Idioma: Español Argentino (Natural, coloquial pero serio).
-        - Mensajes cortos (como en WhatsApp).
-        - Incluye al menos 1 pregunta difícil u objeción.
+        - Español Argentino.
+        - Mensajes cortos (tipo WhatsApp).
+        - Debe haber una objeción de precio o competencia.
         
-        OUTPUT FORMAT (JSON):
-        {
-            "script": ["Mensaje 1", "Mensaje 2", ...]
-        }
+        OUTPUT JSON: { "script": ["Mensaje 1", "Mensaje 2", ...] }
         `;
 
         const responseSchema = {
@@ -255,19 +253,13 @@ export const regenerateSimulationScript = async (userId: string) => {
             responseSchema: responseSchema
         });
 
-        if (!response || !response.text) {
-             throw new Error("Respuesta vacía del servicio de IA para la generación de script.");
-        }
+        if (!response || !response.text) throw new Error("Empty AI response");
 
         const json = JSON.parse(response.text || '{}');
-        if (json.script && Array.isArray(json.script) && json.script.length > 0) {
-            
-            // Save to User Simulation Lab
+        if (json.script && Array.isArray(json.script)) {
             const currentLab = user.simulationLab || { experiments: [], aggregatedScore: 0, topFailurePatterns: {} };
             const updatedLab = { ...currentLab, customScript: json.script };
-            
             await db.updateUser(userId, { simulationLab: updatedLab });
-            logService.info(`[SIM-LAB] Script personalizado guardado (${json.script.length} msgs).`, userId);
         }
 
     } catch (e: any) {
