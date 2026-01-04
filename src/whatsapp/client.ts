@@ -138,9 +138,8 @@ export function getSocket(userId: string): WASocket | undefined {
 
 export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
     const attempts = reconnectionAttempts.get(userId) || 0;
-    if (attempts >= 10) { // Aumentado límite de reintentos a 10 para ser más resiliente
+    if (attempts >= 10) { 
         logService.error(`[WA-CLIENT] Máximo de reconexiones alcanzado para ${userId}. Pausa de seguridad.`, userId);
-        // Reset counter after timeout to allow future retries
         setTimeout(() => reconnectionAttempts.set(userId, 0), 60000 * 5); 
         return; 
     }
@@ -184,15 +183,12 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
             generateHighQualityLinkPreview: true,
             shouldIgnoreJid: jid => jid?.endsWith('@broadcast') || jid?.endsWith('@newsletter'), 
             
-            // --- ESTABILIDAD CRÍTICA ---
-            // 1. Desactivar syncFullHistory: Evita sobrecarga inicial y corrupción de llaves.
             syncFullHistory: false, 
-            // 2. Mark Online: False para reducir eventos push innecesarios al conectar.
             markOnlineOnConnect: false, 
             
             defaultQueryTimeoutMs: 60000, 
-            keepAliveIntervalMs: 20000, // Aumentado keep-alive
-            retryRequestDelayMs: 5000, // Mayor delay entre reintentos internos
+            keepAliveIntervalMs: 20000, 
+            retryRequestDelayMs: 5000, 
             connectTimeoutMs: 60000,
             msgRetryCounterCache: retryCache,
             getMessage: async () => undefined
@@ -201,10 +197,6 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
         sessions.set(userId, sock);
 
         sock.ev.on('creds.update', saveCreds);
-
-        // --- MANEJO DE ERRORES SIGNAL SIN PURGADO ---
-        // Eliminado el bloque que detectaba Bad MAC y borraba la sesión.
-        // Ahora Baileys intentará manejarlo internamente solicitando nuevas llaves si es posible.
 
         sock.ev.on('connection.update', async (update: any) => { 
             const { connection, lastDisconnect, qr, isNewLogin, pairingCode: newPairingCode } = update;
@@ -235,26 +227,31 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
             }
 
             if (connection === 'close') {
-                const disconnectError = lastDisconnect?.error as Boom;
+                const disconnectError = lastDisconnect?.error as Boom | any;
                 const statusCode = disconnectError?.output?.statusCode;
                 
-                // SOLO desconectar permanentemente si es 401 (Logged Out explícito).
-                // Para 428 (Precondition Required), 515 (Stream), etc., hacemos "Soft Retry" (reconectar sin borrar).
-                const isLoggedOut = statusCode === DisconnectReason.loggedOut;
+                // DETECCIÓN AVANZADA DE ERRORES DE CRIPTO (Bad MAC)
+                const errorMessage = disconnectError?.message || disconnectError?.output?.payload?.message || '';
+                const isCryptoError = errorMessage.includes('Bad MAC') || errorMessage.includes('Decryption failed') || errorMessage.includes('Session');
+                
+                const isLoggedOut = statusCode === DisconnectReason.loggedOut || isCryptoError;
 
                 qrCache.delete(userId);
                 codeCache.delete(userId);
                 sessions.delete(userId);
 
                 if (isLoggedOut) {
-                    logService.warn(`[WA-CLIENT] ⚠️ Sesión cerrada por WhatsApp (401). Se requiere re-escaneo.`, userId);
+                    const reason = isCryptoError ? 'Corrupción de Llaves (Bad MAC)' : 'Cierre de Sesión (401)';
+                    logService.warn(`[WA-CLIENT] ⚠️ Sesión destruida por ${reason}. Ejecutando purgado completo.`, userId);
+                    
+                    // PURGADO NUCLEAR: Borrar sesión corrupta para obligar re-escaneo limpio
                     await clearBindedSession(userId); 
                     reconnectionAttempts.set(userId, 0); 
+                    
                     setTimeout(() => connectToWhatsApp(userId, phoneNumber), 2000);
                 } else {
                     // SOFT RECONNECT STRATEGY
                     const currentAttempts = reconnectionAttempts.get(userId) || 0;
-                    // Exponential backoff limitado a 30s
                     const delay = Math.min(30000, 2000 * Math.pow(1.5, currentAttempts)); 
                     
                     if (statusCode === 428) {
@@ -272,12 +269,9 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                 qrCache.delete(userId);
                 codeCache.delete(userId);
                 
-                // SIEMPRE asegurar que el número esté guardado en DB al conectar,
-                // para reparar casos donde se borró por error.
                 if (sock.user?.id) {
                     const connectedNumber = sock.user.id.split('@')[0];
                     await db.updateUser(userId, { whatsapp_number: connectedNumber });
-                    // Force Active on connect to avoid zombie state
                     await db.updateUserSettings(userId, { isActive: true });
                 }
             }
@@ -315,13 +309,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
         sock.ev.on('messages.upsert', async ({ messages, type }) => {
             if (!messages || messages.length === 0) return;
             
-            if (type === 'append' && messages.length > 5) {
-                // Silenciar logs de carga masiva
-                // logService.info(`[HISTORY] 📥 Procesando batch...`, userId);
-            }
-            
             try {
-                // Fetch User & Conversations ONCE for the batch
                 const user = await db.getUser(userId);
                 const ignoredJids = user?.settings.ignoredJids || [];
                 const userConversations = user?.conversations || {};
@@ -330,12 +318,10 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                 
                 for (const msg of messages) {
                     const rawJid = msg.key.remoteJid;
-                    const canonicalJid = normalizeJid(rawJid); // BLOQUE 1
+                    const canonicalJid = normalizeJid(rawJid); 
                     
                     if (!canonicalJid || canonicalJid === 'status@broadcast' || canonicalJid.endsWith('@newsletter')) continue; 
 
-                    // BLOCK: Blacklist Check
-                    // canonicalJid ya fue validado arriba (normalizeJid guard)
                     const number = canonicalJid.split('@')[0];
                     if (ignoredJids.some(ignored => number.includes(ignored))) {
                         continue;
@@ -345,12 +331,10 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                     messagesByJid[canonicalJid].push(msg);
                 }
 
-                // Process each chat's batch
                 const chatProcessPromises = Object.keys(messagesByJid).map(async (canonicalJid) => {
                     const chatMessages = messagesByJid[canonicalJid];
                     const isGroup = canonicalJid.endsWith('@g.us');
 
-                    // --- GROUP LOGIC (RADAR ONLY) ---
                     if (isGroup) {
                         if (type === 'notify') {
                             for (const msg of chatMessages) {
@@ -365,32 +349,28 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                         return; 
                     }
 
-                    // --- PRIVATE CHAT LOGIC (INBOX) ---
-                    
-                    // BLOQUE 2: ELIMINAR CHAT SI VOS INICIÁS LA CONVERSACIÓN
                     const firstMsg = chatMessages[0];
                     const isOwnerMessage = firstMsg.key.fromMe;
                     
-                    // Check existence in the fetched map using sanitizeKey for DB compatibility
                     const safeJid = sanitizeKey(canonicalJid);
-                    // Deterministic lookup (Block 4 logic preview)
                     const conversationExists = userConversations[safeJid] || userConversations[canonicalJid];
 
                     if (isOwnerMessage && !conversationExists) {
-                        // IGNORAR TOTALMENTE: No crear chat, no guardar mensaje
                         return;
                     }
 
                     const bestName = firstMsg.pushName || (firstMsg as any).verifiedBizName || undefined;
                     
-                    // Hydrate conversation only if allowed (it exists or it's inbound)
                     await conversationService.ensureConversationsExist(userId, [{ jid: canonicalJid, name: bestName }]);
 
                     for (const msg of chatMessages) {
                         try {
                             const messageText = extractMessageContent(msg);
                             
+                            // Si no hay texto, verificamos si es otro tipo de mensaje para loguearlo al menos
+                            // Esto ayuda a que el bot sepa que "algo" pasó, aunque no entienda qué.
                             if (!messageText) {
+                                // Aquí podríamos agregar soporte para tipos no soportados
                                 continue; 
                             }
 
@@ -406,14 +386,12 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
 
                             const senderName = msg.pushName || (msg as any).verifiedBizName || undefined;
 
-                            // 1. SAVE TO DB
                             await conversationService.addMessage(userId, canonicalJid, userMessage, senderName, isOldForAI);
                             
                             if (!msg.key.fromMe && !isOldForAI) {
                                 logService.info(`[INBOX] 📩 Mensaje procesado de ${senderName || canonicalJid}: "${messageText.substring(0, 20)}..."`, userId);
                             }
 
-                            // 2. QUEUE FOR AI (If new and not from me)
                             if (!msg.key.fromMe && !isOldForAI && type === 'notify') {
                                 aiProcessingQueue.add(`${userId}::${canonicalJid}`);
                             }
@@ -452,8 +430,6 @@ export async function disconnectWhatsApp(userId: string) {
     
     await new Promise(resolve => setTimeout(resolve, 500));
     await clearBindedSession(userId); 
-    // NO borrar el número de WhatsApp aquí. Solo se debe borrar si el usuario lo pide explícitamente (Wipe).
-    // await db.updateUser(userId, { whatsapp_number: '' }); 
     await db.updateUserSettings(userId, { isActive: false });
 }
 
