@@ -1,9 +1,8 @@
 
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { Campaign, WhatsAppGroup, BotSettings } from '../types';
 import { getAuthHeaders } from '../config';
-import { GoogleGenAI } from '@google/genai';
+import { generateContentWithFallback } from '../services/geminiService'; // NEW IMPORT
 
 interface CampaignsPanelProps {
     token: string;
@@ -204,7 +203,6 @@ export const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUr
         setGeneratedPrompt('');
 
         try {
-            const ai = new GoogleGenAI({ apiKey: settings.geminiApiKey });
             const prompt = `
 Actúa como un director de arte y experto en marketing visual. Basado en el siguiente texto de una campaña de WhatsApp, crea un prompt detallado y profesional para un generador de imágenes de IA como Midjourney o DALL-E 3.
 
@@ -222,12 +220,12 @@ Incluye los siguientes elementos en tu prompt:
 
 **Tu prompt generado:**
 `;
-            const response = await ai.models.generateContent({
-                model: 'gemini-3-flash-preview',
-                contents: prompt,
+            const response = await generateContentWithFallback({
+                apiKey: settings.geminiApiKey,
+                prompt: prompt
             });
 
-            if (response.text) {
+            if (response && response.text) {
                 setGeneratedPrompt(response.text.trim());
                 showToast('Prompt generado con éxito.', 'success');
             } else {

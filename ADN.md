@@ -30,7 +30,8 @@ El mercado moderno no sufre de falta de demanda, sufre de **exceso de ruido**. U
 La automatización total en ventas de alto valor es una falacia. La IA es una herramienta de apalancamiento, no un reemplazo para el juicio humano y la conexión personal.
 
 - **La IA Califica, el Humano Cierra:** El rol de Dominion es manejar el 80% del trabajo de bajo valor: responder preguntas frecuentes, filtrar curiosos y medir la "temperatura" de un lead.
-- **Protocolo de Escalada:** Una vez que una señal es calificada como "Caliente", el sistema entra en "Shadow Mode", silenciando la IA y alertando al vendedor humano. Provee sugerencias de respuesta ("Copiloto") pero cede el control para el cierre final. El humano siempre está al mando en la fase crítica.
+- **Protocolo de Escalada (Shadow Mode):** Una vez que una señal es calificada como "Caliente", el sistema entra en "Shadow Mode", silenciando la IA y alertando al vendedor humano. Provee sugerencias de respuesta ("Copiloto") pero cede el control para el cierre final.
+- **Anulación Experta (Guardia Autónoma):** Para usuarios avanzados, el modo "Guardia Autónoma" (`isAutonomousClosing`) anula el Shadow Mode. Cuando está activo, la IA tiene permiso para intentar cerrar la venta de forma autónoma, enviando el link de pago sin intervención humana. El humano siempre está al mando en la fase crítica, decidiendo si activa esta guardia o no.
 
 ### 3. Soberanía de Datos y Costos (BYOK)
 La inteligencia comercial y los datos de clientes son los activos más valiosos de una empresa. No deben ser cedidos a terceros.
@@ -43,7 +44,7 @@ La inteligencia comercial y los datos de clientes son los activos más valiosos 
 ### 4. Mercado Objetivo: Calidad sobre Cantidad
 Dominion no está diseñado para spam o marketing masivo. Está optimizado para operaciones donde cada conversación importa y el costo de un lead perdido es alto.
 
-- **Perfil Ideal:** Agencias, consultores, servicios de alto ticket, inmobiliarias, y cualquier negocio que dependa de la venta consultiva.
+- **Perfil Ideal:** Agencias, consultores, servicios de alto valor (High-Ticket), inmobiliarias, y cualquier negocio que dependa de la venta consultiva.
 - **Métrica Clave:** No medimos el éxito por "mensajes enviados", sino por "leads calientes entregados al equipo de ventas".
 
 ---
@@ -169,6 +170,7 @@ Dominion opera como una plataforma de Software como Servicio (SaaS) donde múlti
 
 - **Infraestructura Centralizada:** Un único backend y base de datos sirven a todos los clientes.
 - **Aislamiento de Datos:** Cada pieza de información (usuarios, conversaciones, configuraciones) está estrictamente vinculada a un `userId`.
+- **Precios Configurables:** Los precios y descripciones de los planes son gestionados dinámicamente desde el panel del `super_admin`, permitiendo flexibilidad comercial. Los valores aquí listados son los de lanzamiento.
 
 ### 2. Estrategia de Precios por Profundidad (Tiered Pricing)
 La oferta comercial de Dominion está directamente ligada a la potencia del **Depth Engine**. Los clientes eligen el nivel de profundidad cognitiva que necesitan, pagando solo por la capacidad de razonamiento que utilizan.
@@ -263,11 +265,11 @@ Para recompensar a los primeros usuarios y construir una base de clientes leal, 
         - **Database Seeding:** Testimonios iniciales y datos de arranque inyectados desde el servidor para persistencia real.
 5.  **Core de IA:**
     - **Servicio:** Google Gemini API (`@google/genai`).
-    - **Función:** Recibe el historial de una conversación y las directivas del "Cerebro Neural" desde el Backend. Procesa el texto y devuelve una respuesta estructurada en JSON con el texto a enviar, el nuevo estado del lead, tags, etc.
+    - **Función:** Centralizado en `geminiService.ts`, gestiona la lógica de fallback de 5 modelos y la lista negra (cooldown), garantizando máxima resiliencia. Recibe el historial de una conversación y las directivas del "Cerebro Neural" desde el Backend. Procesa el texto y devuelve una respuesta estructurada en JSON.
 
 ### 3. Estado y Memoria (In-Memory Strategy)
 Para garantizar la máxima velocidad de respuesta en "High Frequency Trading" (conversaciones rápidas), el sistema mantiene deliberadamente ciertos estados críticos en memoria RAM (Volatile Memory):
-- **Blacklists & Cooldowns:** Listas de bloqueo temporal de modelos de IA.
+- **Blacklists & Cooldowns:** Listas de bloqueo temporal de modelos de IA, persistidas en DB para reinicios.
 - **Campaign Locks:** Semáforos para evitar duplicación de campañas.
 - **QR Cache:** Imágenes QR temporales.
 **Nota Técnica:** Esta decisión arquitectónica maximiza el throughput en arquitecturas de nodo único (Single-Tenant o Small-Cluster), pero requiere una estrategia de "Graceful Shutdown" para no perder estado en reinicios.
@@ -278,7 +280,7 @@ Para garantizar la máxima velocidad de respuesta en "High Frequency Trading" (c
 3.  **Procesamiento Inicial:** El motor identifica a qué cliente (`userId`) pertenece el mensaje y lo reenvía al servicio de conversaciones del Backend.
 4.  **Persistencia:** El `conversationService` guarda el mensaje entrante en la conversación correspondiente en MongoDB.
 5.  **Debounce y Calificación:** Se activa un temporizador de 6 segundos. Si no llegan más mensajes del mismo usuario en ese tiempo, se procede a la calificación.
-6.  **Llamada a IA:** El Backend construye un prompt con el historial de la conversación y las configuraciones del cliente (`BotSettings`).
+6.  **Llamada a IA:** El Backend, a través de `geminiService.ts`, construye un prompt y utiliza la Matriz de Derivación para obtener una respuesta.
 7.  **Inferencia:** Se envía el prompt a la API de Google Gemini a través de la API Key del cliente (modelo BYOK).
 8.  **Respuesta IA:** Gemini devuelve una respuesta JSON estructurada.
 9.  **Acción:**
@@ -323,7 +325,8 @@ Para garantizar la máxima velocidad de respuesta en "High Frequency Trading" (c
 ├── data/               # Datos estáticos (ej: textos legales)
 ├── middleware/         # Middlewares de Express (ej: autenticación)
 ├── services/           # Lógica de negocio y comunicación con APIs externas
-│   ├── aiService.ts      # Lógica de construcción de prompts y llamada a Gemini
+│   ├── aiService.ts      # Construcción de prompts (usa geminiService)
+│   ├── geminiService.ts  # [NUEVO] Orquestador central de llamadas a Gemini (con fallback)
 │   ├── radarService.ts   # Motor de detección de oportunidades grupales (Radar 3.0)
 │   ├── ngrokService.ts   # [NUEVO] Servicio de autodeteción de túneles
 │   ├── audioService.ts   # (Frontend) Gestión de reproducción de audio y TTS
@@ -465,8 +468,10 @@ Proporcionar feedback auditivo para acciones de UI/UX y reforzar la identidad de
 - **Watchdog de CPU:** Protección contra sobrecarga del servidor en arquitecturas monje-núcleo.
 - **Red Dominion:** Intercambio colaborativo de leads.
 - **Protocolo Smart Link:** Autorecuperación de conexión backend.
+- **Resiliencia Cognitiva:** Matriz de Derivación Secuencial y lista negra de modelos de IA.
 
-### 🚧 v3.2 (Hardening Phase - Próximo)
+### 🚧 v3.2 (Hardening Phase - En Progreso)
+- ✅ **Robustez del Código:** Implementación de validaciones más estrictas y manejo de errores granulares (ej: parseo de JSON).
 - **Migración de Estado Volátil:** Mover `processingCampaignIds` y `modelCooldowns` de memoria RAM a una capa persistente rápida (Redis/Mongo TTL) para escalar horizontalmente.
 - **Optimización de Carga Frontend:** Implementar polling adaptativo para reducir la carga en MongoDB cuando hay inactividad.
 - **Refuerzo de Baileys:** Implementar estrategia de "Session Restoration" avanzada para minimizar desconexiones inesperadas.
@@ -564,7 +569,7 @@ El `campaignService.ts` implementa un monitor de "Lag de Event Loop".
 ## 🛡️ ADDENDUM v3.1.2: RESILIENCIA COGNITIVA (FALLBACK MATRIX)
 
 ### 1. Arquitectura de Supervivencia (5-Tier Fallback)
-Para garantizar una disponibilidad del 99.9% incluso durante caídas de Google Cloud, hemos implementado una **Matriz de Derivación Secuencial** de 5 niveles.
+Para garantizar una disponibilidad del 99.9% incluso durante caídas de Google Cloud, hemos implementado una **Matriz de Derivación Secuencial** de 5 niveles, centralizada en `geminiService.ts`.
 - **Filosofía:** En un chatbot de ventas, la latencia es secundaria; la disponibilidad de la respuesta es absoluta.
 - **Secuencia de Disparo:**
     1.  `gemini-2.0-flash-exp` (Velocidad Experimental)
@@ -575,7 +580,7 @@ Para garantizar una disponibilidad del 99.9% incluso durante caídas de Google C
 
 ### 2. Sistema de Lista Negra Temporal (Cooldown Automático)
 Para evitar bucles de latencia infinita intentando consultar modelos caídos o agotados:
-- **Mecanismo:** Si un modelo falla (Error 5xx/429), el sistema lo ingresa automáticamente en una **Lista Negra en Memoria**.
+- **Mecanismo:** Si un modelo falla (Error 5xx/429), el sistema lo ingresa automáticamente en una **Lista Negra Persistente** en la base de datos.
 - **Penalización:** El modelo bloqueado es ignorado por el enrutador durante **60 minutos**.
 - **Resultado:** El sistema aprende qué "neuronas" están dañadas y las evita instantáneamente, redirigiendo el tráfico a nodos sanos sin que el usuario perciba el error.
 

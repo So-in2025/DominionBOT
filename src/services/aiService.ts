@@ -6,22 +6,10 @@ import { logService } from './logService.js';
 import { capabilityResolver } from './capabilityResolver.js';
 import { depthEngine } from './depthEngine.js';
 import { db } from '../database.js';
+import { generateContentWithFallback } from './geminiService.js'; // NEW IMPORT
 
 const aiResponseCache = new Map<string, { timestamp: number; data: any }>();
 const CACHE_DURATION_MS = 5 * 60 * 1000; // 5 minutes
-
-// --- BLACKLIST SYSTEM (PERSISTENT VIA DB) ---
-// const modelCooldowns = new Map<string, number>(); // REMOVED IN FAVOR OF DB
-const MODEL_COOLDOWN_MS = 60 * 60 * 1000; // 60 Minutes
-
-// Updated Priority List: 5-Tier Fallback Architecture for Maximum Availability
-const MODEL_PRIORITY = [
-    "gemini-2.0-flash-exp",
-    "gemini-2.5-flash",
-    "gemini-3-flash-preview",
-    "gemini-2.5-pro",
-    "gemini-3-pro-preview"
-];
 
 export const generateBotResponse = async (
   conversation: Conversation,
@@ -190,27 +178,21 @@ Tu prioridad es APOYAR al humano, no callarte prematuramente.
 ${JSON.stringify(Object.keys(responseSchema.properties))}
 `;
   
-  const ai = new GoogleGenAI({ apiKey: cleanKey });
-
-  for (const modelName of MODEL_PRIORITY) {
-    // CHECK PERSISTENT COOLDOWN
-    const cooldownUntil = await db.getModelCooldown(modelName);
-    if (cooldownUntil && Date.now() < cooldownUntil) {
-        // Skip silently, or log debug
-        continue;
-    }
-
-    try {
-      const response = await ai.models.generateContent({
-        model: modelName,
-        contents: [{ parts: [{ text: prompt }] }],
-        config: { systemInstruction, responseMimeType: "application/json", responseSchema }
+  try {
+      const response = await generateContentWithFallback({
+          apiKey: cleanKey,
+          prompt: prompt,
+          systemInstruction: systemInstruction,
+          responseSchema: responseSchema
       });
+
+      if (!response || !response.text) {
+          throw new Error("Respuesta vacía del servicio de IA.");
+      }
       
       const jsonText = response.text;
-      if (!jsonText) throw new Error(`Respuesta vacía`);
-
       const result = JSON.parse(jsonText.trim());
+
       if (!features.lead_scoring) result.newStatus = LeadStatus.WARM;
       if (!features.close_assist) result.suggestedReplies = undefined;
       
@@ -219,18 +201,17 @@ ${JSON.stringify(Object.keys(responseSchema.properties))}
           aiResponseCache.set(cacheKey, { timestamp: Date.now(), data: result });
       }
 
-      // Success? Clear cooldown just in case (optional, usually set on fail)
-      // await db.setModelCooldown(modelName, 0); // Not necessary if we rely on expiration
       return result;
 
-    } catch (err: any) { 
-        logService.warn(`[AI FAILOVER] Fallo con ${modelName}.`, user.id, user.username);
-        // SET PERSISTENT COOLDOWN
-        await db.setModelCooldown(modelName, Date.now() + MODEL_COOLDOWN_MS);
-    }
+  } catch (err: any) {
+      logService.error(`[AI-SERVICE] Fallo total de la matriz de IA para ${user.username}`, err, user.id);
+      // Fallback a una respuesta segura en caso de fallo total
+      return { 
+          responseText: "Disculpa, estoy experimentando una alta demanda. Un agente te atenderá en breve.", 
+          newStatus: conversation.status, // Mantener estado actual
+          tags: ['AI_FAILURE'] 
+      };
   }
-  
-  return null;
 };
 
 export const regenerateSimulationScript = async (userId: string) => {
@@ -239,8 +220,6 @@ export const regenerateSimulationScript = async (userId: string) => {
         if (!user || !user.settings.geminiApiKey) return;
 
         logService.info(`[SIM-LAB] Generando script de estrés para ${user.username}...`, userId);
-
-        const ai = new GoogleGenAI({ apiKey: user.settings.geminiApiKey });
         
         const prompt = `
         ACT AS: Un cliente potencial escéptico y directo.
@@ -263,19 +242,22 @@ export const regenerateSimulationScript = async (userId: string) => {
         }
         `;
 
-        const response = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
-            contents: [{ parts: [{ text: prompt }] }],
-            config: { 
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.OBJECT,
-                    properties: {
-                        script: { type: Type.ARRAY, items: { type: Type.STRING } }
-                    }
-                }
+        const responseSchema = {
+            type: Type.OBJECT,
+            properties: {
+                script: { type: Type.ARRAY, items: { type: Type.STRING } }
             }
+        };
+
+        const response = await generateContentWithFallback({
+            apiKey: user.settings.geminiApiKey,
+            prompt: prompt,
+            responseSchema: responseSchema
         });
+
+        if (!response || !response.text) {
+             throw new Error("Respuesta vacía del servicio de IA para la generación de script.");
+        }
 
         const json = JSON.parse(response.text || '{}');
         if (json.script && Array.isArray(json.script) && json.script.length > 0) {

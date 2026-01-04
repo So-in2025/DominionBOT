@@ -1,11 +1,11 @@
 
-
 import React, { useState, useEffect, useRef } from 'react';
 import { BotSettings, PromptArchetype, NeuralRouterConfig } from '../types';
 import { GoogleGenAI, Type } from '@google/genai';
 import { audioService } from '../services/audioService';
 import { openSupportWhatsApp } from '../utils/textUtils';
 import AdvancedNeuralConfig from './Settings/AdvancedNeuralConfig';
+import { generateContentWithFallback } from '../services/geminiService';
 
 interface SettingsPanelProps {
   settings: BotSettings | null;
@@ -14,6 +14,21 @@ interface SettingsPanelProps {
   onOpenLegal: (type: 'privacy' | 'terms' | 'manifesto' | 'network') => void;
   showToast: (message: string, type: 'success' | 'error' | 'info') => void;
 }
+
+// --- UTILITY FUNCTIONS ---
+
+const safeJsonParse = (str: string | undefined): any | null => {
+    if (!str) return null;
+    try {
+        // Attempt to parse, but also check for minimal JSON structure.
+        if (str.includes('{') && str.includes('}')) {
+            return JSON.parse(str);
+        }
+        return null;
+    } catch {
+        return null;
+    }
+};
 
 // --- CONSTANTS & MAPPINGS ---
 
@@ -139,6 +154,16 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
   // For standard settings saving
   const [isSaving, setIsSaving] = useState(false);
   const recognitionRef = useRef<any>(null);
+  const descriptionTextareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-sizing textarea effect
+  useEffect(() => {
+    if (descriptionTextareaRef.current) {
+        descriptionTextareaRef.current.style.height = 'auto'; // Reset height
+        descriptionTextareaRef.current.style.height = `${descriptionTextareaRef.current.scrollHeight}px`;
+    }
+  }, [current?.productDescription]);
+
 
   useEffect(() => {
     if (settings) {
@@ -162,6 +187,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
       if (isRecording) {
           recognitionRef.current?.stop();
           setIsRecording(false);
+          recognitionRef.current = null; // Cleanup ref
       } else {
           if (!SpeechRecognition) {
               showToast('Tu navegador no soporta entrada de voz. Usa Chrome.', 'error');
@@ -187,6 +213,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
           recognition.onerror = (event: any) => {
               console.error(event.error);
               setIsRecording(false);
+              recognitionRef.current = null; // Cleanup ref
           };
 
           recognition.start();
@@ -229,15 +256,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
 
       setIsAnalyzingWeb(true);
       try {
-          const cleanKey = wizApiKey.trim(); 
-          const ai = new GoogleGenAI({ apiKey: cleanKey }); 
-          
           const prompt = `
             Analiza el sitio web: ${wizIdentity.website}
             TU OBJETIVO: Configurar la "Personalidad de Venta" de una IA.
-            Redacta en PRIMERA PERSONA ("Soy el especialista en [Rubro]. Mi meta es vender [Productos principales]..."
-
-).
+            Redacta en PRIMERA PERSONA ("Soy el especialista en [Rubro]. Mi meta es vender [Productos principales]...").
             NO hagas un resumen corporativo aburrido.
             ESTRUCTURA REQUERIDA:
             1. ROL Y OFERTA: "Soy el especialista en [Rubro]. Mi meta es vender [Productos principales]..."
@@ -245,11 +267,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
             3. GANCHO COMERCIAL: 2 o 3 frases cortas sobre por qué elegirnos (Valor Único). Convierte características en beneficios.
             4. CLIENTE OBJETIVO: A quién le estoy vendiendo.
           `;
-
-          const response = await ai.models.generateContent({
-              model: 'gemini-2.5-flash', 
-              contents: [{ parts: [{ text: prompt }] }],
-              config: { tools: [{ googleSearch: {} }] }
+          
+          const response = await generateContentWithFallback({
+              apiKey: wizApiKey.trim(),
+              prompt: prompt,
+              tools: [{ googleSearch: {} }]
           });
 
           const extractedText = response.text;
@@ -293,8 +315,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
                   geminiApiKey: wizApiKey.trim(),
                   isWizardCompleted: true,
                   priceText: '',
-                  // CRITICAL FIX: Do NOT pollute productDescription when in advanced mode.
-                  // Leave it as it was.
                   productDescription: current.productDescription || '',
               };
               onUpdateSettings(newSettings);
@@ -304,8 +324,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
           return;
       }
 
-      if (!wizContext || wizContext.length < 10) {
-          showToast('El contexto es muy corto. Escribe o dicta más detalles.', 'error');
+      if (!wizContext || wizContext.length < 30) {
+          showToast('El contexto es muy corto. Escribe o dicta más detalles (mín. 30 caracteres).', 'error');
           return;
       }
 
@@ -313,8 +333,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
       setIsProcessing(true);
 
       try {
-          const cleanKey = wizApiKey.trim();
-          const ai = new GoogleGenAI({ apiKey: cleanKey });
           const prompt = `
             ACTÚA COMO: Consultor de Negocios de Élite.
             INPUT DEL USUARIO:
@@ -331,19 +349,28 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isLoading, onUp
             }
           `;
 
-          const res = await ai.models.generateContent({
-              model: 'gemini-3-flash-preview',
-              contents: [{ parts: [{ text: prompt }] }],
-              config: { responseMimeType: "application/json" }
+          const res = await generateContentWithFallback({
+              apiKey: wizApiKey.trim(),
+              prompt,
+              responseSchema: { type: Type.OBJECT } // A generic object schema for JSON mode
           });
+          
+          const data = safeJsonParse(res?.text);
 
-          const data = JSON.parse(res.text || '{}');
+          if (!data) {
+              console.error("JSON Parse Error: AI returned invalid format.", "--- AI Raw Text:", res?.text);
+              showToast('Formato AI inválido. Intenta de nuevo.', 'error');
+              setWizardStep('CONTEXT');
+              return;
+          }
+
           finishWizard(data, 'AI');
 
       } catch (e) {
           console.error(e);
-          showToast('Error en la generación neural. Intenta de nuevo.', 'error');
+          showToast('Error en la generación neural. Revisa tu API Key o intenta de nuevo.', 'error');
           setWizardStep('CONTEXT'); 
+      } finally {
           setIsProcessing(false);
       }
   };
@@ -408,7 +435,6 @@ ${data.rules}
           geminiApiKey: wizApiKey.trim(), 
           isWizardCompleted: true,
           useAdvancedModel: false,
-          // CRITICAL FIX: Clear neural config when finishing in linear mode to prevent data leakage.
           neuralConfig: { masterIdentity: '', modules: [] }
       };
 
@@ -535,9 +561,10 @@ ${data.rules}
                                     <span className="text-[9px] text-gray-500 uppercase font-bold tracking-widest">Modelo Lineal</span>
                                 </div>
                                 <textarea 
+                                    ref={descriptionTextareaRef}
                                     value={current.productDescription} 
                                     onChange={e => handleUpdate('productDescription', e.target.value)} 
-                                    className="w-full h-[500px] bg-black/50 border border-white/10 rounded-xl p-6 text-white text-xs font-mono leading-relaxed focus:border-brand-gold outline-none resize-none custom-scrollbar"
+                                    className="w-full min-h-[200px] max-h-[600px] bg-black/50 border border-white/10 rounded-xl p-6 text-white text-xs font-mono leading-relaxed focus:border-brand-gold outline-none resize-none custom-scrollbar"
                                     placeholder="Aquí reside el cerebro de tu bot..."
                                 />
                                 <div className="grid grid-cols-2 gap-4 mt-6">
@@ -713,7 +740,7 @@ ${data.rules}
                                 onClick={() => handleUpdate('useAdvancedModel', true)}
                                 className={`group relative flex-1 py-3 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${current.useAdvancedModel ? 'bg-brand-gold text-black shadow-lg' : 'text-gray-500 hover:text-white'}`}
                             >
-                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86 3.86l-.477 2.387c-.037.184.011.373.13.514l1.392 1.624a1 1 0 00.707.362h2.242a2 2 0 001.022-.547l1.022-1.022a2 2 0 00.547-1.022l.477-2.387c.037-.184-.011-.373-.13-.514l-1.392-1.624a1 1 0 00-.707-.362z" /></svg>
+                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86 3.86l-.477 2.387c-.037.184.011.373.13.514l1.392 1.624a1 1 0 00.707.362h2.242a2 2 0 001.022-.547l1.022-1.022a2 2 0 00.547-1.022l.477-2.387c-.037-.184-.011-.373-.13-.514l-1.392-1.624a1 1 0 00-.707-.362z" /></svg>
                                 Enjambre Modular (Avanzado)
                             </button>
                         </div>
@@ -763,7 +790,7 @@ ${data.rules}
                                     Finalizar Arquitectura
                                 </button>
                             ) : (
-                                <button onClick={() => { if(wizContext.length > 5) setWizardStep('PATH'); else showToast('Danos un poco más de contexto.', 'error'); }}
+                                <button onClick={() => { if(wizContext.length > 30) setWizardStep('PATH'); else showToast('Danos un poco más de contexto (mín. 30 caracteres).', 'error'); }}
                                     className="flex-1 py-3 bg-white/10 hover:bg-white/20 text-white border border-white/10 rounded-xl font-black text-xs uppercase tracking-[0.2em] transition-all hover:scale-[1.02]"
                                 >
                                     Siguiente &rarr;

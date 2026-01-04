@@ -1,11 +1,11 @@
 
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { db } from '../database.js';
 import { RadarSignal, User, MarketContextSnapshot, HiddenSignal } from '../types.js';
 import { logService } from './logService.js';
 import { v4 as uuidv4 } from 'uuid';
-import { capabilityResolver } from './capabilityResolver.js'; // NEW IMPORT
+import { capabilityResolver } from './capabilityResolver.js';
+import { generateContentWithFallback } from './geminiService.js'; // NEW IMPORT
 
 class RadarService {
     
@@ -247,23 +247,18 @@ Responde SOLO en JSON con la estructura definida.
             required: ['analysis', 'predictedWindow']
         };
 
-        const ai = new GoogleGenAI({ apiKey: user.settings.geminiApiKey });
-
         try {
-            const response = await ai.models.generateContent({
-                model: 'gemini-3-flash-preview',
-                contents: [{ parts: [{ text: prompt }] }],
-                config: {
-                    responseMimeType: "application/json",
-                    responseSchema
-                }
+            const response = await generateContentWithFallback({
+                apiKey: user.settings.geminiApiKey,
+                prompt: prompt,
+                responseSchema: responseSchema
             });
 
-            const jsonText = response.text;
-            if (!jsonText) return null;
-            return JSON.parse(jsonText);
+            if (!response || !response.text) return null;
+            return JSON.parse(response.text);
 
         } catch (e) {
+            logService.error('[RADAR-SERVICE] Fallo total de la matriz de IA en Radar', e, user.id);
             return null;
         }
     }
