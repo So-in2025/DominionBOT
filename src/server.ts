@@ -349,8 +349,18 @@ app.listen(Number(PORT), '0.0.0.0', async () => {
         const clients = await db.getAllClients();
         for (const client of clients) {
             const isActivePlan = client.plan_status === 'active' || client.plan_status === 'trial';
-            if (isActivePlan && client.settings.isActive) {
-                logService.info(`[SERVER] Intentando reconectar nodo para el cliente: ${client.username} (ID: ${client.id})`, client.id);
+            // AGGRESSIVE RECONNECT LOGIC: Connect if active/trial AND (isActive is TRUE OR (phoneNumber exists AND is valid))
+            // This ensures users who have a session but got flagged as inactive by error are recovered.
+            const hasLinkedNumber = client.whatsapp_number && client.whatsapp_number.length > 8;
+            
+            if (isActivePlan && (client.settings.isActive || hasLinkedNumber)) {
+                logService.info(`[SERVER] 🔄 Intentando recuperar sesión para: ${client.username}`, client.id);
+                // If inactive but has number, re-activate in DB implicitly on successful connect logic
+                if (!client.settings.isActive && hasLinkedNumber) {
+                     logService.info(`[SERVER] Auto-reactivando bot apagado por seguridad para ${client.username}.`, client.id);
+                     await db.updateUserSettings(client.id, { isActive: true });
+                }
+                
                 connectToWhatsApp(client.id).catch(err => {
                     logService.error(`[SERVER] Falló la reconexión inicial para el cliente ${client.username}`, err, client.id);
                 });
