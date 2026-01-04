@@ -1,4 +1,5 @@
 
+
 import React, { useRef, useEffect, useState } from 'react';
 import { Conversation, LeadStatus, InternalNote, BotSettings } from '../types';
 import MessageBubble from './MessageBubble';
@@ -181,7 +182,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   // FIX 3: Defensive check for dates to handle ISO strings from backend
   const safeMessages = conversation.messages.map(m => ({
       ...m,
-      timestamp: m.timestamp instanceof Date ? m.timestamp : new Date(m.timestamp)
+      // FIX: This ensures that timestamps that might be Date objects from optimistic updates are converted to strings.
+      timestamp: ((m.timestamp as any) instanceof Date) ? (m.timestamp as any).toISOString() : m.timestamp,
   }));
 
   return (
@@ -373,7 +375,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             const newNote: InternalNote = {
               id: Date.now().toString(),
               author: 'HUMAN',
-              timestamp: new Date(),
+// FIX: Changed `new Date()` to `new Date().toISOString()` to match string type.
+              timestamp: new Date().toISOString(),
               note
             };
             onUpdateConversation?.(conversation.id, { 

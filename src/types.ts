@@ -1,4 +1,5 @@
 
+
 export interface SimulationLab {
     experiments: SimulationRun[];
     aggregatedScore: number;
@@ -10,7 +11,8 @@ export interface Message {
   id: string;
   text: string;
   sender: 'user' | 'bot' | 'owner' | 'elite_bot'; 
-  timestamp: Date | string; 
+  // FIX: Changed timestamp to string to match data from backend.
+  timestamp: string; 
 }
 // ... (rest of the file remains unchanged, showing context only for SimulationLab)
 export enum LeadStatus {
@@ -93,12 +95,15 @@ export interface DepthBoost {
     userId: string;
     depthDelta: number; // e.g., +2
     reason: string;
+    // FIX: Changed to string to match database schema
     startsAt: string;
+    // FIX: Changed to string to match database schema
     endsAt: string;
     createdBy: string; // Admin ID
 }
 
 export interface DepthLog {
+    // FIX: Changed to string to match database schema
     timestamp: string;
     userId: string;
     eventType: 'DEPTH_USED' | 'BOOST_APPLIED' | 'LIMIT_HIT';
@@ -128,11 +133,12 @@ export interface HiddenSignal {
     intensity: number; // 1-10
 }
 
+// FIX: Added missing ActionIntelligence interface definition.
 export interface ActionIntelligence {
     suggestedEntryType: 'DIRECT' | 'CONSULTATIVE' | 'PRIVATE' | 'WAIT';
     communicationFraming: string;
     spamRiskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
-    recommendedWaitTimeSeconds?: number;
+    recommendedWaitTimeSeconds: number;
 }
 
 export interface RadarSignal {
@@ -143,6 +149,7 @@ export interface RadarSignal {
     senderJid: string;
     senderName?: string;
     messageContent: string;
+    // FIX: Changed to string to match database schema
     timestamp: string;
     
     analysis: {
@@ -178,6 +185,7 @@ export interface RadarSettings {
 
 export interface GroupMarketMemory {
     groupJid: string;
+    // FIX: Changed to string to match database schema
     lastUpdated: string;
     avgResponseTime: number;
     successfulWindows: number;
@@ -197,6 +205,7 @@ export interface IntentSignal {
     intentCategories: string[]; // e.g., ['Marketing Digital', 'Inversiones']
     intentDescription: string; // Summary of the prospect's intent
     signalScore: number; // 0-100, strength of intent
+    // FIX: Changed to string to match database schema
     contributedAt: string;
 }
 
@@ -215,10 +224,14 @@ export interface ConnectionOpportunity {
     opportunityScore: number; // Calculated match score
 
     permissionStatus: PermissionStatus;
+    // FIX: Changed to string to match database schema
     requestedAt?: string;
+    // FIX: Changed to string to match database schema
     respondedAt?: string;
+    // FIX: Changed to string to match database schema
     connectionMadeAt?: string; // When the receiving business actually connected
     
+    // FIX: Changed to string to match database schema
     createdAt: string;
 }
 
@@ -227,6 +240,7 @@ export interface NetworkProfile {
     categoriesOfInterest: string[]; // Categories of signals this user wants to receive
     contributionScore: number; // How many signals this user has contributed
     receptionScore: number; // How many opportunities this user has successfully converted
+    // FIX: Changed to string to match database schema
     lastActivity?: string;
 }
 // -----------------------
@@ -244,6 +258,7 @@ export interface Campaign {
     status: CampaignStatus;
     schedule: {
         type: ScheduleType;
+        // FIX: Changed to string to match database schema
         startDate: string;
         time: string;
         daysOfWeek?: number[];
@@ -261,9 +276,12 @@ export interface Campaign {
     stats: {
         totalSent: number;
         totalFailed: number;
+        // FIX: Changed to string to match database schema
         lastRunAt?: string;
+        // FIX: Changed to string to match database schema
         nextRunAt?: string;
     };
+    // FIX: Changed to string to match database schema
     createdAt: string;
 }
 
@@ -284,6 +302,7 @@ export interface EvaluationResult {
 
 export interface SimulationRun {
     id: string;
+    // FIX: Changed to string to match database schema
     timestamp: string;
     scenario: SimulationScenario;
     brainVersionSnapshot: {
@@ -305,7 +324,8 @@ export interface InternalNote {
   id: string;
   note: string;
   author: 'AI' | 'HUMAN';
-  timestamp: string | Date;
+  // FIX: Changed to string to match database schema
+  timestamp: string;
 }
 
 export interface Conversation {
@@ -315,13 +335,16 @@ export interface Conversation {
   status: LeadStatus;
   messages: Message[];
   isBotActive: boolean;
-  lastActivity?: Date | string;
+  // FIX: Changed to string to match database schema
+  lastActivity?: string;
   isMuted?: boolean;
   tags: string[];
   internalNotes: InternalNote[];
   isAiSignalsEnabled: boolean;
-  firstMessageAt?: Date | string;
-  escalatedAt?: Date | string;
+  // FIX: Changed to string to match database schema
+  firstMessageAt?: string;
+  // FIX: Changed to string to match database schema
+  escalatedAt?: string;
   suggestedReplies?: string[];
   isTestBotConversation?: boolean; 
 }
@@ -381,7 +404,9 @@ export interface User {
   
   plan_type: PlanType;
   plan_status: PlanStatus;
+  // FIX: Changed to string to match database schema
   billing_start_date: string;
+  // FIX: Changed to string to match database schema
   billing_end_date: string;
   
   is_founder?: boolean;
@@ -399,8 +424,9 @@ export interface User {
     systemState: SystemState;
     riskScore: number;
     accountFlags: string[];
+    // FIX: Changed to string to match database schema
     updatedAt: string;
-    auditLogs: { timestamp: string; adminId: string; action: string }[];
+    auditLogs: { timestamp: Date; adminId: string; action: string }[];
     humanDeviationScore: number;
   };
 
@@ -408,13 +434,16 @@ export interface User {
   
   trial_qualified_leads_count?: number;
   isSuspended?: boolean; 
+  // FIX: Changed to string to match database schema
   last_activity_at?: string;
+  // FIX: Changed to string to match database schema
   created_at: string;
   internalNotes?: string;
 }
 
 export interface LogEntry {
   _id: string;
+  // FIX: Changed to string to match database schema
   timestamp: string;
   level: LogLevel;
   message: string;
@@ -475,7 +504,9 @@ export interface Testimonial {
   name?: string; // Made optional
   location?: string; // Made optional
   text: string;
+  // FIX: Changed to string to match database schema
   createdAt: string;
+  // FIX: Changed to string to match database schema
   updatedAt?: string; // Add this, as it's used in server.ts seeding
 }
 

@@ -1,4 +1,5 @@
 
+
 import { db } from '../database.js';
 import { Campaign, CampaignStatus, WhatsAppGroup } from '../types.js';
 import { logService } from './logService.js';
@@ -84,13 +85,6 @@ class CampaignService {
         return { message: "Campaña disparada manualmente." };
     }
 
-    // Helper: Obtener la hora "real" de Argentina
-    private getArgentinaDate(): Date {
-        const now = new Date();
-        const argString = now.toLocaleString("en-US", {timeZone: "America/Argentina/Buenos_Aires"});
-        return new Date(argString);
-    }
-
     private async processPendingCampaigns() {
         try {
             // 0. WATCHDOG CHECK
@@ -154,7 +148,7 @@ class CampaignService {
                 
                 // 1. Check Operating Window (Hours)
                 if (!this.isInOperatingWindow(campaign)) {
-                    logService.debug(`[CAMPAIGN-DEBUG] ⏸️ Pausada por horario (Ventana cerrada en ARG).`);
+                    logService.debug(`[CAMPAIGN-DEBUG] ⏸️ Pausada por horario (Ventana cerrada).`);
                     continue; 
                 }
                 
@@ -175,9 +169,8 @@ class CampaignService {
     private isInOperatingWindow(campaign: Campaign): boolean {
         if (!campaign.config.operatingWindow) return true; // Always valid if no window defined
         
-        // USAR HORA ARGENTINA
-        const nowArg = this.getArgentinaDate();
-        const currentHour = nowArg.getHours();
+        const now = new Date();
+        const currentHour = now.getHours(); // Use server's local time
         const { startHour, endHour } = campaign.config.operatingWindow;
 
         // Simple check for same-day window (e.g., 09:00 to 18:00)
@@ -228,6 +221,7 @@ class CampaignService {
         await db.updateCampaign(campaign.id, {
             stats: {
                 ...campaign.stats,
+                // FIX: Changed `new Date()` to `new Date().toISOString()` to match string type.
                 lastRunAt: new Date().toISOString(), 
                 nextRunAt: preLockNextRun 
             },
@@ -272,7 +266,7 @@ class CampaignService {
             for (const groupId of groups) {
                 // Double check window inside loop for long batches, UNLESS FORCED
                 if (!force && !this.isInOperatingWindow(campaign)) {
-                    logService.info(`[CAMPAIGN] Pausando batch de ${campaign.name} por cierre de ventana operativa (ARG).`, campaign.userId);
+                    logService.info(`[CAMPAIGN] Pausando batch de ${campaign.name} por cierre de ventana operativa.`, campaign.userId);
                     break; 
                 }
 
@@ -359,18 +353,8 @@ class CampaignService {
                 }
             }
 
-            // 5. Update Campaign Stats
-            const finalCampaignState = await db.getCampaign(campaign.id);
-            if(finalCampaignState) {
-                const updates: Partial<Campaign> = {
-                    stats: {
-                        ...finalCampaignState.stats,
-                        totalSent: (finalCampaignState.stats?.totalSent || 0) + sentCount,
-                        totalFailed: (finalCampaignState.stats?.totalFailed || 0) + failedCount,
-                    }
-                };
-                await db.updateCampaign(campaign.id, updates);
-            }
+            // Update Campaign Stats atomically
+            await db.incrementCampaignStats(campaign.id, sentCount, failedCount);
             
             logService.info(`[CAMPAIGN] ✅ Campaña ${campaign.name} finalizada. Enviados: ${sentCount}. Fallos: ${failedCount}`, campaign.userId);
 
@@ -384,59 +368,52 @@ class CampaignService {
     }
 
     /**
-     * SMART NEXT RUN CALCULATOR v2 + TIME JITTER
+     * SMART NEXT RUN CALCULATOR v3 - TIMEZONE AGNOSTIC
      * Adds random offset to prevent synchronized spikes.
      */
-    public calculateNextRun(campaign: Campaign): string {
-        const nowArg = this.getArgentinaDate();
+    public calculateNextRun(campaign: Campaign): string | undefined {
+        const now = new Date();
         const type = campaign.schedule.type;
 
         // TIME JITTER: Add random offset between 2 and 15 minutes.
-        // This ensures tenants don't sync up on the exact minute.
         const jitterMinutes = Math.floor(Math.random() * 13) + 2; 
 
-        // --- ONCE: Simple logic ---
         if (type === 'ONCE') {
-            if (!campaign.schedule.startDate) return ''; 
+            if (!campaign.schedule.startDate) return undefined; 
             
             const [hour, minute] = (campaign.schedule.time || "09:00").split(':').map(Number);
             const targetDate = new Date(campaign.schedule.startDate); 
             
-            const scheduledRun = new Date(nowArg);
-            scheduledRun.setFullYear(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
-            scheduledRun.setHours(hour, minute, 0, 0);
-
-            // Do NOT apply jitter to ONCE campaigns if they are user-triggered for specific time, 
-            // BUT for system health, a small offset is good.
-            // Let's add it anyway.
-            scheduledRun.setMinutes(scheduledRun.getMinutes() + jitterMinutes);
-
-            return this.convertToUTC(scheduledRun);
+            // NOTE: This assumes the user inputs date/time in their local timezone.
+            // The resulting Date object will be in the server's timezone.
+            // For consistency, server should run in UTC.
+            targetDate.setHours(hour, minute, 0, 0);
+            targetDate.setMinutes(targetDate.getMinutes() + jitterMinutes);
+            // FIX: Return ISO string to match type.
+            return targetDate.toISOString();
         }
 
-        // --- RECURRING (DAILY / WEEKLY) ---
         const [targetHour, targetMinute] = (campaign.schedule.time || "09:00").split(':').map(Number);
         
-        const uiStartDate = new Date(campaign.schedule.startDate || nowArg.toISOString());
-        
-        let baseline = new Date(nowArg);
-        baseline.setFullYear(uiStartDate.getFullYear(), uiStartDate.getMonth(), uiStartDate.getDate());
-        baseline.setHours(targetHour, targetMinute, 0, 0);
-
-        if (baseline < nowArg) {
-            baseline = new Date(nowArg);
-            baseline.setHours(targetHour, targetMinute, 0, 0);
+        // Start checking from 'now' or the UI-provided start date, whichever is later.
+        let checkDate = new Date(campaign.schedule.startDate || now);
+        if (checkDate < now) {
+            checkDate = new Date(now);
         }
+        checkDate.setHours(targetHour, targetMinute, 0, 0);
 
-        let nextDate = new Date(baseline);
+        if (checkDate < now) {
+            checkDate.setDate(checkDate.getDate() + 1);
+        }
+        
         let validDateFound = false;
 
-        for (let i = 0; i < 14; i++) {
-            const isFuture = nextDate > nowArg;
-            
+        for (let i = 0; i < 14; i++) { // Search up to 2 weeks
+            const isFuture = checkDate > now;
             let isCorrectDay = true;
+
             if (type === 'WEEKLY' && campaign.schedule.daysOfWeek && campaign.schedule.daysOfWeek.length > 0) {
-                isCorrectDay = campaign.schedule.daysOfWeek.includes(nextDate.getDay());
+                isCorrectDay = campaign.schedule.daysOfWeek.includes(checkDate.getDay());
             }
 
             if (isFuture && isCorrectDay) {
@@ -444,31 +421,22 @@ class CampaignService {
                 break;
             }
 
-            nextDate.setDate(nextDate.getDate() + 1);
-            nextDate.setHours(targetHour, targetMinute, 0, 0);
+            checkDate.setDate(checkDate.getDate() + 1);
+            checkDate.setHours(targetHour, targetMinute, 0, 0);
         }
 
         if (!validDateFound) {
-            const safeFallback = new Date(nowArg);
-            safeFallback.setDate(safeFallback.getDate() + 1);
-            safeFallback.setMinutes(safeFallback.getMinutes() + jitterMinutes);
-            return this.convertToUTC(safeFallback);
+            // Fallback: run tomorrow + jitter
+            const fallback = new Date();
+            fallback.setDate(fallback.getDate() + 1);
+            fallback.setMinutes(fallback.getMinutes() + jitterMinutes);
+            // FIX: Return ISO string to match type.
+            return fallback.toISOString();
         }
 
-        // Apply Jitter to recurring schedule
-        nextDate.setMinutes(nextDate.getMinutes() + jitterMinutes);
-
-        return this.convertToUTC(nextDate);
-    }
-
-    private convertToUTC(argDate: Date): string {
-        const year = argDate.getFullYear();
-        const month = argDate.getMonth();
-        const day = argDate.getDate();
-        const hour = argDate.getHours();
-        const min = argDate.getMinutes();
-        
-        return new Date(Date.UTC(year, month, day, hour + 3, min, 0)).toISOString();
+        checkDate.setMinutes(checkDate.getMinutes() + jitterMinutes);
+        // FIX: Return ISO string to match type.
+        return checkDate.toISOString();
     }
 }
 

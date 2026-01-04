@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { Campaign, WhatsAppGroup, BotSettings } from '../types';
 import { getAuthHeaders } from '../config';
@@ -14,7 +15,7 @@ interface CampaignsPanelProps {
 const DAYS_OF_WEEK = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
 const FULL_DAYS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 
-const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, showToast, settings }) => {
+export const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, showToast, settings }) => {
     const [campaigns, setCampaigns] = useState<Campaign[]>([]);
     const [groups, setGroups] = useState<WhatsAppGroup[]>([]);
     const [view, setView] = useState<'LIST' | 'CREATE'>('LIST');
@@ -143,7 +144,8 @@ const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUrl, show
         setImage(campaign.imageUrl || null);
         
         if (campaign.schedule.startDate) {
-            setStartDate(campaign.schedule.startDate.split('T')[0]);
+            // FIX: Cast to any/string to handle string from backend.
+            setStartDate((campaign.schedule.startDate as any as string).split('T')[0]);
         }
         setScheduledTime(campaign.schedule.time || '09:00');
         setSelectedDays(campaign.schedule.daysOfWeek || []);
@@ -571,105 +573,51 @@ Incluye los siguientes elementos en tu prompt:
                         </div>
 
                         <div className="pt-4 border-t border-white/5">
-                            <button onClick={handleSave} disabled={loading} className="w-full py-4 bg-white/10 text-white rounded-xl font-black text-xs uppercase tracking-[0.2em] hover:bg-brand-gold hover:text-black transition-all disabled:opacity-50">
-                                {loading ? 'Procesando...' : (editingId ? 'Actualizar Campaña' : 'Programar Campaña')}
+                            <button onClick={handleSave} disabled={loading} className="w-full py-4 bg-brand-gold text-black rounded-xl font-black text-xs uppercase tracking-[0.2em] shadow-lg shadow-brand-gold/20 hover:scale-105 transition-all disabled:opacity-50 disabled:grayscale">
+                                {loading ? 'Guardando...' : (editingId ? 'Actualizar Campaña' : 'Programar y Activar')}
                             </button>
                         </div>
                     </div>
                 ) : (
-                    <div className="grid grid-cols-1 gap-6">
-                        {loading && campaigns.length === 0 ? (
-                            // SKELETON LOADER
-                            <>
-                                {[1, 2, 3].map(i => (
-                                    <div key={i} className="bg-brand-surface border border-white/5 rounded-2xl p-6 animate-pulse">
-                                        <div className="flex flex-col md:flex-row justify-between gap-4 mb-4">
-                                            <div className="space-y-3 w-full">
-                                                <div className="h-6 w-1/3 bg-white/10 rounded"></div>
-                                                <div className="flex gap-4">
-                                                    <div className="h-3 w-16 bg-white/5 rounded"></div>
-                                                    <div className="h-3 w-24 bg-white/5 rounded"></div>
-                                                </div>
-                                            </div>
-                                            <div className="flex gap-3">
-                                                <div className="w-16 h-6 bg-white/5 rounded"></div>
-                                                <div className="w-8 h-8 rounded-full bg-white/5"></div>
-                                                <div className="w-8 h-8 rounded-full bg-white/5"></div>
-                                            </div>
-                                        </div>
-                                        <div className="h-10 w-full bg-white/5 rounded-xl"></div>
-                                    </div>
-                                ))}
-                            </>
-                        ) : (
-                            <>
-                                {campaigns.length === 0 && (
-                                    <div className="text-center py-20 bg-brand-surface rounded-3xl border border-white/5">
-                                        <p className="text-gray-500 text-xs uppercase tracking-widest font-bold">No hay campañas activas.</p>
-                                    </div>
-                                )}
-                                {campaigns.map(c => (
-                                    <div key={c.id} className="bg-brand-surface border border-white/5 rounded-2xl p-6 hover:bg-white/5 transition-all group">
-                                        <div className="flex flex-col md:flex-row justify-between md:items-center gap-4 mb-4">
-                                            <div>
-                                                <h3 className="text-lg font-black text-white flex items-center gap-2">
-                                                    {c.name}
-                                                    {c.imageUrl && <span className="text-[10px] bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded border border-blue-500/30 font-bold uppercase">IMG</span>}
-                                                    {c.config.useSpintax && <span className="text-[10px] bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded border border-purple-500/30 font-bold uppercase">SPINTAX</span>}
-                                                </h3>
-                                                <div className="flex gap-4 mt-2 text-[10px] font-mono text-gray-500">
-                                                    <span className="text-brand-gold">{c.schedule.type}</span>
-                                                    <span>
-                                                        {c.schedule.time} {c.schedule.type === 'WEEKLY' && c.schedule.daysOfWeek && `[${c.schedule.daysOfWeek.map(d => DAYS_OF_WEEK[d]).join(',')}]`}
-                                                    </span>
-                                                    <span>GRUPOS: {c.groups.length}</span>
-                                                    <span>ENVIADOS: {c.stats.totalSent}</span>
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-3">
-                                                <span className={`px-3 py-1 rounded text-[9px] font-black uppercase border ${c.status === 'ACTIVE' ? 'bg-green-500/10 text-green-400 border-green-500/30' : (c.status === 'COMPLETED' ? 'bg-blue-500/10 text-blue-400 border-blue-500/30' : 'bg-gray-500/10 text-gray-400 border-gray-500/30')}`}>
-                                                    {c.status}
-                                                </span>
-                                                
-                                                {/* IMMEDIATE EXECUTION BUTTON */}
-                                                <button 
-                                                    onClick={() => executeNow(c)} 
-                                                    className="w-8 h-8 flex items-center justify-center bg-orange-500/10 text-orange-500 border border-orange-500/30 rounded-full hover:bg-orange-500 hover:text-white transition-all shadow-lg shadow-orange-500/10"
-                                                    title="EJECUTAR AHORA (Omitir Horario)"
-                                                >
-                                                    ⚡
-                                                </button>
-
-                                                {/* EDIT BUTTON */}
-                                                <button onClick={() => handleEditClick(c)} className="w-8 h-8 flex items-center justify-center bg-white/10 rounded-full hover:bg-brand-gold hover:text-black transition-all text-gray-400">
-                                                    ✎
-                                                </button>
-                                                
-                                                {c.status !== 'COMPLETED' && (
-                                                    <button onClick={() => toggleStatus(c)} className="w-8 h-8 flex items-center justify-center bg-white/10 rounded-full hover:bg-brand-gold hover:text-black transition-all">
-                                                        {c.status === 'ACTIVE' ? '⏸' : '▶'}
-                                                    </button>
-                                                )}
-                                                <button onClick={() => deleteCampaign(c.id)} className="w-8 h-8 flex items-center justify-center bg-red-500/10 text-red-500 rounded-full hover:bg-red-500 hover:text-white transition-all">✕</button>
-                                            </div>
-                                        </div>
-                                        <div className="bg-black/40 p-3 rounded-xl border border-white/5 flex gap-3 items-center">
-                                            {c.imageUrl && (
-                                                <div className="w-10 h-10 rounded-lg bg-white/5 flex-shrink-0 overflow-hidden border border-white/10">
-                                                    <img src={c.imageUrl} alt="Campaign" className="w-full h-full object-cover opacity-80" />
-                                                </div>
-                                            )}
-                                            <p className="text-xs text-gray-400 italic line-clamp-2">{c.message || "(Solo Imagen)"}</p>
-                                        </div>
-                                    </div>
-                                ))}
-                            </>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {campaigns.length === 0 && !loading && (
+                            <div className="md:col-span-2 lg:col-span-3 text-center py-20 bg-brand-surface border border-dashed border-white/10 rounded-3xl">
+                                <p className="text-gray-500 text-xs uppercase tracking-widest font-bold">Sin campañas activas.</p>
+                            </div>
                         )}
+                        {campaigns.map(c => (
+                             <div key={c.id} className="bg-brand-surface border border-white/5 rounded-2xl p-6 flex flex-col justify-between group hover:-translate-y-1 transition-transform">
+                                <div>
+                                    <div className="flex justify-between items-start mb-4">
+                                        <h4 className="text-sm font-black text-white uppercase tracking-wider group-hover:text-brand-gold transition-colors">{c.name}</h4>
+                                        <div className="flex items-center gap-2">
+                                            <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase border ${
+                                                c.status === 'ACTIVE' ? 'bg-green-500/10 text-green-400 border-green-500/20' :
+                                                c.status === 'PAUSED' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' :
+                                                'bg-gray-500/10 text-gray-400 border-gray-500/20'
+                                            }`}>
+                                                {c.status}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <p className="text-xs text-gray-400 line-clamp-2 mb-4">{c.message}</p>
+                                    <div className="text-[9px] font-mono text-gray-500 space-y-2">
+                                        <p><strong className="text-gray-400">Próximo:</strong> {c.stats.nextRunAt ? new Date(c.stats.nextRunAt).toLocaleString() : 'N/A'}</p>
+                                        <p><strong className="text-gray-400">Grupos:</strong> {c.groups.length}</p>
+                                        <p><strong className="text-gray-400">Envíos:</strong> {c.stats.totalSent || 0}</p>
+                                    </div>
+                                </div>
+                                <div className="mt-6 pt-4 border-t border-white/5 flex gap-2">
+                                    <button onClick={() => executeNow(c)} className="px-3 py-1.5 bg-brand-gold/10 text-brand-gold border border-brand-gold/20 rounded-lg text-[9px] font-bold uppercase hover:bg-brand-gold hover:text-black transition-all">Ejecutar Ahora</button>
+                                    <button onClick={() => handleEditClick(c)} className="px-3 py-1.5 bg-white/5 text-gray-400 border border-white/10 rounded-lg text-[9px] font-bold uppercase hover:text-white transition-all">Editar</button>
+                                    <button onClick={() => toggleStatus(c)} className="px-3 py-1.5 bg-white/5 text-gray-400 border border-white/10 rounded-lg text-[9px] font-bold uppercase hover:text-white transition-all">{c.status === 'ACTIVE' ? 'Pausar' : 'Reanudar'}</button>
+                                    <button onClick={() => deleteCampaign(c.id)} className="px-2 py-1.5 bg-red-900/10 text-red-500 border border-red-900/20 rounded-lg text-[9px] font-bold uppercase hover:bg-red-500 hover:text-white transition-all ml-auto">✕</button>
+                                </div>
+                            </div>
+                        ))}
                     </div>
                 )}
             </div>
         </div>
     );
 };
-
-export default CampaignsPanel;

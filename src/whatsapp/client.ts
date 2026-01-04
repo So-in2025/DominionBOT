@@ -1,4 +1,5 @@
 
+
 import makeWASocket, {
   DisconnectReason,
   makeCacheableSignalKeyStore,
@@ -26,6 +27,7 @@ import { campaignService } from '../services/campaignService.js'; // To access W
 const sessions = new Map<string, WASocket>();
 const qrCache = new Map<string, string>(); 
 const codeCache = new Map<string, string>(); 
+const reconnectionAttempts = new Map<string, number>();
 
 // Silent logger to keep terminal clean, we use logService
 const logger = pino({ level: 'silent' }); 
@@ -53,22 +55,18 @@ setInterval(async () => {
     }
 
     if (aiProcessingQueue.size > 0) {
-        const [item] = aiProcessingQueue; 
+        const itemsToProcess = Array.from(aiProcessingQueue).slice(0, isDegraded ? 1 : 3);
         
-        // GOVERNOR LOGIC: If degraded, only process if absolutely necessary (e.g., skip processing, or just slow down)
-        // Here we just consume one item per tick. In degraded mode, we might want to skip ticks.
-        if (isDegraded && Math.random() < 0.5) return; // 50% throttle in degraded mode
-
-        aiProcessingQueue.delete(item);   
-        
-        const [userId, jid] = item.split('::');
-        if (userId && jid) {
-            try {
-                // In DEGRADED mode, we could check if the lead is already HOT and prioritize, 
-                // but for now, simple throttling is safer.
-                await processAiResponseForJid(userId, jid);
-            } catch (err) {
-                logService.error(`[AI-QUEUE] Error processing ${item}`, err, userId);
+        for (const item of itemsToProcess) {
+            aiProcessingQueue.delete(item);   
+            
+            const [userId, jid] = item.split('::');
+            if (userId && jid) {
+                try {
+                    await processAiResponseForJid(userId, jid);
+                } catch (err) {
+                    logService.error(`[AI-QUEUE] Error processing ${item}`, err, userId);
+                }
             }
         }
     }
@@ -134,6 +132,14 @@ export function getSocket(userId: string): WASocket | undefined {
 }
 
 export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
+    const attempts = reconnectionAttempts.get(userId) || 0;
+    if (attempts >= 5) {
+        logService.error(`[WA-CLIENT] Máximo de reconexiones alcanzado para ${userId}. Abortando.`, userId);
+        return; // Abort
+    }
+    reconnectionAttempts.set(userId, attempts + 1);
+    logService.warn(`[WA-CLIENT] Intento de conexión #${attempts + 1} para ${userId}`, userId);
+
     const oldSock = sessions.get(userId);
     if (oldSock) {
         try {
@@ -169,7 +175,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
             browser: Browsers.macOS('Chrome'),
             agent: user?.settings?.proxyUrl ? new HttpsProxyAgent(user.settings.proxyUrl) as any : undefined,
             generateHighQualityLinkPreview: true,
-            shouldIgnoreJid: jid => jid?.endsWith('@broadcast'), 
+            shouldIgnoreJid: jid => jid?.endsWith('@broadcast') || jid?.endsWith('@newsletter'), // IGNORE NEWSLETTERS AT SOURCE
             syncFullHistory: true,
             markOnlineOnConnect: true, 
             defaultQueryTimeoutMs: 60000, 
@@ -227,6 +233,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                 if (isLoggedOut) {
                     logService.warn(`[WA-CLIENT] ⚠️ Sesión cerrada por WhatsApp (401/LoggedOut). Purgando datos.`, userId);
                     await clearBindedSession(userId); 
+                    reconnectionAttempts.set(userId, 0); // Reset after purge
                     setTimeout(() => connectToWhatsApp(userId, phoneNumber), 2000);
                 } else {
                     logService.warn(`[WA-CLIENT] Conexión interrumpida (Código: ${statusCode}). Reconectando en 3s...`, userId);
@@ -235,6 +242,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
 
             } else if (connection === 'open') {
                 logService.info(`[WA-CLIENT] ✅ CONEXIÓN ESTABLECIDA.`, userId);
+                reconnectionAttempts.set(userId, 0); // Reset on success
                 qrCache.delete(userId);
                 codeCache.delete(userId);
                 
@@ -287,7 +295,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                 
                 for (const msg of messages) {
                     const jid = msg.key.remoteJid;
-                    if (!jid || jid === 'status@broadcast') continue; 
+                    if (!jid || jid === 'status@broadcast' || jid.endsWith('@newsletter')) continue; // FILTER CHANNELS
                     
                     // BLOCK: If JID is in blacklist, completely ignore
                     // We check against the phone number part of the JID
@@ -345,7 +353,8 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string) {
                                 id: msg.key.id || Date.now().toString(),
                                 text: messageText,
                                 sender: msg.key.fromMe ? 'owner' : 'user', 
-                                timestamp: new Date(msgTimestamp * 1000)
+                                // FIX: Changed to string to match type definition.
+                                timestamp: new Date(msgTimestamp * 1000).toISOString()
                             };
 
                             const senderName = msg.pushName || (msg as any).verifiedBizName || undefined;
@@ -478,7 +487,7 @@ async function _commonAiProcessingLogic(userId: string, jid: string, user: User,
             await sock.sendMessage(jid, { text: aiResult.responseText });
         }
 
-        const botMessage: Message = { id: `bot-${Date.now()}`, text: aiResult.responseText, sender: 'bot', timestamp: new Date(Date.now()) };
+        const botMessage: Message = { id: `bot-${Date.now()}`, text: aiResult.responseText, sender: 'bot', timestamp: new Date().toISOString() };
         await conversationService.addMessage(userId, jid, botMessage);
     }
     

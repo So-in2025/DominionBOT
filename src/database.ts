@@ -21,13 +21,16 @@ const NetworkProfileSchema = new Schema({
 }, { _id: false });
 
 const LogSchema = new Schema({
-    timestamp: { type: String, required: true },
+    timestamp: { type: Date, required: true },
     level: { type: String, required: true },
     message: { type: String, required: true },
     userId: { type: String },
     username: { type: String },
     metadata: { type: Schema.Types.Mixed }
 });
+
+// Add TTL index to automatically delete logs after 90 days
+LogSchema.index({ timestamp: 1 }, { expireAfterSeconds: 60 * 60 * 24 * 90 });
 
 const TestimonialSchema = new Schema({
     userId: { type: String, required: true },
@@ -444,10 +447,10 @@ class Database {
           conversationsArray = extractConversationsRecursive(rawConvos);
       }
       
-      // FIX: Filter out GROUPS (@g.us) and BROADCASTS (@broadcast)
+      // FIX: Filter out GROUPS (@g.us), BROADCASTS (@broadcast) AND NEWSLETTERS (@newsletter)
       // This prevents "Noise" in the private chat list
       const filteredConvos = conversationsArray.filter(c => {
-          return c.id && !c.id.endsWith('@g.us') && !c.id.endsWith('@broadcast');
+          return c.id && !c.id.endsWith('@g.us') && !c.id.endsWith('@broadcast') && !c.id.endsWith('@newsletter');
       });
 
       // FIX: Ensure strict uniqueness by ID
@@ -621,6 +624,13 @@ class Database {
 
   async updateCampaign(id: string, updates: Partial<Campaign>): Promise<Campaign | null> {
       return await CampaignModel.findOneAndUpdate({ id }, { $set: updates }, { new: true }).lean();
+  }
+  
+  async incrementCampaignStats(id: string, sent: number, failed: number) {
+      await CampaignModel.updateOne(
+          { id },
+          { $inc: { 'stats.totalSent': sent, 'stats.totalFailed': failed } }
+      );
   }
 
   async deleteCampaign(id: string): Promise<boolean> {

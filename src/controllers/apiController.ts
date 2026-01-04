@@ -1,4 +1,5 @@
 
+
 import { Buffer } from 'buffer';
 import { connectToWhatsApp, disconnectWhatsApp, sendMessage, getSessionStatus, processAiResponseForJid, fetchUserGroups, ELITE_BOT_JID, ELITE_BOT_NAME, DOMINION_NETWORK_JID } from '../whatsapp/client.js'; 
 import { conversationService } from '../services/conversationService.js';
@@ -64,7 +65,8 @@ export const handleSendMessage = async (req: AuthenticatedRequest<any, any, { to
         const { id } = req.user;
         const { to, text, imageUrl } = req.body;
         await sendMessage(id, to, text, imageUrl);
-        await conversationService.addMessage(id, to, { id: uuidv4(), text, sender: 'owner', timestamp: new Date(Date.now()) });
+        // FIX: Changed timestamp to string to match type definition.
+        await conversationService.addMessage(id, to, { id: uuidv4(), text, sender: 'owner', timestamp: new Date().toISOString() });
         res.status(200).json({ message: 'Mensaje enviado.' });
     } catch (e: any) {
         logService.error('Error sending message', e, getClientUser(req).id);
@@ -149,7 +151,7 @@ export const handleGetConversations = async (req: AuthenticatedRequest, res: any
 export const handleGetTestimonials = async (req: AuthenticatedRequest, res: any) => {
     try {
         const testimonials = await db.getTestimonials();
-        const now = new Date(Date.now());
+        const now = new Date();
         const visibleTestimonials = testimonials.filter(t => new Date(t.createdAt) <= now);
 
         visibleTestimonials.sort((a, b) => {
@@ -233,7 +235,7 @@ export const handleStartClientTestBot = async (req: AuthenticatedRequest<any, an
             tags: [],
             internalNotes: [],
             isAiSignalsEnabled: true,
-            lastActivity: new Date(Date.now())
+            lastActivity: new Date().toISOString()
         };
         await db.saveUserConversation(userId, cleanConversation);
 
@@ -283,7 +285,7 @@ export const handleStartClientTestBot = async (req: AuthenticatedRequest<any, an
                     id: `elite_bot_msg_${Date.now()}_${Math.random().toString(36).substring(7)}`, 
                     text: messageText, 
                     sender: 'elite_bot', 
-                    timestamp: new Date(Date.now())
+                    timestamp: new Date().toISOString()
                 };
                 await conversationService.addMessage(userId, ELITE_BOT_JID, eliteBotMessage, ELITE_BOT_NAME);
                 await processAiResponseForJid(userId, ELITE_BOT_JID, true); 
@@ -294,7 +296,7 @@ export const handleStartClientTestBot = async (req: AuthenticatedRequest<any, an
                 if (userAfterTest) {
                     const finalConversation = userAfterTest.conversations[safeJid];
                     if (finalConversation) {
-                        const now = new Date(Date.now());
+                        const now = new Date();
                         const evaluation: EvaluationResult = {
                             score: finalConversation.status === LeadStatus.HOT ? 100 : (finalConversation.status === LeadStatus.WARM ? 70 : 30),
                             outcome: finalConversation.status === LeadStatus.HOT ? 'SUCCESS' : (finalConversation.status === LeadStatus.WARM ? 'NEUTRAL' : 'FAILURE'),
@@ -408,10 +410,10 @@ export const handleGetWhatsAppGroups = async (req: AuthenticatedRequest, res: an
     }
 };
 
-export const handleCreateCampaign = async (req: AuthenticatedRequest<any, any, Campaign>, res: any) => {
+export const handleCreateCampaign = async (req: AuthenticatedRequest<any, any, Omit<Campaign, 'id' | 'userId' | 'createdAt' | 'stats'>>, res: any) => {
     try {
         const { id: userId } = req.user;
-        const campaignData: Campaign = { ...req.body, id: uuidv4(), userId, createdAt: new Date().toISOString(), stats: { totalSent: 0, totalFailed: 0 } };
+        const campaignData: Campaign = { ...req.body, id: uuidv4(), userId, createdAt: new Date().toISOString(), stats: { totalSent: 0, totalFailed: 0 } } as Campaign;
         campaignData.stats.nextRunAt = campaignService.calculateNextRun(campaignData);
         const newCampaign = await db.createCampaign(campaignData);
         logService.audit(`Campaña creada: ${newCampaign.name}`, userId, req.user.username);
@@ -547,7 +549,8 @@ export const handleConvertRadarSignal = async (req: AuthenticatedRequest<{ id: s
                     id: uuidv4(), 
                     text: signal.messageContent, 
                     sender: 'user', 
-                    timestamp: new Date(signal.timestamp)
+                    // FIX: Changed to match type definition.
+                    timestamp: signal.timestamp
                 }],
                 isBotActive: true,
                 isMuted: false,
@@ -556,11 +559,14 @@ export const handleConvertRadarSignal = async (req: AuthenticatedRequest<{ id: s
                     id: uuidv4(), 
                     note: `Convertido de Radar. Score: ${signal.strategicScore || signal.analysis.score}. Razón: ${signal.analysis.reasoning}`, 
                     author: 'AI', 
-                    timestamp: new Date()
+                    // FIX: Changed `new Date()` to `new Date().toISOString()` to match string type.
+                    timestamp: new Date().toISOString()
                 }],
                 isAiSignalsEnabled: true,
-                firstMessageAt: new Date(signal.timestamp),
-                lastActivity: new Date(),
+                // FIX: Changed to match type definition.
+                firstMessageAt: signal.timestamp,
+                // FIX: Changed to string to match type definition.
+                lastActivity: new Date().toISOString(),
              };
              await db.saveUserConversation(userId, newConversation);
         } else {

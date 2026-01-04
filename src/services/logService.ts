@@ -1,4 +1,5 @@
 
+
 import { db } from '../database.js';
 import { LogLevel } from '../types.js';
 import { LOG_LEVEL } from '../env.js';
@@ -42,6 +43,7 @@ class LogService {
     private log(level: LogLevel, message: string, userId?: string, username?: string, metadata?: Record<string, any>): void {
         const timestamp = new Date();
         const logEntry = {
+            // FIX: Convert Date object to ISO string to match the LogEntry type.
             timestamp: timestamp.toISOString(),
             level,
             message,

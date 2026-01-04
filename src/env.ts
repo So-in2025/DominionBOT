@@ -23,8 +23,10 @@ export const JWT_SECRET = process.env.JWT_SECRET || 'dominion-local-secret-key';
 export const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://admin:C3WcIkonjZ4tnYUN@cluster0.rxgrwk7.mongodb.net/dominion_local?retryWrites=true&w=majority&appName=Cluster0';
 export const PORT = process.env.PORT || 3001;
 export const LOG_LEVEL = process.env.LOG_LEVEL || 'INFO';
+export const ENABLE_GOD_MODE = process.env.ENABLE_GOD_MODE === 'true';
 
 // Debug de seguridad (solo muestra los últimos 4 caracteres)
 const secretDisplay = JWT_SECRET === 'dominion-local-secret-key' ? 'DEFAULT_DEV_KEY' : `...${JWT_SECRET.slice(-4)}`;
 console.log(`[ENV] Log Level: [${LOG_LEVEL}]`);
 console.log(`[ENV] JWT Key Hash: [${secretDisplay}]`);
+if (ENABLE_GOD_MODE) console.warn('[ENV] ⚠️ God Mode está HABILITADO.');

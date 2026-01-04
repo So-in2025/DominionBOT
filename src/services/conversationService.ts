@@ -1,8 +1,10 @@
 
+
 import { Conversation, LeadStatus, Message } from '../types.js';
 import { db, sanitizeKey } from '../database.js';
 import { logService } from './logService.js';
 import { ELITE_BOT_JID } from '../whatsapp/client.js'; 
+import { createHash } from 'crypto';
 
 class ConversationService {
   
@@ -38,8 +40,8 @@ class ConversationService {
       let hasUpdates = false;
 
       for (const item of items) {
-          // FILTER: Ignore Status Broadcasts AND Groups (@g.us) for the main Inbox
-          if (item.jid === 'status@broadcast' || item.jid.endsWith('@g.us')) continue;
+          // FILTER: Ignore Status Broadcasts, Groups (@g.us), and Newsletters for the main Inbox
+          if (item.jid === 'status@broadcast' || item.jid.endsWith('@g.us') || item.jid.endsWith('@newsletter')) continue;
           
           const safeJid = sanitizeKey(item.jid);
           let conversation = conversations[safeJid] || conversations[item.jid] || updates[safeJid];
@@ -60,6 +62,7 @@ class ConversationService {
                 internalNotes: [],
                 isAiSignalsEnabled: true,
                 isTestBotConversation: isEliteBotJid, 
+                // FIX: Changed to string to match type definition.
                 lastActivity: item.timestamp ? new Date(item.timestamp * 1000).toISOString() : new Date().toISOString()
               };
               updates[safeJid] = conversation;
@@ -85,8 +88,8 @@ class ConversationService {
   }
 
   async addMessage(userId: string, jid: string, message: Message, leadName?: string, isHistoryImport: boolean = false) {
-    // FILTER: Ignore messages from Groups for the Inbox (Radar handles groups separately)
-    if (jid.endsWith('@g.us')) return;
+    // FILTER: Ignore messages from Groups and Newsletters
+    if (jid.endsWith('@g.us') || jid.endsWith('@newsletter')) return;
 
     // Retrieve fresh user data to ensure we don't overwrite with stale state
     const user = await db.getUser(userId);
@@ -102,10 +105,9 @@ class ConversationService {
 
     const isEliteBotJid = jid === ELITE_BOT_JID;
     
-    // FIX 1: Robust Timestamp Logic
-    const effectiveLastActivity = isHistoryImport 
-        ? (message.timestamp instanceof Date ? message.timestamp.toISOString() : new Date(message.timestamp).toISOString()) 
-        : new Date().toISOString();
+    // FIX: Force update lastActivity for ANY new message processing to ensure it shows up in Delta Polling,
+    // even if it's a history backfill. This fixes "Ghost Messages".
+    const effectiveLastActivity = new Date().toISOString();
 
     if (!conversation) {
       const leadIdentifier = jid.split('@')[0];
@@ -121,7 +123,8 @@ class ConversationService {
         messages: [],
         isBotActive: initialBotState, 
         isMuted: false,
-        firstMessageAt: message.timestamp instanceof Date ? message.timestamp.toISOString() : new Date(message.timestamp).toISOString(),
+        // FIX: Changed to match type definition.
+        firstMessageAt: message.timestamp,
         tags: [],
         internalNotes: [],
         isAiSignalsEnabled: true,
@@ -147,9 +150,10 @@ class ConversationService {
         }
     }
     
-    // FIX 2: Blindaje de IDs (Message ID Safety)
+    // Blindaje de IDs (Message ID Safety) using crypto hash
     if (!message.id) {
-        message.id = `${jid}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const timestamp = new Date(message.timestamp).getTime();
+        message.id = createHash('sha256').update(jid + message.text + message.sender + timestamp.toString()).digest('hex').slice(0, 16);
     }
 
     // IDEMPOTENCY CHECK: STRICTLY PREVENT DUPLICATES
@@ -165,16 +169,8 @@ class ConversationService {
     // Sort to maintain chronological order
     conversation.messages.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
     
-    // Update lastActivity logic
-    if (message.sender === 'user' && !isHistoryImport) {
-            conversation.lastActivity = new Date().toISOString();
-    } else {
-            const existingLast = new Date(conversation.lastActivity || 0).getTime();
-            const newLast = new Date(effectiveLastActivity).getTime();
-            if (newLast > existingLast) {
-                conversation.lastActivity = effectiveLastActivity;
-            }
-    }
+    // CRITICAL FIX: Always bump lastActivity on new ingestion to trigger sync
+    conversation.lastActivity = effectiveLastActivity;
 
     // Protocolo de Reactivación y Degradación por Intervención Humana
     if (message.sender === 'owner') {

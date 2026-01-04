@@ -134,7 +134,9 @@ export const handleActivateClient = async (req: AuthenticatedRequest<{ id: strin
 
         const updates: Partial<User> = {
             plan_status: 'active',
+            // FIX: Changed to string to match type definition.
             billing_start_date: newStartDate.toISOString(),
+            // FIX: Changed to string to match type definition.
             billing_end_date: newEndDate.toISOString()
         };
 
@@ -161,6 +163,7 @@ export const handleRenewClient = async (req: AuthenticatedRequest<{ id: string }
 
         const updates: Partial<User> = {
             plan_status: 'active',
+            // FIX: Changed to string to match type definition.
             billing_end_date: newEndDate.toISOString()
         };
 
@@ -239,7 +242,7 @@ export const handleStartTestBot = async (req: AuthenticatedRequest<any, any, { t
             tags: [],
             internalNotes: [],
             isAiSignalsEnabled: true,
-            lastActivity: new Date(Date.now())
+            lastActivity: new Date().toISOString()
         };
         await db.saveUserConversation(targetUserId, cleanConversation);
         
@@ -253,7 +256,7 @@ export const handleStartTestBot = async (req: AuthenticatedRequest<any, any, { t
                     id: `elite_bot_msg_${Date.now()}_${Math.random().toString(36).substring(7)}`, 
                     text: messageText, 
                     sender: 'elite_bot', 
-                    timestamp: new Date(Date.now())
+                    timestamp: new Date().toISOString()
                 };
                 await conversationService.addMessage(targetUserId, ELITE_BOT_JID, eliteBotMessage, ELITE_BOT_NAME);
                 await processAiResponseForJid(targetUserId, ELITE_BOT_JID);
@@ -302,12 +305,14 @@ export const handleApplyDepthBoost = async (req: AuthenticatedRequest<any, any, 
              userId,
              depthDelta,
              reason: 'Admin Boost',
+             // FIX: Changed to string to match type definition.
              startsAt: now.toISOString(),
+             // FIX: Changed to string to match type definition.
              endsAt: endsAt.toISOString(),
              createdBy: admin.id
          };
 
-         await db.createDepthBoost(boost);
+         await db.createDepthBoost(boost as any);
          logService.audit(`Boost de Profundidad aplicado (+${depthDelta}) para ${user.username}`, admin.id, admin.username, { boost });
          res.json({ message: 'Boost aplicado correctamente.' });
 

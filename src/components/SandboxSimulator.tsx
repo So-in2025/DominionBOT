@@ -1,4 +1,5 @@
 
+
 import React, { useState, useRef, useEffect } from 'react';
 import { BotSettings, Message, LeadStatus } from '../types';
 
@@ -23,7 +24,8 @@ const SandboxSimulator: React.FC<SandboxSimulatorProps> = ({ settings, backendUr
     e.preventDefault();
     if (!input.trim() || loading) return;
 
-    const userMsg: Message = { id: Date.now().toString(), text: input, sender: 'user', timestamp: new Date() };
+    // FIX: Changed `new Date()` to `new Date().toISOString()` to match string type.
+    const userMsg: Message = { id: Date.now().toString(), text: input, sender: 'user', timestamp: new Date().toISOString() };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setLoading(true);
@@ -47,7 +49,8 @@ const SandboxSimulator: React.FC<SandboxSimulatorProps> = ({ settings, backendUr
       if (res.ok) {
          // Mock visual para feedback inmediato
          setTimeout(() => {
-             const botMsg: Message = { id: `bot-${Date.now()}`, text: "[MODO PRUEBA] Respuesta simulada basada en tu configuración.", sender: 'bot', timestamp: new Date() };
+             // FIX: Changed `new Date()` to `new Date().toISOString()` to match string type.
+             const botMsg: Message = { id: `bot-${Date.now()}`, text: "[MODO PRUEBA] Respuesta simulada basada en tu configuración.", sender: 'bot', timestamp: new Date().toISOString() };
              setMessages(prev => [...prev, botMsg]);
              setLoading(false);
          }, 1000);

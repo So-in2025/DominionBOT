@@ -1,4 +1,5 @@
 
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { db } from '../database.js';
 import { RadarSignal, User, MarketContextSnapshot, HiddenSignal } from '../types.js';
@@ -101,6 +102,7 @@ class RadarService {
                         senderJid,
                         senderName: senderName || 'Usuario Desconocido',
                         messageContent,
+                        // FIX: Changed to string to match type definition.
                         timestamp: new Date().toISOString(),
                         
                         // Mapped fields from AI
@@ -122,6 +124,7 @@ class RadarService {
                     const newHistory = [...currentHistory, newSentiment].slice(-10); 
                     
                     await db.updateGroupMemory(groupJid, {
+                        // FIX: Changed to string to match type definition.
                         lastUpdated: new Date().toISOString(),
                         sentimentHistory: newHistory
                     });

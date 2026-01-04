@@ -1,5 +1,9 @@
 
 
+
+
+
+
 import React, { useState } from 'react';
 import { Conversation, InternalNote, LeadStatus } from '../types';
 
@@ -37,8 +41,8 @@ const SalesContextSidebar: React.FC<SalesContextSidebarProps> = ({
       const newNoteEntry: InternalNote = {
         id: Date.now().toString(),
         author: 'HUMAN',
-        // FIX: Explicitly pass Date.now() to the Date constructor to avoid potential TypeScript errors in strict environments.
-        timestamp: new Date(Date.now()),
+        // FIX: Changed `new Date()` to `new Date().toISOString()` to match the string type requirement for timestamps.
+        timestamp: new Date().toISOString(),
         note: newNote.trim()
       };
       onAddNote(newNoteEntry.note); // Ensure the correct parameter is passed if onAddNote expects string

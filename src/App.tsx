@@ -1,4 +1,5 @@
 
+
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Conversation, BotSettings, Message, View, ConnectionStatus, User, LeadStatus, PromptArchetype, Testimonial, SystemSettings } from './types';
 import Header from './components/Header';
@@ -12,7 +13,7 @@ import AuditView from './components/Admin/AuditView';
 import { AuthModal } from './components/AuthModal';
 import LegalModal from './components/LegalModal'; 
 import AgencyDashboard from './components/AgencyDashboard';
-import CampaignsPanel from './components/CampaignsPanel'; 
+import { CampaignsPanel } from './components/CampaignsPanel'; 
 import RadarPanel from './components/RadarPanel'; 
 import NetworkPanel from './components/NetworkPanel'; 
 import Toast, { ToastData } from './components/Toast';
@@ -625,9 +626,11 @@ export function App() {
           id: `owner-${Date.now()}-${Math.random().toString(36).slice(2)}`,
           sender: 'owner',
           text,
-          timestamp: new Date()
+          // FIX: Changed to string to match type definition.
+          timestamp: new Date().toISOString()
       };
 
+      // FIX: Corrected type for optimistic update.
       setConversations(prev => prev.map(c => 
           c.id === selectedConversationId 
           // FIX 1: lastActivity debe ser ISO String para consistencia con backend y ordenamiento
