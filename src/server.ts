@@ -39,7 +39,6 @@ const SEED_TESTIMONIALS = [
 
 const app = express();
 
-// ... (Middleware setup remains same)
 const IGNORED_API_PATHS = ['/api/status', '/api/conversations', '/api/campaigns', '/api/radar/activity', '/api/radar/signals'];
 app.use((req, res, next) => {
     if (req.url.startsWith('/api') && !IGNORED_API_PATHS.some(path => req.url.startsWith(path))) {
@@ -48,16 +47,29 @@ app.use((req, res, next) => {
     next();
 });
 
-// PERMISSIVE CORS: Allow all origins to resolve deployment/local issues.
-app.use(cors({
-    origin: (origin, callback) => {
-        callback(null, true);
-    },
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Cache-Control', 'ngrok-skip-browser-warning', 'Accept'],
-    credentials: true,
-    maxAge: 86400
-}) as any);
+// ROBUST CORS MIDDLEWARE: Replaces the standard cors package for explicit control.
+app.use((req, res, next) => {
+    // Allows any domain to request data. Extremely permissive for development and ngrok.
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    
+    // Specifies the methods allowed when accessing the resource.
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    
+    // Specifies the headers allowed in a request.
+    res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Cache-Control, ngrok-skip-browser-warning');
+    
+    // Indicates that the response to the request can be exposed when the credentials flag is true.
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+
+    // Handle the OPTIONS pre-flight request. Browsers send this before the actual request.
+    if (req.method === 'OPTIONS') {
+        // A 204 No Content response is standard and efficient for pre-flight checks.
+        return res.status(204).end();
+    }
+    
+    next();
+});
+
 
 app.use(express.json({ limit: '10mb' }) as any);
 

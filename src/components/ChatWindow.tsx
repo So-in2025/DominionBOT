@@ -377,7 +377,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
         <SalesContextSidebar 
           conversation={conversation}
           onUpdateTags={(tags) => onUpdateConversation?.(conversation.id, { tags })}
-// FIX: Corrected variable name, removed recursive call, and fixed logic to update conversation state.
           onAddNote={(note) => {
             if (!conversation) return;
             const newNoteEntry: InternalNote = {

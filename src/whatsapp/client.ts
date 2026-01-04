@@ -1,5 +1,4 @@
 
-
 import makeWASocket, {
   DisconnectReason,
   makeCacheableSignalKeyStore,
@@ -527,23 +526,28 @@ async function _commonAiProcessingLogic(userId: string, jid: string, user: User,
 }
 
 export async function processAiResponseForJid(userId: string, jid: string, force: boolean = false) {
+    const normalizedJid = jid.replace(/@lid/g, '@s.whatsapp.net');
+    
     const user = await db.getUser(userId);
     if (!user) return;
 
     const convs = await conversationService.getConversations(userId);
-    const conversation = convs.find(c => c.id === jid);
+    const conversation = convs.find(c => c.id === normalizedJid);
 
-    if (!conversation) return;
+    if (!conversation) {
+        logService.warn(`[WA-CLIENT] Force AI run failed. Conversation not found for JID: ${jid} (normalized to: ${normalizedJid})`, userId);
+        return;
+    }
 
     if (conversation.isTestBotConversation) {
         if (user.plan_status === 'suspended') return;
-        return _commonAiProcessingLogic(userId, jid, user, '[WA-CLIENT-ELITE-TEST]');
+        return _commonAiProcessingLogic(userId, normalizedJid, user, '[WA-CLIENT-ELITE-TEST]');
     }
 
     if (!force) {
         if (!user.settings.isActive || user.plan_status === 'suspended') return;
         
-        const isIgnored = user.settings.ignoredJids?.some(id => id.includes(jid.split('@')[0]));
+        const isIgnored = user.settings.ignoredJids?.some(id => id.includes(normalizedJid.split('@')[0]));
         if (isIgnored) return;
 
         if (conversation.isMuted || !conversation.isBotActive || conversation.status === LeadStatus.PERSONAL) return;
@@ -551,5 +555,5 @@ export async function processAiResponseForJid(userId: string, jid: string, force
         logService.info(`[WA-CLIENT] ⚡ FORZANDO EJECUCIÓN IA para ${jid}`, userId);
     }
 
-    return _commonAiProcessingLogic(userId, jid, user);
+    return _commonAiProcessingLogic(userId, normalizedJid, user);
 }
