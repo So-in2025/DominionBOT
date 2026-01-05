@@ -302,9 +302,10 @@ app.use((err: any, req: any, res: any, next: any) => {
     });
 });
 
-// FIX: Removing '0.0.0.0' allows Node.js to use the default Dual Stack (IPv6 + IPv4)
-// This solves the 'connectex: target machine actively refused it' error when cloudflared tries to access via localhost (IPv6 ::1)
-app.listen(Number(PORT), async () => {
+// FIX: Explicitly bind to '0.0.0.0' to ensure IPv4 availability.
+// CRITICAL FIX: Increased keepAliveTimeout to 65s (Cloudflare default is 60s).
+// This prevents 'wsarecv: An existing connection was forcibly closed' errors.
+const server = app.listen(Number(PORT), '0.0.0.0', async () => {
     console.log(`\x1b[33m%s\x1b[0m`, `\n    🦅 DOMINION BACKEND ACTIVO EN PUERTO ${PORT}\n`);
     try {
         await db.init();
@@ -399,3 +400,8 @@ app.listen(Number(PORT), async () => {
         logService.error('Fallo crítico al inicializar la base de datos o el servicio TTS', e);
     }
 });
+
+// Configure timeouts to be slightly higher than Cloudflare's default (60s)
+// to prevent 502 Bad Gateway errors.
+server.keepAliveTimeout = 65000; 
+server.headersTimeout = 66000;
