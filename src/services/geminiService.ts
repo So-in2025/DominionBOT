@@ -1,5 +1,4 @@
 
-
 import { GoogleGenAI } from "@google/genai";
 import { db } from '../database.js';
 import { logService } from './logService.js';
@@ -39,7 +38,7 @@ export const generateContentWithFallback = async ({
     for (const modelName of MODEL_PRIORITY) {
         const cooldownUntil = await db.getModelCooldown(modelName);
         if (cooldownUntil && Date.now() < cooldownUntil) {
-            logService.debug(`[GEMINI-SERVICE] Modelo ${modelName} en cooldown. Saltando.`, undefined, undefined);
+            // logService.debug(`[GEMINI-SERVICE] Modelo ${modelName} en cooldown. Saltando.`, undefined, undefined);
             continue;
         }
 
@@ -58,18 +57,18 @@ export const generateContentWithFallback = async ({
                 config,
             });
 
-            // Si llegamos aquí, la llamada fue exitosa
-            logService.debug(`[GEMINI-SERVICE] Contenido generado exitosamente con ${modelName}.`);
             return response;
 
         } catch (err: any) {
             const errorMessage = err.message || '';
-            // BLINDAJE ANTI-RATE LIMIT: Si el error es 429, no intentar con otros modelos.
+            
+            // BLINDAJE ANTI-RATE LIMIT:
             if (errorMessage.includes('429') || errorMessage.includes('RESOURCE_EXHAUSTED')) {
-                logService.error(`[GEMINI-SERVICE] 🛑 RATE LIMIT ALCANZADO. Deteniendo fallback.`, err, undefined, undefined);
-                // Poner el modelo en un cooldown corto y abortar la cadena.
-                await db.setModelCooldown(modelName, Date.now() + (MODEL_COOLDOWN_MS / 4)); // 15 min cooldown para rate limit
-                throw new Error("Límite de peticiones a la API de IA alcanzado. Intenta más tarde.");
+                logService.warn(`[GEMINI-SERVICE] ⚠️ RATE LIMIT (429) con ${modelName}. Esperando 5s...`, undefined, undefined);
+                // Pause specifically for 429 to allow quota to refill slightly before trying next model
+                await new Promise(r => setTimeout(r, 5000));
+                // Don't mark as broken, just skip to next for this request
+                continue; 
             }
 
             logService.warn(`[GEMINI-FAILOVER] Fallo con ${modelName}. Mensaje: ${errorMessage}. Pasando al siguiente modelo.`, undefined, undefined);

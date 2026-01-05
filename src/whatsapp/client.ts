@@ -6,81 +6,46 @@ import makeWASocket, {
   fetchLatestBaileysVersion,
   Browsers,
   proto,
-  GroupMetadata,
-  Contact,
-  WAMessageKey,
-  isJidGroup
+  isJidGroup,
+  jidNormalizedUser,
+  GroupMetadata
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import pino from 'pino';
 import { HttpsProxyAgent } from 'https-proxy-agent';
-import { ConnectionStatus, Message, LeadStatus, User, Conversation, WhatsAppGroup } from '../types.js';
+import { ConnectionStatus, Message, LeadStatus, WhatsAppGroup } from '../types.js';
 import { conversationService } from '../services/conversationService.js';
 import { db, sanitizeKey } from '../database.js';
 import { generateBotResponse } from '../services/aiService.js';
 import { useMongoDBAuthState, clearBindedSession } from './mongoAuth.js';
 import { logService } from '../services/logService.js';
 import * as QRCode from 'qrcode';
-import { radarService } from '../services/radarService.js'; 
 import { Buffer } from 'buffer'; 
-import { campaignService } from '../services/campaignService.js'; 
 import { normalizeJid } from '../utils/jidUtils.js';
 
-// GLOBAL STATE MANAGERS
+// GLOBAL STATE
 const sessions = new Map<string, WASocket>();
 const qrCache = new Map<string, string>(); 
 const codeCache = new Map<string, string>(); 
-const reconnectionAttempts = new Map<string, number>();
-const connectingLocks = new Set<string>(); // MUTEX: Prevents parallel connection attempts
+const isConnecting = new Map<string, boolean>(); // Simple lock
 
-// RETRY CACHE (Prevent DB spam)
-const msgRetryCounterMap = new Map<string, any>();
-const retryCache = {
-    get: (key: string) => msgRetryCounterMap.get(key),
-    set: (key: string, value: any) => { msgRetryCounterMap.set(key, value) },
-    del: (key: string) => { msgRetryCounterMap.delete(key) },
-    flushAll: () => { msgRetryCounterMap.clear() }
+// RETRY CACHE (In-Memory for session duration - Critical for decryption stability)
+const retryMap = new Map<string, any>();
+const msgRetryCounterCache = {
+    get: (key: string) => retryMap.get(key),
+    set: (key: string, value: any) => { retryMap.set(key, value); },
+    del: (key: string) => { retryMap.delete(key); },
+    flushAll: () => { retryMap.clear(); }
 };
 
-// Silent logger
+// Logger setup - Silent to avoid console spam, but functional for Baileys
 const logger = pino({ level: 'silent' }); 
 
 export const ELITE_BOT_JID = '5491112345678@s.whatsapp.net';
 export const ELITE_BOT_NAME = 'Simulador Neural';
 export const DOMINION_NETWORK_JID = '5491110000000@s.whatsapp.net';
 
-// AI QUEUE
-const aiProcessingQueue = new Set<string>();
-let lastTickTime = Date.now();
-
-// TRAFFIC GOVERNOR
-setInterval(async () => {
-    const now = Date.now();
-    const drift = now - lastTickTime - 2000;
-    lastTickTime = now;
-    
-    // CPU Watchdog
-    if (drift > 800) {
-        logService.warn(`[WATCHDOG] ⚠️ Alta latencia de CPU (${drift}ms). Sistema bajo carga.`, 'SYSTEM');
-    }
-
-    if (aiProcessingQueue.size > 0) {
-        const itemsToProcess = Array.from(aiProcessingQueue).slice(0, drift > 500 ? 1 : 3);
-        
-        for (const item of itemsToProcess) {
-            aiProcessingQueue.delete(item);   
-            const [userId, jid] = item.split('::');
-            if (userId && jid) {
-                try {
-                    await processAiResponseForJid(userId, jid);
-                } catch (err) {
-                    logService.error(`[AI-QUEUE] Error processing ${item}`, err, userId);
-                }
-            }
-        }
-    }
-}, 2000); 
-
+// --- MESSAGE EXTRACTION UTILS ---
 function extractMessageContent(msg: proto.IWebMessageInfo | proto.IMessage): string | null {
     const message = (msg as any).message || msg; 
     if (!message) return null;
@@ -117,14 +82,13 @@ export function getSessionStatus(userId: string): { status: ConnectionStatus, qr
     const qr = qrCache.get(userId);
     const code = codeCache.get(userId);
 
-    // Strict check: Socket must exist AND websocket must be open
     // @ts-ignore
-    if (sock?.user && sock.ws?.isOpen) return { status: ConnectionStatus.CONNECTED };
+    if (sock?.user) return { status: ConnectionStatus.CONNECTED };
     
     if (code) return { status: ConnectionStatus.AWAITING_SCAN, pairingCode: code };
     if (qr) return { status: ConnectionStatus.AWAITING_SCAN, qr };
     
-    if (connectingLocks.has(userId)) return { status: ConnectionStatus.GENERATING_QR };
+    if (isConnecting.get(userId)) return { status: ConnectionStatus.GENERATING_QR };
 
     return { status: ConnectionStatus.DISCONNECTED };
 }
@@ -134,52 +98,34 @@ export function getSocket(userId: string): WASocket | undefined {
 }
 
 // ----------------------------------------------------------------------
-// CORE CONNECTION LOGIC (ARMORED)
+// CORE CONNECTION LOGIC (STABLE v3.3 - BACK TO BASICS)
 // ----------------------------------------------------------------------
 export async function connectToWhatsApp(userId: string, phoneNumber?: string, isManual: boolean = false) {
-    if (connectingLocks.has(userId)) {
+    // 1. Simple Lock to prevent race conditions (double connect calls)
+    if (isConnecting.get(userId)) {
+        console.log(`[WA] ${userId} already connecting. Skipping.`);
         return;
     }
-
-    if (isManual) {
-        reconnectionAttempts.set(userId, 0);
-    }
-
-    const attempts = reconnectionAttempts.get(userId) || 0;
     
-    if (attempts >= 15) { // Increased limits for resilience
-        logService.error(`[WA-CLIENT] 🛑 Máximo de reconexiones alcanzado para ${userId}. Pausa de seguridad.`, userId);
-        setTimeout(() => reconnectionAttempts.set(userId, 0), 60000 * 2); 
-        return; 
+    // 2. Check if already connected
+    const existingSock = sessions.get(userId);
+    if (existingSock?.user) {
+        return; // Already online
     }
 
     try {
-        connectingLocks.add(userId);
-        reconnectionAttempts.set(userId, attempts + 1);
+        isConnecting.set(userId, true);
         
-        // ZOMBIE KILLER
-        const oldSock = sessions.get(userId);
-        if (oldSock) {
-            try {
-                oldSock.end(undefined);
-                // @ts-ignore
-                if (oldSock.ws) oldSock.ws.terminate(); 
-                oldSock.ev.removeAllListeners('connection.update');
-                oldSock.ev.removeAllListeners('creds.update');
-                oldSock.ev.removeAllListeners('messages.upsert');
-            } catch (e) {}
-            sessions.delete(userId);
-        }
-
+        // Clean caches but DO NOT FORCE KILL existing socket blindly here.
+        // We assume the previous check handled the "already connected" case.
         qrCache.delete(userId);
         codeCache.delete(userId);
-
-        await new Promise(resolve => setTimeout(resolve, 1000));
 
         const { state, saveCreds } = await useMongoDBAuthState(userId);
         const { version } = await fetchLatestBaileysVersion();
         const user = await db.getUser(userId);
 
+        // 3. Initialize Socket with CONSERVATIVE settings
         const sock = makeWASocket({
             version,
             logger,
@@ -188,343 +134,270 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
                 creds: state.creds,
                 keys: makeCacheableSignalKeyStore(state.keys, logger),
             },
-            browser: Browsers.macOS('Chrome'),
+            browser: Browsers.macOS('Chrome'), // Standard browser signature
             agent: user?.settings?.proxyUrl ? new HttpsProxyAgent(user.settings.proxyUrl) as any : undefined,
             generateHighQualityLinkPreview: true,
-            shouldIgnoreJid: jid => jid?.endsWith('@broadcast') || jid?.endsWith('@newsletter'), 
+            shouldIgnoreJid: jid => jid?.endsWith('@broadcast') || jid?.endsWith('@newsletter'),
             
-            // --- STABILITY CONFIGURATION ---
-            syncFullHistory: false, 
-            markOnlineOnConnect: true, // Keep online to reduce sync lag
-            connectTimeoutMs: 60000, 
+            // STABILITY SETTINGS
+            syncFullHistory: false, // Critical for fast startup
+            markOnlineOnConnect: false, // Don't spam "Online" status immediately
+            connectTimeoutMs: 60000, // Give it time on slow networks
             defaultQueryTimeoutMs: 60000,
-            keepAliveIntervalMs: 20000, 
-            retryRequestDelayMs: 2000,
-            msgRetryCounterCache: retryCache,
-            getMessage: async () => undefined
+            keepAliveIntervalMs: 30000, // Standard keep-alive
+            retryRequestDelayMs: 5000, // Wait 5s before retrying failed requests (Fixes loops)
+            msgRetryCounterCache: msgRetryCounterCache, // Handle decryption retries properly
+            getMessage: async (key) => {
+                // Return empty to prevent crashes on history sync, we don't need backfill for bot logic
+                return undefined; 
+            }
         });
 
+        // 4. Bind Events
         sessions.set(userId, sock);
 
+        // Creds update - Critical for persistence
         sock.ev.on('creds.update', saveCreds);
 
-        sock.ev.on('connection.update', async (update: any) => { 
-            const { connection, lastDisconnect, qr, pairingCode: newPairingCode } = update;
+        // Connection update
+        sock.ev.on('connection.update', async (update) => {
+            const { connection, lastDisconnect, qr } = update;
+            // Type casting to access pairingCode if available in update
+            const pairingCode = (update as any).pairingCode;
 
             if (qr) {
-                if (phoneNumber && !codeCache.get(userId) && !qrCache.get(userId)) { 
+                // Handle Pairing Code flow if phone number provided
+                if (phoneNumber && !codeCache.get(userId) && !qrCache.get(userId)) {
                     setTimeout(async () => {
                         try {
+                            // Ensure socket is still the active one
                             const currentSock = sessions.get(userId);
-                            if (currentSock === sock && !currentSock.user && !codeCache.get(userId)) {
+                            if (currentSock === sock && !currentSock.authState.creds.me && !codeCache.get(userId)) {
                                 const code = await currentSock.requestPairingCode(phoneNumber);
                                 codeCache.set(userId, code);
                             }
-                        } catch (e) {}
-                    }, 2000);
+                        } catch (e) {
+                            console.error("Pairing code error", e);
+                        }
+                    }, 3000);
                 }
                 qrCache.set(userId, await QRCode.toDataURL(qr));
             }
 
-            if (newPairingCode) {
-                codeCache.set(userId, newPairingCode);
+            if (pairingCode) {
+                codeCache.set(userId, pairingCode);
             }
 
             if (connection === 'close') {
-                connectingLocks.delete(userId);
+                isConnecting.set(userId, false);
                 
                 const disconnectError = lastDisconnect?.error as Boom | any;
                 const statusCode = disconnectError?.output?.statusCode;
                 
-                // CLEANUP
+                // STANDARD RECONNECTION LOGIC
+                const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+                
+                // Clean up caches
                 qrCache.delete(userId);
                 codeCache.delete(userId);
-                sessions.delete(userId);
 
-                const isLoggedOut = statusCode === DisconnectReason.loggedOut;
-                const isCryptoError = disconnectError?.message?.includes('Bad MAC');
-
-                if (isLoggedOut || isCryptoError) {
-                    await clearBindedSession(userId); 
-                    reconnectionAttempts.set(userId, 0); 
-                    setTimeout(() => connectToWhatsApp(userId, phoneNumber, false), 1000);
+                if (shouldReconnect) {
+                    // Gradual Backoff for reconnect to prevent loops
+                    const delay = statusCode === DisconnectReason.restartRequired ? 1000 : 5000;
+                    // Only log real errors, ignore general disconnects
+                    if (statusCode !== DisconnectReason.restartRequired) {
+                        logService.warn(`[WA] Desconectado (${statusCode}). Reconectando en ${delay}ms...`, userId);
+                    }
+                    setTimeout(() => connectToWhatsApp(userId, phoneNumber), delay);
                 } else {
-                    const currentAttempts = reconnectionAttempts.get(userId) || 0;
-                    // AGGRESSIVE RECONNECT: Fast retries for first 5 attempts
-                    const delay = currentAttempts < 5 ? 1000 : 5000;
-                    setTimeout(() => connectToWhatsApp(userId, phoneNumber, false), delay); 
+                    // Logged out - Clean session
+                    logService.warn(`[WA] Sesión cerrada (Log Out). Limpiando datos.`, userId);
+                    sessions.delete(userId);
+                    await clearBindedSession(userId);
+                    await db.updateUserSettings(userId, { isActive: false });
                 }
-
             } else if (connection === 'open') {
-                logService.info(`[WA-CLIENT] ✅ CONEXIÓN ESTABLECIDA.`, userId);
-                connectingLocks.delete(userId);
-                reconnectionAttempts.set(userId, 0); 
+                isConnecting.set(userId, false);
+                logService.info(`[WA] ✅ CONEXIÓN ESTABLECIDA.`, userId);
                 qrCache.delete(userId);
                 codeCache.delete(userId);
                 
+                // Update User Info
                 if (sock.user?.id) {
-                    const connectedNumber = sock.user.id.split('@')[0];
-                    await db.updateUser(userId, { whatsapp_number: connectedNumber });
+                    const number = jidNormalizedUser(sock.user.id).split('@')[0];
+                    await db.updateUser(userId, { whatsapp_number: number });
                     await db.updateUserSettings(userId, { isActive: true });
                 }
             }
         });
 
+        // Message Handling
         sock.ev.on('messages.upsert', async ({ messages, type }) => {
-            if (!messages || messages.length === 0) return;
-            
-            try {
-                const user = await db.getUser(userId);
-                const ignoredJids = user?.settings.ignoredJids || [];
-                const userConversations = user?.conversations || {};
+            if (type !== 'notify' && type !== 'append') return;
 
-                for (const msg of messages) {
-                    const rawJid = msg.key.remoteJid;
-                    const canonicalJid = normalizeJid(rawJid); 
-                    
-                    if (!canonicalJid || canonicalJid === 'status@broadcast' || canonicalJid.endsWith('@newsletter')) continue; 
+            for (const msg of messages) {
+                if (!msg.message) continue;
+                
+                // JID Normalization
+                const rawJid = msg.key.remoteJid;
+                const canonicalJid = normalizeJid(rawJid);
+                if (!canonicalJid || canonicalJid === 'status@broadcast' || canonicalJid.endsWith('@newsletter')) continue;
+                
+                // Ignore groups for standard bot flow
+                if (isJidGroup(canonicalJid)) continue; 
 
-                    const isGroup = isJidGroup(canonicalJid);
-                    if (isGroup) continue; // For now ignore groups in main logic
+                // Message Extraction
+                const messageText = extractMessageContent(msg);
+                if (!messageText) continue;
 
-                    const number = canonicalJid.split('@')[0];
-                    if (ignoredJids.some(ignored => number.includes(ignored))) continue;
-
-                    const isOwnerMessage = msg.key.fromMe;
-                    
-                    // CRITICAL: NEVER trigger AI for owner messages immediately
-                    if (isOwnerMessage) {
-                        // Just save to history, don't trigger AI
-                        const messageText = extractMessageContent(msg);
-                        if (messageText) {
-                             const userMessage: Message = {
-                                id: msg.key.id || Date.now().toString(),
-                                text: messageText,
-                                sender: 'owner',
-                                timestamp: new Date((typeof msg.messageTimestamp === 'number' ? msg.messageTimestamp : Date.now()/1000) * 1000).toISOString()
-                            };
-                            await conversationService.addMessage(userId, canonicalJid, userMessage, undefined);
-                        }
-                        continue;
-                    }
-
-                    // Process INCOMING Message
-                    const bestName = msg.pushName || (msg as any).verifiedBizName || undefined;
-                    const messageText = extractMessageContent(msg);
-                    if (!messageText) continue;
-
-                    const msgTimestamp = typeof msg.messageTimestamp === 'number' ? msg.messageTimestamp : (msg.messageTimestamp as any)?.low || Date.now() / 1000;
-                    
-                    // ANTI-FLOOD: Ignore old messages (> 2 mins ago) to prevent responding to backlog on reconnect
-                    if (msgTimestamp < (Date.now() / 1000 - 120)) continue;
-
-                    const userMessage: Message = {
-                        id: msg.key.id || Date.now().toString(),
-                        text: messageText,
-                        sender: 'user', 
-                        timestamp: new Date(msgTimestamp * 1000).toISOString()
-                    };
-
-                    await conversationService.addMessage(userId, canonicalJid, userMessage, bestName);
-                    
-                    // IA TRIGGER - ONLY FOR NOTIFY TYPE OR FRESH MESSAGES
-                    if (type === 'notify' || type === 'append') {
-                        // Double check: Is this truly a user message?
-                        if (!msg.key.fromMe) {
-                            logService.info(`[INBOX] 📩 Mensaje de ${canonicalJid}: "${messageText.substring(0, 20)}..."`, userId);
-                            aiProcessingQueue.add(`${userId}::${canonicalJid}`);
-                        }
-                    }
+                // Timestamp Check (Avoid processing old messages on reconnect)
+                const msgTime = (typeof msg.messageTimestamp === 'number' 
+                    ? msg.messageTimestamp 
+                    : (msg.messageTimestamp as any)?.low) || Math.floor(Date.now() / 1000);
+                
+                const now = Math.floor(Date.now() / 1000);
+                // If message is older than 2 minutes, ignore it to prevent flood loops on reconnect
+                if (now - msgTime > 120) { 
+                    continue; 
                 }
-            } catch (batchError) {
-                console.error(`[WA-CLIENT] Error procesando batch:`, batchError);
+
+                const isMe = msg.key.fromMe;
+                
+                // Persist Message
+                const userMessage: Message = {
+                    id: msg.key.id || Date.now().toString(),
+                    text: messageText,
+                    sender: isMe ? 'owner' : 'user',
+                    timestamp: new Date(msgTime * 1000).toISOString()
+                };
+
+                const contactName = msg.pushName;
+                await conversationService.addMessage(userId, canonicalJid, userMessage, contactName);
+
+                // Trigger AI (Only for incoming messages)
+                if (!isMe) {
+                    logService.info(`[INBOX] 📩 ${canonicalJid}: ${messageText.substring(0, 30)}...`, userId);
+                    // Direct call to process
+                    await processAiResponseForJid(userId, canonicalJid);
+                }
             }
         });
 
     } catch (error) {
-        logService.error(`[WA-CLIENT] Fallo fatal al iniciar conexión`, error, userId);
-        connectingLocks.delete(userId);
+        logService.error(`[WA] Error fatal en conexión`, error, userId);
+        isConnecting.set(userId, false);
     }
 }
 
 export async function disconnectWhatsApp(userId: string) {
-    reconnectionAttempts.set(userId, 999); 
     const sock = sessions.get(userId);
     if (sock) {
-        try { 
+        try {
             sock.end(undefined);
-            // @ts-ignore
-            if (sock.ws) sock.ws.terminate(); 
         } catch (e) {}
         sessions.delete(userId);
     }
+    isConnecting.set(userId, false);
     qrCache.delete(userId);
     codeCache.delete(userId);
-    connectingLocks.delete(userId);
     await db.updateUserSettings(userId, { isActive: false });
 }
 
-// --- GUARANTEED DELIVERY SYSTEM ---
-export async function sendMessage(senderId: string, jid: string, text: string, imageUrl?: string): Promise<proto.WebMessageInfo | undefined> {
-    const canonicalJid = normalizeJid(jid); 
-    if (!canonicalJid) throw new Error("Invalid JID");
+export async function sendMessage(senderId: string, jid: string, text: string, imageUrl?: string) {
+    const sock = sessions.get(senderId);
+    if (!sock) throw new Error("Cliente desconectado");
 
-    const MAX_RETRIES = 3;
-    let lastError;
+    const canonicalJid = normalizeJid(jid);
+    if (!canonicalJid) throw new Error("JID inválido");
 
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-        try {
-            let sock = sessions.get(senderId);
-
-            // 1. Check Socket Health
-            // @ts-ignore
-            if (!sock || !sock.ws || !sock.ws.isOpen) {
-                logService.warn(`[SEND-RETRY] Intento ${attempt}/${MAX_RETRIES}: Socket desconectado. Intentando reconexión rápida...`, senderId);
-                
-                // Force a fast reconnect attempt
-                connectToWhatsApp(senderId, undefined, false);
-                
-                // Wait for socket to possibly come alive (2s)
-                await new Promise(r => setTimeout(r, 2000));
-                sock = sessions.get(senderId);
-                
-                // @ts-ignore
-                if (!sock || !sock.ws || !sock.ws.isOpen) {
-                    throw new Error("Socket muerto tras intento de reconexión.");
-                }
-            }
-
-            logService.debug(`[WA-CLIENT] Enviando mensaje a ${canonicalJid} (Intento ${attempt})...`, senderId);
+    if (imageUrl) {
+        const buffer = imageUrl.startsWith('http') 
+            ? { url: imageUrl } 
+            : Buffer.from(imageUrl.replace(/^data:image\/\w+;base64,/, ""), 'base64');
             
-            let sentMsg: proto.WebMessageInfo | undefined;
-            if (imageUrl) {
-                const base64Data = imageUrl.split(',')[1] || imageUrl;
-                const buffer = Buffer.from(base64Data, 'base64');
-                sentMsg = (await sock.sendMessage(canonicalJid, { image: buffer, caption: text })) as proto.WebMessageInfo | undefined;
-            } else {
-                sentMsg = (await sock.sendMessage(canonicalJid, { text })) as proto.WebMessageInfo | undefined;
-            }
-            
-            if (!sentMsg || !sentMsg.key) throw new Error("No ack from Baileys");
-
-            return sentMsg; // Success!
-
-        } catch (e: any) {
-            lastError = e;
-            logService.warn(`[SEND-RETRY] Fallo intento ${attempt}: ${e.message}`, senderId);
-            if (attempt < MAX_RETRIES) {
-                // Exponential backoff: 1s, 2s, 4s...
-                await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt - 1)));
-            }
-        }
+        return await sock.sendMessage(canonicalJid, { image: buffer as any, caption: text });
+    } else {
+        return await sock.sendMessage(canonicalJid, { text });
     }
-
-    // If we get here, all retries failed.
-    logService.error(`[SEND-FAIL] Fallo definitivo enviando a ${canonicalJid}: ${lastError?.message}`, lastError, senderId);
-    throw new Error(`No se pudo enviar el mensaje tras ${MAX_RETRIES} intentos. Verifique su teléfono.`);
 }
 
 export async function fetchUserGroups(userId: string): Promise<WhatsAppGroup[]> {
     const sock = sessions.get(userId);
-    // @ts-ignore
-    if (!sock || !sock.ws?.isOpen) throw new Error("WhatsApp no conectado.");
+    if (!sock) return [];
     try {
         const groups = await sock.groupFetchAllParticipating();
-        return Object.values(groups).map((g: GroupMetadata) => {
-            const id = normalizeJid(g.id);
-            return id ? { id, subject: g.subject, size: g.participants.length } : null;
-        }).filter(g => g !== null) as WhatsAppGroup[];
-    } catch (e: any) {
-        throw new Error("Error obteniendo grupos.");
+        return Object.values(groups).map((g: GroupMetadata) => ({
+            id: g.id,
+            subject: g.subject,
+            size: g.participants.length
+        }));
+    } catch {
+        return [];
     }
 }
 
+// AI PROCESSOR WRAPPER
 export async function processAiResponseForJid(userId: string, jid: string, force: boolean = false) {
-    const canonicalJid = normalizeJid(jid); 
-    if (!canonicalJid) return;
-    
     const user = await db.getUser(userId);
     if (!user) return;
 
-    const safeJid = sanitizeKey(canonicalJid);
-    const conversation = user.conversations?.[safeJid] || user.conversations?.[canonicalJid];
-
+    const safeJid = sanitizeKey(jid);
+    const conversation = user.conversations?.[safeJid] || user.conversations?.[jid];
+    
     if (!conversation) return;
 
-    // --- STRICT ANTI-LOOP & LOGIC CHECK ---
-    
-    // 1. Check if bot is disabled/muted locally
+    // Safety Checks
     if (!force) {
-        if (!user.settings.isActive || user.plan_status === 'suspended') return;
+        if (!user.settings.isActive) return;
         if (conversation.isMuted || !conversation.isBotActive || conversation.status === LeadStatus.PERSONAL) return;
+        
+        // Loop prevention: check last sender
+        const lastMsg = conversation.messages[conversation.messages.length - 1];
+        if (lastMsg && (lastMsg.sender === 'bot' || lastMsg.sender === 'owner' || lastMsg.sender === 'elite_bot')) return;
     }
 
-    // 2. CRITICAL: CHECK LAST MESSAGE SENDER
-    // We must fetch the absolute latest state from the DB or memory.
-    const lastMsg = conversation.messages[conversation.messages.length - 1];
-    if (!lastMsg) return;
-
-    // If last message was from BOT or OWNER, DO NOT RESPOND.
-    // This stops the infinite loop dead in its tracks.
-    if (lastMsg.sender === 'bot' || lastMsg.sender === 'owner' || lastMsg.sender === 'elite_bot') {
-        logService.debug(`[AI-SKIP] El último mensaje en ${canonicalJid} no es del usuario (Sender: ${lastMsg.sender}). Ignorando.`, userId);
-        return;
-    }
-
-    // 3. Socket Health Check (Don't waste AI tokens if we can't reply)
-    const sock = sessions.get(userId);
-    // @ts-ignore
-    if (!sock || !sock.ws || !sock.ws.isOpen) {
-         if(!force) {
-             logService.warn(`[AI-SKIP] Socket desconectado para ${userId}.`, userId);
-             return;
-         }
-    }
-
-    if (sock) {
-        await sock.sendPresenceUpdate('composing', canonicalJid);
-    }
-
+    // Generate Response
     const aiResult = await generateBotResponse(conversation, user, conversation.isTestBotConversation);
 
     if (aiResult?.responseText) {
         try {
-            // REAL SEND with Retry Logic
-            const sentMsg = await sendMessage(userId, canonicalJid, aiResult.responseText);
-            
-            if (sentMsg && sentMsg.key.id) {
-                const botMessage: Message = { 
-                    id: sentMsg.key.id, 
-                    text: aiResult.responseText, 
-                    sender: 'bot', 
-                    timestamp: new Date().toISOString() 
-                };
-                await conversationService.addMessage(userId, canonicalJid, botMessage);
+            const sock = sessions.get(userId);
+            if (sock) {
+                await sock.sendPresenceUpdate('composing', jid);
+                await new Promise(r => setTimeout(r, 1500 + Math.random() * 1000)); // Human delay
+                
+                const sent = await sendMessage(userId, jid, aiResult.responseText);
+                
+                if (sent?.key.id) {
+                    await conversationService.addMessage(userId, jid, {
+                        id: sent.key.id,
+                        text: aiResult.responseText,
+                        sender: 'bot',
+                        timestamp: new Date().toISOString()
+                    });
+                }
             }
-        } catch (sendError) {
-            logService.error(`[AI-ERROR] Error enviando respuesta IA:`, sendError, userId);
+        } catch (e) {
+            logService.error(`[AI] Error enviando respuesta a ${jid}`, e, userId);
         }
     }
-    
+
+    // Update Status
     if (aiResult) {
         const freshUser = await db.getUser(userId);
-        const freshConvo = freshUser?.conversations?.[safeJid] || freshUser?.conversations?.[canonicalJid] || conversation;
-
-        const updates: Partial<Conversation> = {
+        const freshConvo = freshUser?.conversations?.[safeJid] || freshUser?.conversations?.[jid] || conversation;
+        
+        const updates: any = {
             status: aiResult.newStatus,
             tags: [...new Set([...(freshConvo.tags || []), ...(aiResult.tags || [])])],
-            suggestedReplies: undefined 
+            suggestedReplies: undefined
         };
 
-        if (aiResult.newStatus === LeadStatus.HOT) {
-            if (!freshUser?.settings.isAutonomousClosing) {
-                updates.isMuted = true;
-                updates.suggestedReplies = aiResult.suggestedReplies;
-            } else {
-                updates.isMuted = false;
-                updates.suggestedReplies = undefined;
-            }
+        if (aiResult.newStatus === LeadStatus.HOT && !freshUser?.settings.isAutonomousClosing) {
+            updates.isMuted = true;
+            updates.suggestedReplies = aiResult.suggestedReplies;
         }
+
         await db.saveUserConversation(userId, { ...freshConvo, ...updates });
     }
 }
