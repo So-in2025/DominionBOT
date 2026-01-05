@@ -499,13 +499,8 @@ export function App() {
 
   // Show Modal if failures accumulate
   useEffect(() => {
-      // Only show modal if we have token (user was logged in) and failures > threshold
-      // Or if explicitly in a mode where we expect connection.
-      if (token && failureCount >= 3) {
-          setShowNetworkConfig(true);
-      } else {
-          setShowNetworkConfig(false);
-      }
+      // DISABLED: Automatic modal removed to prevent confusion.
+      setShowNetworkConfig(false);
   }, [failureCount, token]);
 
   // TTS for Connection Status

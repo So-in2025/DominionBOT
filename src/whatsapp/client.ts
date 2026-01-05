@@ -27,7 +27,7 @@ import { normalizeJid } from '../utils/jidUtils.js';
 const sessions = new Map<string, WASocket>();
 const qrCache = new Map<string, string>(); 
 const codeCache = new Map<string, string>(); 
-const isConnecting = new Map<string, boolean>(); // Simple lock
+const isConnecting = new Map<string, boolean>(); 
 
 // RETRY CACHE (CRITICAL FOR BAD MAC RESILIENCE)
 const retryMap = new Map<string, any>();
@@ -102,14 +102,20 @@ export function getSocket(userId: string): WASocket | undefined {
 // ----------------------------------------------------------------------
 export async function connectToWhatsApp(userId: string, phoneNumber?: string, isManual: boolean = false) {
     if (isConnecting.get(userId)) {
-        console.log(`[WA] ${userId} already connecting. Skipping.`);
         return;
     }
     
-    // Check if already connected properly
+    // Check if already connected AND SOCKET IS ALIVE
     const existingSock = sessions.get(userId);
     if (existingSock?.user) {
-        return; // Already online
+        // Double check WS state to avoid zombie sockets
+        // @ts-ignore
+        if (existingSock.ws && existingSock.ws.isOpen) {
+            return; // Truly online
+        } else {
+            // Zombie detected, kill it
+            sessions.delete(userId);
+        }
     }
 
     try {
@@ -191,6 +197,10 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
             if (connection === 'close') {
                 isConnecting.set(userId, false);
                 
+                // CRITICAL FIX: ALWAYS REMOVE SESSION ON CLOSE
+                // This prevents "Zombie Sockets" where the app thinks it's connected but the socket is dead.
+                sessions.delete(userId);
+                
                 const disconnectError = lastDisconnect?.error as Boom | any;
                 const statusCode = disconnectError?.output?.statusCode;
                 
@@ -207,7 +217,6 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
                     setTimeout(() => connectToWhatsApp(userId, phoneNumber), delay);
                 } else {
                     logService.warn(`[WA] Sesión cerrada (Log Out). Limpiando datos.`, userId);
-                    sessions.delete(userId);
                     await clearBindedSession(userId);
                     await db.updateUserSettings(userId, { isActive: false });
                 }
@@ -236,9 +245,6 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
                 const canonicalJid = normalizeJid(rawJid);
                 if (!canonicalJid || canonicalJid === 'status@broadcast' || canonicalJid.endsWith('@newsletter')) continue;
                 
-                // Ignore groups for standard bot flow (but RadarService handles groups separately)
-                // For main conversation processing, we skip groups here if intended.
-                // Assuming bot only talks in private chats:
                 if (isJidGroup(canonicalJid)) continue; 
 
                 const messageText = extractMessageContent(msg);
@@ -293,9 +299,15 @@ export async function disconnectWhatsApp(userId: string) {
 }
 
 export async function sendMessage(senderId: string, jid: string, text: string, imageUrl?: string) {
-    // FIX: Verify socket exists and is open
     const sock = sessions.get(senderId);
-    if (!sock) throw new Error("Cliente desconectado");
+    
+    // FIX: Rigorous socket check
+    if (!sock) throw new Error("Cliente desconectado (Sesión no encontrada)");
+    
+    // @ts-ignore
+    if (sock.ws && !sock.ws.isOpen) {
+        throw new Error("Cliente desconectado (Socket cerrado)");
+    }
 
     const canonicalJid = normalizeJid(jid);
     if (!canonicalJid) throw new Error("JID inválido");
@@ -349,7 +361,8 @@ export async function processAiResponseForJid(userId: string, jid: string, force
     if (aiResult?.responseText) {
         try {
             const sock = sessions.get(userId);
-            if (sock) {
+            // @ts-ignore
+            if (sock && sock.ws && sock.ws.isOpen) {
                 // HUMAN DELAY & TYPING PRESENCE
                 await sock.sendPresenceUpdate('composing', jid);
                 // Delay aleatorio entre 1.5s y 2.5s para simular humano
@@ -366,7 +379,7 @@ export async function processAiResponseForJid(userId: string, jid: string, force
                     });
                 }
             } else {
-                logService.warn(`[AI] No se pudo enviar respuesta a ${jid} porque el socket no está disponible.`, userId);
+                logService.warn(`[AI] No se pudo enviar respuesta a ${jid} porque el socket no está disponible o cerrado.`, userId);
             }
         } catch (e) {
             logService.error(`[AI] Error enviando respuesta a ${jid}`, e, userId);
