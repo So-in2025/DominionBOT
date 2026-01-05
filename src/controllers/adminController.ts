@@ -1,7 +1,8 @@
+
 import { Request as ExpressRequest, Response } from 'express';
 import { db, sanitizeKey } from '../database.js'; 
 import { logService } from '../services/logService.js';
-import { ConnectionStatus, User, SystemSettings, Message, LeadStatus, Conversation } from '../types.js';
+import { ConnectionStatus, User, SystemSettings, Message, LeadStatus, Conversation, Testimonial } from '../types.js';
 import { getSessionStatus, processAiResponseForJid, ELITE_BOT_JID, ELITE_BOT_NAME } from '../whatsapp/client.js'; 
 import { conversationService } from '../services/conversationService.js'; 
 import { v4 as uuidv4 } from 'uuid'; 
@@ -359,5 +360,60 @@ export const handleGetNetworkOverview = async (req: AuthenticatedRequest, res: a
     } catch (error: any) {
         logService.error('Error fetching network overview', error, getAdminUser(req).id, getAdminUser(req).username);
         res.status(500).json({ message: 'Error interno' });
+    }
+};
+
+// --- TESTIMONIAL MANAGEMENT ---
+
+export const handleAdminGetTestimonials = async (req: AuthenticatedRequest, res: any) => {
+    try {
+        // Admin gets ALL testimonials, including hidden ones
+        const testimonials = await db.getTestimonials(false);
+        res.json(testimonials);
+    } catch (e: any) {
+        logService.error('Error fetching testimonials for admin', e);
+        res.status(500).json({ message: 'Error interno.' });
+    }
+};
+
+export const handleAdminCreateTestimonial = async (req: AuthenticatedRequest<any, any, { name: string; text: string; location: string }>, res: any) => {
+    const { name, text, location } = req.body;
+    const admin = getAdminUser(req);
+    try {
+        const newTestimonial = await db.createTestimonial('manual_admin', name, text, location);
+        logService.audit(`Testimonio manual creado: ${name}`, admin.id, admin.username);
+        res.status(201).json(newTestimonial);
+    } catch (e: any) {
+        logService.error('Error creating manual testimonial', e);
+        res.status(500).json({ message: 'Error interno.' });
+    }
+};
+
+export const handleAdminUpdateTestimonial = async (req: AuthenticatedRequest<{ id: string }, any, Partial<Testimonial>>, res: any) => {
+    const { id } = req.params;
+    const updates = req.body;
+    const admin = getAdminUser(req);
+    try {
+        const updated = await db.updateTestimonial(id, updates);
+        if (!updated) return res.status(404).json({ message: 'Testimonio no encontrado.' });
+        logService.audit(`Testimonio actualizado: ${id}`, admin.id, admin.username, { updates });
+        res.json(updated);
+    } catch (e: any) {
+        logService.error('Error updating testimonial', e);
+        res.status(500).json({ message: 'Error interno.' });
+    }
+};
+
+export const handleAdminDeleteTestimonial = async (req: AuthenticatedRequest<{ id: string }>, res: any) => {
+    const { id } = req.params;
+    const admin = getAdminUser(req);
+    try {
+        const success = await db.deleteTestimonial(id);
+        if (!success) return res.status(404).json({ message: 'Testimonio no encontrado.' });
+        logService.audit(`Testimonio eliminado: ${id}`, admin.id, admin.username);
+        res.json({ message: 'Testimonio eliminado.' });
+    } catch (e: any) {
+        logService.error('Error deleting testimonial', e);
+        res.status(500).json({ message: 'Error interno.' });
     }
 };

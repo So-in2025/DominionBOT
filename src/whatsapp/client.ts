@@ -105,15 +105,12 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
         return;
     }
     
-    // Check if already connected AND SOCKET IS ALIVE
     const existingSock = sessions.get(userId);
     if (existingSock?.user) {
-        // Double check WS state to avoid zombie sockets
         // @ts-ignore
         if (existingSock.ws && existingSock.ws.isOpen) {
-            return; // Truly online
+            return; 
         } else {
-            // Zombie detected, kill it
             sessions.delete(userId);
         }
     }
@@ -121,7 +118,6 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
     try {
         isConnecting.set(userId, true);
         
-        // Clean caches
         qrCache.delete(userId);
         codeCache.delete(userId);
 
@@ -129,7 +125,6 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
         const { version } = await fetchLatestBaileysVersion();
         const user = await db.getUser(userId);
 
-        // 3. Initialize Socket with ROBUST settings
         const sock = makeWASocket({
             version,
             logger,
@@ -147,12 +142,11 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
             syncFullHistory: false, 
             markOnlineOnConnect: false, 
             
-            // Timeouts aumentados
+            // Timeouts
             connectTimeoutMs: 60000, 
-            defaultQueryTimeoutMs: 60000,
+            defaultQueryTimeoutMs: 90000, // Aumentado para evitar Timeouts en prekeys
             keepAliveIntervalMs: 30000, 
             
-            // Retry Logic (Bad MAC Resilience)
             retryRequestDelayMs: 5000, 
             msgRetryCounterCache: msgRetryCounterCache, 
             
@@ -161,16 +155,12 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
             }
         });
 
-        // 4. Bind Events
         sessions.set(userId, sock);
 
-        // Creds update
         sock.ev.on('creds.update', saveCreds);
 
-        // Connection update
         sock.ev.on('connection.update', async (update) => {
             const { connection, lastDisconnect, qr } = update;
-            // Type casting to access pairingCode if available in update
             const pairingCode = (update as any).pairingCode;
 
             if (qr) {
@@ -196,9 +186,6 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
 
             if (connection === 'close') {
                 isConnecting.set(userId, false);
-                
-                // CRITICAL FIX: ALWAYS REMOVE SESSION ON CLOSE
-                // This prevents "Zombie Sockets" where the app thinks it's connected but the socket is dead.
                 sessions.delete(userId);
                 
                 const disconnectError = lastDisconnect?.error as Boom | any;
@@ -239,25 +226,32 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
             if (type !== 'notify' && type !== 'append') return;
 
             for (const msg of messages) {
+                // --- PROTOCOLO DE INGESTA SILENCIOSA ---
+                // Calculamos la antigüedad del mensaje
+                const msgTime = (typeof msg.messageTimestamp === 'number' 
+                    ? msg.messageTimestamp 
+                    : (msg.messageTimestamp as any)?.low) || Math.floor(Date.now() / 1000);
+                
+                const now = Math.floor(Date.now() / 1000);
+                const ageInSeconds = now - msgTime;
+                
+                // CRITICAL: Filter Bad MAC loops from absolute garbage timestamps
+                if (ageInSeconds > 86400) continue; // Ignore messages older than 24h completely
+
                 if (!msg.message) continue;
                 
                 const rawJid = msg.key.remoteJid;
                 const canonicalJid = normalizeJid(rawJid);
                 if (!canonicalJid || canonicalJid === 'status@broadcast' || canonicalJid.endsWith('@newsletter')) continue;
                 
+                if (user?.settings?.ignoredJids?.includes(canonicalJid.split('@')[0])) {
+                    continue; 
+                }
+
                 if (isJidGroup(canonicalJid)) continue; 
 
                 const messageText = extractMessageContent(msg);
                 if (!messageText) continue;
-
-                const msgTime = (typeof msg.messageTimestamp === 'number' 
-                    ? msg.messageTimestamp 
-                    : (msg.messageTimestamp as any)?.low) || Math.floor(Date.now() / 1000);
-                
-                const now = Math.floor(Date.now() / 1000);
-                if (now - msgTime > 120) { 
-                    continue; 
-                }
 
                 const isMe = msg.key.fromMe;
                 
@@ -269,10 +263,24 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
                 };
 
                 const contactName = msg.pushName;
+                
+                // GUARDAMOS SIEMPRE EN DB (Para Chatlist)
                 await conversationService.addMessage(userId, canonicalJid, userMessage, contactName);
 
+                // --- AI TRIGGER LOGIC ---
+                // Solo si NO soy yo
                 if (!isMe) {
                     logService.info(`[INBOX] 📩 ${canonicalJid}: ${messageText.substring(0, 30)}...`, userId);
+                    
+                    // REGLA DE 10 MINUTOS (600 segundos)
+                    // Si el mensaje es viejo, lo guardamos pero NO disparamos la IA.
+                    // Esto previene bucles de spam al resincronizar.
+                    if (ageInSeconds > 600) {
+                        logService.info(`[SILENT-INGEST] Mensaje antiguo (${ageInSeconds}s). Guardado sin respuesta IA.`, userId);
+                        continue; // SKIP AI
+                    }
+
+                    // Si es reciente, procesamos
                     await processAiResponseForJid(userId, canonicalJid);
                 }
             }
@@ -298,10 +306,30 @@ export async function disconnectWhatsApp(userId: string) {
     await db.updateUserSettings(userId, { isActive: false });
 }
 
+export async function softResetConnection(userId: string) {
+    logService.warn(`[WA] Soft Reset solicitado para usuario`, userId);
+    // 1. Force close existing socket
+    const sock = sessions.get(userId);
+    if (sock) {
+        try { sock.end(undefined); } catch (e) {}
+        sessions.delete(userId);
+    }
+    isConnecting.set(userId, false);
+    
+    // 2. Clear caches
+    qrCache.delete(userId);
+    codeCache.delete(userId);
+    
+    // 3. Clear Retry Cache (Fixes Bad MAC loops)
+    msgRetryCounterCache.flushAll();
+
+    // 4. Reconnect immediately
+    await connectToWhatsApp(userId, undefined, true);
+}
+
 export async function sendMessage(senderId: string, jid: string, text: string, imageUrl?: string) {
     const sock = sessions.get(senderId);
     
-    // FIX: Rigorous socket check
     if (!sock) throw new Error("Cliente desconectado (Sesión no encontrada)");
     
     // @ts-ignore
@@ -312,14 +340,40 @@ export async function sendMessage(senderId: string, jid: string, text: string, i
     const canonicalJid = normalizeJid(jid);
     if (!canonicalJid) throw new Error("JID inválido");
 
-    if (imageUrl) {
-        const buffer = imageUrl.startsWith('http') 
-            ? { url: imageUrl } 
-            : Buffer.from(imageUrl.replace(/^data:image\/\w+;base64,/, ""), 'base64');
-            
-        return await sock.sendMessage(canonicalJid, { image: buffer as any, caption: text });
-    } else {
-        return await sock.sendMessage(canonicalJid, { text });
+    try {
+        // TIMEOUT WRAPPER: Si el socket se cuelga (zombie), esto evita que la UI se quede cargando infinito.
+        const sendPromise = new Promise(async (resolve, reject) => {
+            try {
+                if (imageUrl) {
+                    const buffer = imageUrl.startsWith('http') 
+                        ? { url: imageUrl } 
+                        : Buffer.from(imageUrl.replace(/^data:image\/\w+;base64,/, ""), 'base64');
+                        
+                    const result = await sock.sendMessage(canonicalJid, { image: buffer as any, caption: text });
+                    resolve(result);
+                } else {
+                    const result = await sock.sendMessage(canonicalJid, { text });
+                    resolve(result);
+                }
+            } catch (e) {
+                reject(e);
+            }
+        });
+
+        // Race against a timeout of 10 seconds
+        const result = await Promise.race([
+            sendPromise,
+            new Promise((_, reject) => setTimeout(() => reject(new Error("Tiempo de espera agotado al enviar mensaje (Socket lento)")), 10000))
+        ]);
+
+        return result as any;
+
+    } catch (e: any) {
+        console.error("Error sending message:", e);
+        if (e.message.includes("Tiempo de espera agotado")) {
+            throw new Error("La red de WhatsApp está lenta. Intenta de nuevo.");
+        }
+        throw e;
     }
 }
 

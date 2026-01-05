@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
-import { User, LogEntry, GlobalDashboardMetrics, SystemSettings, LogLevel, Conversation, Message, LeadStatus } from '../../types';
+import { User, LogEntry, GlobalDashboardMetrics, SystemSettings, LogLevel, Conversation, Message, LeadStatus, Testimonial } from '../../types';
 import { getAuthHeaders } from '../../config';
 import { conversationService } from '../../services/conversationService';
 import { processAiResponseForJid, ELITE_BOT_JID, ELITE_BOT_NAME } from '../../whatsapp/client';
@@ -15,7 +15,7 @@ interface AdminDashboardProps {
     onLogout: () => void;
 }
 
-type AdminView = 'dashboard' | 'clients' | 'logs' | 'test_bot' | 'depth_control' | 'network';
+type AdminView = 'dashboard' | 'clients' | 'logs' | 'test_bot' | 'depth_control' | 'network' | 'testimonials';
 
 const KpiCard: React.FC<{ label: string; value: string | number; icon: React.ReactNode; isCurrency?: boolean; }> = ({ label, value, icon, isCurrency }) => (
     <div className="bg-brand-surface border border-white/5 rounded-2xl p-6 flex items-center gap-6 group hover:bg-white/5 transition-all">
@@ -92,8 +92,180 @@ const LandingPageManager: React.FC<{
     );
 };
 
+// --- Testimonials Manager Component ---
+const TestimonialsManager: React.FC<{ backendUrl: string, token: string, showToast: any }> = ({ backendUrl, token, showToast }) => {
+    const [testimonials, setTestimonials] = useState<Testimonial[]>([]);
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [editForm, setEditForm] = useState({ name: '', location: '', text: '' });
+    const [isCreating, setIsCreating] = useState(false);
 
-// --- Placeholder Components for AdminDashboard View Sections ---
+    const fetchTestimonials = async () => {
+        try {
+            const res = await fetch(`${backendUrl}/api/admin/testimonials`, { headers: getAuthHeaders(token) });
+            if (res.ok) setTestimonials(await res.json());
+        } catch (e) {
+            console.error("Error fetching testimonials", e);
+        }
+    };
+
+    useEffect(() => {
+        fetchTestimonials();
+    }, []);
+
+    const toggleVisibility = async (t: Testimonial) => {
+        try {
+            const res = await fetch(`${backendUrl}/api/admin/testimonials/${t._id}`, {
+                method: 'PUT',
+                headers: getAuthHeaders(token),
+                body: JSON.stringify({ isVisible: !t.isVisible })
+            });
+            if (res.ok) {
+                setTestimonials(prev => prev.map(item => item._id === t._id ? { ...item, isVisible: !item.isVisible } : item));
+                showToast(`Testimonio ${!t.isVisible ? 'VISIBLE' : 'OCULTO'}`, 'info');
+            }
+        } catch (e) { showToast('Error actualizando visibilidad', 'error'); }
+    };
+
+    const handleDelete = async (id: string) => {
+        if (!confirm("¿Eliminar este testimonio permanentemente?")) return;
+        try {
+            const res = await fetch(`${backendUrl}/api/admin/testimonials/${id}`, {
+                method: 'DELETE',
+                headers: getAuthHeaders(token)
+            });
+            if (res.ok) {
+                setTestimonials(prev => prev.filter(t => t._id !== id));
+                showToast('Testimonio eliminado', 'success');
+            }
+        } catch (e) { showToast('Error eliminando', 'error'); }
+    };
+
+    const startEdit = (t: Testimonial) => {
+        setEditingId(t._id!);
+        setEditForm({ name: t.name || '', location: t.location || '', text: t.text });
+        setIsCreating(false);
+    };
+
+    const startCreate = () => {
+        setEditingId('NEW');
+        setEditForm({ name: '', location: '', text: '' });
+        setIsCreating(true);
+    };
+
+    const saveEdit = async () => {
+        if (!editForm.text || !editForm.name) {
+            showToast('Nombre y Texto son obligatorios', 'error');
+            return;
+        }
+
+        try {
+            let res;
+            if (isCreating) {
+                res = await fetch(`${backendUrl}/api/admin/testimonials`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(token),
+                    body: JSON.stringify(editForm)
+                });
+            } else {
+                res = await fetch(`${backendUrl}/api/admin/testimonials/${editingId}`, {
+                    method: 'PUT',
+                    headers: getAuthHeaders(token),
+                    body: JSON.stringify(editForm)
+                });
+            }
+
+            if (res.ok) {
+                showToast(isCreating ? 'Testimonio creado' : 'Testimonio actualizado', 'success');
+                setEditingId(null);
+                fetchTestimonials();
+            } else {
+                showToast('Error al guardar', 'error');
+            }
+        } catch (e) { showToast('Error de conexión', 'error'); }
+    };
+
+    return (
+        <div className="space-y-8">
+            <div className="flex justify-between items-center">
+                <h3 className="text-xl font-black text-white uppercase tracking-widest">Gestión de Prueba Social</h3>
+                <button onClick={startCreate} className="px-4 py-2 bg-brand-gold text-black rounded-lg text-xs font-black uppercase tracking-widest hover:scale-105 transition-all">
+                    + Nuevo Testimonio
+                </button>
+            </div>
+
+            {editingId && (
+                <div className="bg-black/40 border border-brand-gold/30 p-6 rounded-2xl mb-8 animate-fade-in">
+                    <h4 className="text-sm font-bold text-brand-gold uppercase tracking-widest mb-4">{isCreating ? 'Crear Nuevo' : 'Editar Testimonio'}</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        <input 
+                            placeholder="Nombre" 
+                            value={editForm.name} 
+                            onChange={e => setEditForm({...editForm, name: e.target.value})} 
+                            className="bg-black/50 border border-white/10 rounded-xl p-3 text-sm text-white outline-none focus:border-brand-gold"
+                        />
+                        <input 
+                            placeholder="Ubicación" 
+                            value={editForm.location} 
+                            onChange={e => setEditForm({...editForm, location: e.target.value})} 
+                            className="bg-black/50 border border-white/10 rounded-xl p-3 text-sm text-white outline-none focus:border-brand-gold"
+                        />
+                    </div>
+                    <textarea 
+                        placeholder="Texto de la reseña..." 
+                        value={editForm.text} 
+                        onChange={e => setEditForm({...editForm, text: e.target.value})} 
+                        className="w-full bg-black/50 border border-white/10 rounded-xl p-3 text-sm text-white outline-none focus:border-brand-gold h-24 mb-4"
+                    />
+                    <div className="flex gap-2 justify-end">
+                        <button onClick={() => setEditingId(null)} className="px-4 py-2 text-gray-400 hover:text-white text-xs font-bold uppercase">Cancelar</button>
+                        <button onClick={saveEdit} className="px-6 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-black uppercase tracking-widest transition-all">Guardar</button>
+                    </div>
+                </div>
+            )}
+
+            <div className="bg-brand-surface border border-white/5 rounded-2xl overflow-hidden shadow-xl">
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                        <thead>
+                            <tr className="bg-black/20 text-[9px] uppercase font-black text-gray-400 tracking-widest border-b border-white/5">
+                                <th className="p-4">Estado</th>
+                                <th className="p-4">Usuario</th>
+                                <th className="p-4">Ubicación</th>
+                                <th className="p-4">Contenido</th>
+                                <th className="p-4">Fecha</th>
+                                <th className="p-4 text-right">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5 text-xs">
+                            {testimonials.map(t => (
+                                <tr key={t._id} className="hover:bg-white/5 transition-colors group">
+                                    <td className="p-4">
+                                        <button 
+                                            onClick={() => toggleVisibility(t)}
+                                            className={`px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest border transition-all ${t.isVisible ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-red-500/10 text-red-400 border-red-500/20 opacity-50 group-hover:opacity-100'}`}
+                                        >
+                                            {t.isVisible ? 'VISIBLE' : 'OCULTO'}
+                                        </button>
+                                    </td>
+                                    <td className="p-4 font-bold text-white">{t.name}</td>
+                                    <td className="p-4 text-gray-400">{t.location}</td>
+                                    <td className="p-4 text-gray-300 max-w-md truncate" title={t.text}>{t.text}</td>
+                                    <td className="p-4 text-gray-500 font-mono text-[10px]">{new Date(t.createdAt).toLocaleDateString()}</td>
+                                    <td className="p-4 text-right flex justify-end gap-2">
+                                        <button onClick={() => startEdit(t)} className="p-2 text-blue-400 hover:bg-blue-500/10 rounded">✏️</button>
+                                        <button onClick={() => handleDelete(t._id!)} className="p-2 text-red-400 hover:bg-red-500/10 rounded">🗑️</button>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// --- Dashboard View Component ---
 const DashboardView: React.FC<{ 
     metrics: GlobalDashboardMetrics | null; 
     onAudit: (user: User) => void;
@@ -263,8 +435,6 @@ const NetworkMonitor: React.FC<{ backendUrl: string, token: string, showToast: a
         </div>
     );
 }
-// --- End Placeholder Components ---
-
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAudit, showToast, onLogout }) => {
     const [clients, setClients] = useState<User[]>([]);
@@ -677,6 +847,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
                 );
             case 'network':
                 return <NetworkMonitor backendUrl={backendUrl} token={token} showToast={showToast} />;
+            case 'testimonials':
+                return <TestimonialsManager backendUrl={backendUrl} token={token} showToast={showToast} />;
         }
     };
 
@@ -700,6 +872,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
                     {[
                         { id: 'dashboard', label: 'Dashboard' },
                         { id: 'clients', label: 'Clientes' },
+                        { id: 'testimonials', label: 'Prueba Social' }, // NEW TAB
                         { id: 'logs', label: 'Logs' },
                         { id: 'test_bot', label: 'Simulador' },
                         { id: 'depth_control', label: 'Depth Engine' },

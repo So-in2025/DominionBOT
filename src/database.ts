@@ -37,6 +37,7 @@ const TestimonialSchema = new Schema({
     name: { type: String },
     location: { type: String },
     text: { type: String, required: true },
+    isVisible: { type: Boolean, default: true }, // NEW: Manual Control
     createdAt: { type: String, default: () => new Date().toISOString() },
     updatedAt: { type: String, default: () => new Date().toISOString() }
 });
@@ -450,15 +451,12 @@ class Database {
           conversationsArray = extractConversationsRecursive(rawConvos);
       }
       
-      // FIX: Filter out GROUPS (@g.us), BROADCASTS (@broadcast), NEWSLETTERS (@newsletter),
-      // and conversations with NO MESSAGES to prevent "ghost" chats.
       const filteredConvos = conversationsArray.filter(c => {
           const hasMessages = c.messages && c.messages.length > 0;
           const isNotNoise = c.id && !c.id.endsWith('@g.us') && !c.id.endsWith('@broadcast') && !c.id.endsWith('@newsletter');
           return hasMessages && isNotNoise;
       });
 
-      // FIX: Ensure strict uniqueness by ID
       const uniqueConvos = Array.from(new Map(filteredConvos.map(item => [item.id, item])).values());
       return uniqueConvos;
   }
@@ -475,14 +473,12 @@ class Database {
   async removeUserConversation(userId: string, jid: string) {
       const safeId = sanitizeKey(jid);
       const updateKey = `conversations.${safeId}`;
-      // PHYSICAL DELETE: Use $unset to completely remove the conversation object from the map
       await UserModel.updateOne(
           { id: userId },
           { $unset: { [updateKey]: "" } }
       );
   }
 
-  // NEW: BATCH SAVE
   async saveUserConversationsBatch(userId: string, conversations: Record<string, Conversation>) {
       const updatePayload: any = {};
       for (const [key, convo] of Object.entries(conversations)) {
@@ -506,7 +502,6 @@ class Database {
       return user?.settings;
   }
   
-  // --- PERSISTENT COOLDOWNS ---
   async setModelCooldown(modelName: string, cooldownUntil: number) {
       await ModelCooldownModel.findOneAndUpdate(
           { modelName }, 
@@ -517,11 +512,9 @@ class Database {
 
   async getModelCooldown(modelName: string): Promise<number | null> {
       const doc = await ModelCooldownModel.findOne({ modelName }).lean();
-      // FIX: Cast document to any to access cooldownUntil property
       return doc ? (doc as any).cooldownUntil : null;
   }
 
-  // ... (rest of methods)
   async createLog(logEntry: Partial<LogEntry>) {
       await LogModel.create(logEntry);
   }
@@ -535,7 +528,7 @@ class Database {
           userId, 
           message: { $regex: /\[RADAR-TRACE\]/ } 
       })
-      .sort({ timestamp: -1 }) // Newest first
+      .sort({ timestamp: -1 }) 
       .limit(limit)
       .lean();
   }
@@ -559,12 +552,13 @@ class Database {
       };
   }
   
-  async createTestimonial(userId: string, name: string, text: string): Promise<Testimonial> {
+  async createTestimonial(userId: string, name: string, text: string, location?: string): Promise<Testimonial> {
       const newTestimonial = await TestimonialModel.create({
           userId,
-          name,
-          location: 'Mendoza', 
-          text
+          name: name || 'Usuario',
+          location: location || 'Mendoza', 
+          text,
+          isVisible: true // Manual creation defaults to visible
       });
       return newTestimonial.toObject();
   }
@@ -573,8 +567,18 @@ class Database {
       return await TestimonialModel.findById(testimonialId).lean();
   }
 
-  async getTestimonials(): Promise<Testimonial[]> {
-      return await TestimonialModel.find().sort({ createdAt: -1 }).lean();
+  async getTestimonials(onlyVisible: boolean = true): Promise<Testimonial[]> {
+      const query = onlyVisible ? { isVisible: true } : {};
+      return await TestimonialModel.find(query).sort({ createdAt: -1 }).lean();
+  }
+
+  async updateTestimonial(id: string, updates: Partial<Testimonial>): Promise<Testimonial | null> {
+      return await TestimonialModel.findByIdAndUpdate(id, { $set: updates }, { new: true }).lean();
+  }
+
+  async deleteTestimonial(id: string): Promise<boolean> {
+      const result = await TestimonialModel.deleteOne({ _id: id });
+      return result.deletedCount === 1;
   }
 
   async getTestimonialsCount(): Promise<number> {

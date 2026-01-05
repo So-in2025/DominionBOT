@@ -1,6 +1,6 @@
 
 import { Buffer } from 'buffer';
-import { connectToWhatsApp, disconnectWhatsApp, sendMessage, getSessionStatus, processAiResponseForJid, fetchUserGroups, ELITE_BOT_JID, ELITE_BOT_NAME, DOMINION_NETWORK_JID } from '../whatsapp/client.js'; 
+import { connectToWhatsApp, disconnectWhatsApp, sendMessage, getSessionStatus, processAiResponseForJid, fetchUserGroups, ELITE_BOT_JID, ELITE_BOT_NAME, DOMINION_NETWORK_JID, softResetConnection } from '../whatsapp/client.js'; 
 import { conversationService } from '../services/conversationService.js';
 import { Message, LeadStatus, User, Conversation, SimulationScenario, EvaluationResult, Campaign, RadarSignal, InternalNote, SimulationRun, RadarSettings, IntentSignal, ConnectionOpportunity, NetworkProfile, PermissionStatus, WhatsAppGroup, ConnectionStatus } from '../types.js'; 
 import { db, sanitizeKey } from '../database.js'; 
@@ -46,6 +46,18 @@ export const handleConnect = async (req: AuthenticatedRequest<any, any, { phoneN
         res.status(200).json({ message: 'Conexión iniciada.' });
     } catch (e: any) {
         logService.error('Error initiating connection', e, getClientUser(req).id);
+        res.status(500).json({ message: 'Error interno del servidor.' });
+    }
+};
+
+// NEW: Soft Reset Handler
+export const handleSoftReset = async (req: AuthenticatedRequest, res: any) => {
+    try {
+        const { id } = req.user;
+        await softResetConnection(id);
+        res.status(200).json({ message: 'Conexión reiniciada suavemente.' });
+    } catch (e: any) {
+        logService.error('Error soft resetting', e, getClientUser(req).id);
         res.status(500).json({ message: 'Error interno del servidor.' });
     }
 };
@@ -186,17 +198,9 @@ export const handleGetConversations = async (req: AuthenticatedRequest, res: any
 
 export const handleGetTestimonials = async (req: AuthenticatedRequest, res: any) => {
     try {
-        const testimonials = await db.getTestimonials();
-        const now = new Date();
-        const visibleTestimonials = testimonials.filter(t => new Date(t.createdAt) <= now);
-
-        visibleTestimonials.sort((a, b) => {
-            if (a.userId === 'system_seed' && b.userId !== 'system_seed') return -1;
-            if (b.userId === 'system_seed' && a.userId !== 'system_seed') return 1;
-            return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-        });
-
-        res.json(visibleTestimonials);
+        // PUBLIC API: Returns ONLY visible testimonials
+        const testimonials = await db.getTestimonials(true);
+        res.json(testimonials);
     } catch (e: any) {
         logService.error('Error getting testimonials', e);
         res.status(500).json({ message: 'Error interno del servidor.' });
@@ -242,6 +246,7 @@ export const handleGetTtsAudio = async (req: any, res: any) => {
     }
 };
 
+// ... (Rest of simulator controllers)
 // --- ELITE++ ADVERSARIAL SIMULATOR ---
 
 const SIMULATOR_PERSONAS: Record<SimulationScenario, string> = {

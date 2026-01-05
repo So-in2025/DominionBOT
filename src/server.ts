@@ -58,6 +58,9 @@ import { ngrokService } from './services/ngrokService.js';
 const SEED_TESTIMONIALS = [
     { name: "Marcos López", location: "Mendoza", text: "Bueno, parece que soy el primero en comentar. La verdad entré medio de curioso y no entendía nada al principio, pero después de usarlo un poco me acomodó bastante el WhatsApp." },
     { name: "Emilia Ponce", location: "Rosario", text: "Ojalá lo sigan mejorando, pero la base está muy bien." },
+    { name: "Julián V.", location: "Córdoba", text: "Implementamos esto hace 2 semanas. El filtro de clientes funciona." },
+    { name: "Sofía M.", location: "Buenos Aires", text: "Muy buena herramienta para filtrar curiosos." },
+    { name: "Carlos D.", location: "Mendoza", text: "La IA responde rápido, eso es clave." }
 ];
 
 const app = express();
@@ -184,6 +187,7 @@ import * as adminController from './controllers/adminController.js';
 // Standard Client Routes
 app.get('/api/status', authenticateToken, apiController.handleGetStatus); 
 app.post('/api/connect', authenticateToken, apiController.handleConnect);
+app.post('/api/connection/soft-reset', authenticateToken, apiController.handleSoftReset); // NEW ROUTE
 app.get('/api/disconnect', authenticateToken, apiController.handleDisconnect);
 app.post('/api/send', authenticateToken, apiController.handleSendMessage);
 app.post('/api/conversation/update', authenticateToken, apiController.handleUpdateConversation);
@@ -261,6 +265,12 @@ adminRouter.post('/depth/update', adminController.handleUpdateDepthLevel);
 adminRouter.post('/depth/boost', adminController.handleApplyDepthBoost);
 adminRouter.get('/network/overview', adminController.handleGetNetworkOverview);
 
+// TESTIMONIAL MANAGEMENT ROUTES
+adminRouter.get('/testimonials', adminController.handleAdminGetTestimonials);
+adminRouter.post('/testimonials', adminController.handleAdminCreateTestimonial);
+adminRouter.put('/testimonials/:id', adminController.handleAdminUpdateTestimonial);
+adminRouter.delete('/testimonials/:id', adminController.handleAdminDeleteTestimonial);
+
 adminRouter.post('/system/reset', async (req: any, res, next) => {
     try {
         logService.audit('HARD RESET DEL SISTEMA INICIADO', req.user.id, req.user.username);
@@ -307,28 +317,24 @@ const server = app.listen(Number(PORT), '0.0.0.0', async () => {
 
         const seedCount = await db.countSeedTestimonials();
         if (seedCount === 0) {
-            logService.info('[SERVER] No se detectaron testimonios de sistema ("system_seed"). Iniciando inyección DRIP...');
+            logService.info('[SERVER] No se detectaron testimonios de sistema ("system_seed"). Iniciando inyección MANUAL...');
             const seededData = SEED_TESTIMONIALS.map((t, index) => {
-                let date = new Date(Date.now());
-                if (index < 3) {
-                    const hoursAgo = 20 - (index * 8); 
-                    date.setHours(date.getHours() - hoursAgo);
-                } else {
-                    const daysInFuture = (index - 2); 
-                    date.setDate(date.getDate() + daysInFuture);
-                }
+                // FIXED DATE LOGIC: No more future dates or drip logic. All testimonials inserted now.
+                // First 3 visible by default, others hidden for manual activation.
+                const isVisible = index < 3; 
                 return {
                     userId: 'system_seed',
                     name: (t as {name: string, location: string, text: string}).name || Object.keys(t)[0], 
                     location: (t as {name: string, location: string, text: string}).location || '', 
                     text: (t as {name: string, location: string, text: string}).text || Object.values(t)[0],
-                    createdAt: date.toISOString(), 
-                    updatedAt: date.toISOString()
+                    createdAt: new Date().toISOString(), 
+                    updatedAt: new Date().toISOString(),
+                    isVisible: isVisible 
                 };
             });
             try {
                 await db.seedTestimonials(seededData.map(data => ({ ...data, _id: data.userId === 'system_seed' ? `seed_${uuidv4()}` : undefined })));
-                logService.info(`[SERVER] ✅ Inyección exitosa: 3 visibles, ${seededData.length - 3} programados.`);
+                logService.info(`[SERVER] ✅ Inyección exitosa: ${seededData.filter(d => d.isVisible).length} visibles, ${seededData.filter(d => !d.isVisible).length} ocultos.`);
             } catch (err) {
                 logService.error('[SERVER] ❌ Error crítico inyectando testimonios:', err);
             }

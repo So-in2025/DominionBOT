@@ -504,6 +504,7 @@ export interface Testimonial {
   name?: string; // Made optional
   location?: string; // Made optional
   text: string;
+  isVisible: boolean; // NEW: Manual Control Switch
   // FIX: Changed to string to match database schema
   createdAt: string;
   // FIX: Changed to string to match database schema

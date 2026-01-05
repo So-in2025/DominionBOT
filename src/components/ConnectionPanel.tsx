@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect } from 'react';
 import { ConnectionStatus, User } from '../types';
-import { BACKEND_URL } from '../config';
+import { BACKEND_URL, getAuthHeaders } from '../config';
 
 interface ConnectionPanelProps {
     status: ConnectionStatus;
@@ -34,6 +35,7 @@ const ConnectionPanel: React.FC<ConnectionPanelProps> = ({ status, qrCode, pairi
     const [phoneNumber, setPhoneNumber] = useState(user?.whatsapp_number || '');
     const [qrError, setQrError] = useState(false);
     const [isConnecting, setIsConnecting] = useState(false); 
+    const [isSoftResetting, setIsSoftResetting] = useState(false); // New state
 
     const isLoading = status === ConnectionStatus.GENERATING_QR;
     const showLoading = isLoading || isConnecting;
@@ -72,6 +74,27 @@ const ConnectionPanel: React.FC<ConnectionPanelProps> = ({ status, qrCode, pairi
     const forceWipe = () => {
         if(confirm("⚠️ HARD RESET: Esto eliminará todas las credenciales de sesión en el servidor y te obligará a escanear de nuevo.\n\nÚsalo SOLO si no recibes mensajes o la conexión está 'bugeada'.")) {
             onWipe();
+        }
+    };
+
+    const handleSoftReset = async () => {
+        if (isSoftResetting) return;
+        setIsSoftResetting(true);
+        try {
+            const token = localStorage.getItem('saas_token');
+            const res = await fetch(`${BACKEND_URL}/api/connection/soft-reset`, {
+                method: 'POST',
+                headers: getAuthHeaders(token!)
+            });
+            if (res.ok) {
+                showToast("Conexión destrabada. Reintentando...", "success");
+            } else {
+                showToast("Error al reiniciar.", "error");
+            }
+        } catch (e) {
+            showToast("Error de red.", "error");
+        } finally {
+            setTimeout(() => setIsSoftResetting(false), 2000);
         }
     };
     
@@ -220,11 +243,19 @@ const ConnectionPanel: React.FC<ConnectionPanelProps> = ({ status, qrCode, pairi
                                 Pausar Conexión
                             </button>
 
-                            <div className="bg-red-900/10 border border-red-500/20 p-4 rounded-xl">
-                                <p className="text-[9px] text-red-300 mb-3 font-bold uppercase tracking-wide">¿No recibes mensajes aunque estás conectado?</p>
-                                <button onClick={forceWipe} className="w-full py-3 bg-red-600 text-white font-black text-[10px] uppercase tracking-[0.2em] rounded-lg hover:bg-red-500 shadow-lg shadow-red-600/20 transition-all">
-                                    Forzar Resincronización
+                            <div className="bg-red-900/10 border border-red-500/20 p-4 rounded-xl space-y-3">
+                                <p className="text-[9px] text-red-300 font-bold uppercase tracking-wide">¿Mensajes atascados?</p>
+                                
+                                <button 
+                                    onClick={handleSoftReset} 
+                                    disabled={isSoftResetting}
+                                    className="w-full py-3 bg-red-600/80 text-white font-black text-[10px] uppercase tracking-[0.2em] rounded-lg hover:bg-red-500 shadow-lg shadow-red-600/20 transition-all flex items-center justify-center gap-2"
+                                >
+                                    {isSoftResetting ? <div className="w-3 h-3 border-2 border-white/50 border-t-white rounded-full animate-spin"></div> : '⚡'}
+                                    {isSoftResetting ? 'Reiniciando...' : 'Destrabar / Resincronizar'}
                                 </button>
+                                
+                                <p className="text-[8px] text-red-400/60 leading-tight">Esto reinicia la conexión sin borrar la sesión.</p>
                             </div>
                         </div>
                     </div>
