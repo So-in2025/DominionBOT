@@ -3,7 +3,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { RadarSignal, RadarSettings, WhatsAppGroup, BotSettings } from '../types';
 import { getAuthHeaders } from '../config';
 import { audioService } from '../services/audioService';
-import { GoogleGenAI } from '@google/genai';
 
 interface RadarPanelProps {
     token: string;
@@ -195,43 +194,29 @@ const RadarPanel: React.FC<RadarPanelProps> = ({ token, backendUrl, showToast })
     const autoCalibrateWithAI = async () => {
         setIsEnhancing(true);
         try {
-            const settingsRes = await fetch(`${backendUrl}/api/settings`, { headers: getAuthHeaders(token) });
-            const botSettings: BotSettings = await settingsRes.json();
-            
-            if (!botSettings.geminiApiKey) {
-                showToast('Se requiere API Key de Gemini en Configuración.', 'error');
-                setIsEnhancing(false);
-                return;
-            }
-
-            const ai = new GoogleGenAI({ apiKey: botSettings.geminiApiKey });
-            const prompt = `
-            Actúa como un experto en Inteligencia de Negocios.
-            Basado en la siguiente descripción del negocio: "${botSettings.productDescription}",
-            genera dos definiciones breves y precisas para un sistema de Radar de Oportunidades:
-            1. "Opportunity Definition": Qué buscar exactamente en grupos de WhatsApp (intención de compra, preguntas específicas).
-            2. "Noise Definition": Qué ignorar (spam, competencia, irrelevante).
-            
-            Formato JSON: { "opportunity": "...", "noise": "..." }
-            `;
-
-            const response = await ai.models.generateContent({
-                model: 'gemini-3-flash-preview',
-                contents: [{ parts: [{ text: prompt }] }],
-                config: { responseMimeType: "application/json" }
+            const res = await fetch(`${backendUrl}/api/radar/calibrate`, {
+                method: 'POST',
+                headers: getAuthHeaders(token)
             });
 
-            const result = JSON.parse(response.text || '{}');
-            if (result.opportunity && result.noise) {
-                setCalibration({
-                    ...calibration,
-                    opportunityDefinition: result.opportunity,
-                    noiseDefinition: result.noise
-                });
-                showToast('Calibración generada por IA.', 'success');
+            if (res.ok) {
+                const result = await res.json();
+                if (result.opportunity && result.noise) {
+                    setCalibration({
+                        ...calibration,
+                        opportunityDefinition: result.opportunity,
+                        noiseDefinition: result.noise
+                    });
+                    showToast('Calibración generada por IA.', 'success');
+                } else {
+                    showToast('La IA devolvió un formato incompleto.', 'error');
+                }
+            } else {
+                const err = await res.json();
+                showToast(err.message || 'Error en autocalibración.', 'error');
             }
         } catch (e) {
-            showToast('Error en autocalibración.', 'error');
+            showToast('Error de red en autocalibración.', 'error');
         } finally {
             setIsEnhancing(false);
         }

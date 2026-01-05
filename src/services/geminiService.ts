@@ -36,6 +36,7 @@ export const generateContentWithFallback = async ({
     const ai = new GoogleGenAI({ apiKey });
 
     for (const modelName of MODEL_PRIORITY) {
+        // 1. CHEQUEO DE LISTA NEGRA ANTES DE INTENTAR
         const cooldownUntil = await db.getModelCooldown(modelName);
         if (cooldownUntil && Date.now() < cooldownUntil) {
             // logService.debug(`[GEMINI-SERVICE] Modelo ${modelName} en cooldown. Saltando.`, undefined, undefined);
@@ -62,21 +63,25 @@ export const generateContentWithFallback = async ({
         } catch (err: any) {
             const errorMessage = err.message || '';
             
-            // BLINDAJE ANTI-RATE LIMIT:
+            // 2. MANEJO DE RATE LIMIT (429) O CUOTA AGOTADA
             if (errorMessage.includes('429') || errorMessage.includes('RESOURCE_EXHAUSTED')) {
-                logService.warn(`[GEMINI-SERVICE] ⚠️ RATE LIMIT (429) con ${modelName}. Esperando 5s...`, undefined, undefined);
-                // Pause specifically for 429 to allow quota to refill slightly before trying next model
-                await new Promise(r => setTimeout(r, 5000));
-                // Don't mark as broken, just skip to next for this request
+                logService.warn(`[GEMINI-SERVICE] ⚠️ RATE LIMIT (429) con ${modelName}. Bloqueando por 60m y saltando motor (0ms delay).`, undefined, undefined);
+                
+                // CRÍTICO: Guardar en DB que este modelo está muerto por 1 hora.
+                // Así la próxima petición (loop 2) ni siquiera entra al 'try'.
+                await db.setModelCooldown(modelName, Date.now() + MODEL_COOLDOWN_MS);
+                
                 continue; 
             }
 
-            logService.warn(`[GEMINI-FAILOVER] Fallo con ${modelName}. Mensaje: ${errorMessage}. Pasando al siguiente modelo.`, undefined, undefined);
-            await db.setModelCooldown(modelName, Date.now() + MODEL_COOLDOWN_MS);
+            // 3. MANEJO DE OTROS ERRORES (500, Overloaded, etc)
+            logService.warn(`[GEMINI-FAILOVER] Fallo técnico con ${modelName}. Mensaje: ${errorMessage}. Pasando al siguiente modelo.`, undefined, undefined);
+            // También bloqueamos modelos con fallos técnicos para evitar latencia
+            await db.setModelCooldown(modelName, Date.now() + (5 * 60 * 1000)); // 5 min cooldown para errores técnicos
         }
     }
 
-    // Si todos los modelos fallaron
-    logService.error('[GEMINI-SERVICE] CRITICAL: Todos los modelos de la matriz de derivación fallaron.', new Error('All models failed'), undefined, undefined);
+    // Si todos los modelos fallaron (o están en cooldown)
+    logService.error('[GEMINI-SERVICE] CRITICAL: Todos los modelos de la matriz de derivación fallaron o están agotados.', new Error('All models failed'), undefined, undefined);
     throw new Error("Todos los modelos de IA fallaron. Por favor, intente más tarde.");
 };

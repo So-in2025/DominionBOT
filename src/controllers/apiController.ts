@@ -975,3 +975,53 @@ Texto: "${message}"
         res.status(500).json({ message: error.message || 'Error interno del servidor.' });
     }
 };
+
+// NEW: Radar Auto Calibration Handler (Centralized in Backend)
+export const handleRadarAutoCalibration = async (req: AuthenticatedRequest, res: any) => {
+    try {
+        const { id: userId } = req.user;
+        const user = await db.getUser(userId);
+        const apiKey = user?.settings.geminiApiKey;
+
+        if (!apiKey) {
+            return res.status(400).json({ message: "API Key no configurada." });
+        }
+
+        const prompt = `
+        Actúa como un experto en Inteligencia de Negocios.
+        Basado en la siguiente descripción del negocio: "${user.settings.productDescription}",
+        genera dos definiciones breves y precisas para un sistema de Radar de Oportunidades:
+        1. "Opportunity Definition": Qué buscar exactamente en grupos de WhatsApp (intención de compra, preguntas específicas).
+        2. "Noise Definition": Qué ignorar (spam, competencia, irrelevante).
+        
+        Formato JSON: { "opportunity": "...", "noise": "..." }
+        `;
+
+        const response = await generateContentWithFallback({
+            apiKey: apiKey,
+            prompt: prompt,
+            responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                    opportunity: { type: Type.STRING },
+                    noise: { type: Type.STRING }
+                },
+                required: ['opportunity', 'noise']
+            }
+        });
+
+        let result;
+        try {
+             result = JSON.parse(response.text || '{}');
+        } catch (e) {
+             const clean = response.text?.replace(/```json/g, '').replace(/```/g, '').trim() || '{}';
+             result = JSON.parse(clean);
+        }
+
+        res.status(200).json(result);
+
+    } catch (error: any) {
+        logService.error('Error en /api/radar/calibrate', error, getClientUser(req).id);
+        res.status(500).json({ message: error.message || 'Error interno del servidor.' });
+    }
+};

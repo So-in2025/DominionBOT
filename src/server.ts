@@ -212,6 +212,7 @@ app.get('/api/whatsapp/groups', authenticateToken, apiController.handleGetWhatsA
 app.get('/api/radar/signals', authenticateToken, apiController.handleGetRadarSignals);
 app.get('/api/radar/settings', authenticateToken, apiController.handleGetRadarSettings);
 app.post('/api/radar/settings', authenticateToken, apiController.handleUpdateRadarSettings);
+app.post('/api/radar/calibrate', authenticateToken, apiController.handleRadarAutoCalibration); // NEW BACKEND CALIBRATION ENDPOINT
 app.post('/api/radar/signals/:id/dismiss', authenticateToken, apiController.handleDismissRadarSignal);
 app.post('/api/radar/signals/:id/convert', authenticateToken, apiController.handleConvertRadarSignal); 
 app.post('/api/radar/simulate', authenticateToken, apiController.handleSimulateRadarSignal); 
@@ -301,8 +302,9 @@ app.use((err: any, req: any, res: any, next: any) => {
     });
 });
 
-
-app.listen(Number(PORT), '0.0.0.0', async () => {
+// FIX: Removing '0.0.0.0' allows Node.js to use the default Dual Stack (IPv6 + IPv4)
+// This solves the 'connectex: target machine actively refused it' error when cloudflared tries to access via localhost (IPv6 ::1)
+app.listen(Number(PORT), async () => {
     console.log(`\x1b[33m%s\x1b[0m`, `\n    🦅 DOMINION BACKEND ACTIVO EN PUERTO ${PORT}\n`);
     try {
         await db.init();
