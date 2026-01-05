@@ -1,5 +1,4 @@
 
-// ... (imports remain the same)
 import { JWT_SECRET, PORT } from './env.js';
 import express from 'express';
 import cors from 'cors';
@@ -14,37 +13,48 @@ import { connectToWhatsApp, getSessionStatus } from './whatsapp/client.js';
 import { ConnectionStatus } from './types.js'; 
 import { v4 as uuidv4 } from 'uuid'; 
 import { regenerateSimulationScript } from './services/aiService.js'; 
-import { ngrokService } from './services/ngrokService.js'; // NEW IMPORT
+import { ngrokService } from './services/ngrokService.js'; 
 
-// ... (Global Error Handlers)
+// --- ACTIVE RESILIENCE PROTOCOL ---
+// MANEJO DE ERRORES CRÍTICOS PARA EVITAR QUE EL SERVIDOR SE CAIGA
+// Si Baileys falla con "Bad MAC" o "Connection Closed", atrapamos el error aquí
+// para que el proceso de Node.js siga vivo y pueda reintentar.
+
 (process as any).on('uncaughtException', (err: any) => {
-    // SILENCIADOR DE BAD MAC: Este error es de sesión corrupta, no del código.
-    // Evita que la consola se llene de basura criptográfica.
-    if (err?.message?.includes('Bad MAC') || err?.message?.includes('Decryption failed')) {
-        // Log discreto para monitoreo
-        // console.warn('⚠️ [SIGNAL-ERROR] Corrupción de llaves detectada (Bad MAC). El cliente intentará autorecuperarse.');
-        return;
+    const msg = err?.message || '';
+    
+    // BAD MAC / DECRYPTION ERROR:
+    // Error común de protocolo. No es fatal para el servidor, solo para esa sesión.
+    if (msg.includes('Bad MAC') || msg.includes('Decryption failed')) {
+        // Logueamos pero NO salimos. El cliente de WhatsApp tiene lógica de reintento.
+        // logService.warn('🛡️ [AUTO-HEALING] Fallo criptográfico (Bad MAC) ignorado para mantener uptime.', 'SYSTEM');
+        return; 
     }
+
     console.error('🔥 [CRITICAL] Uncaught Exception:', err);
+    // Solo logueamos, intentamos mantener el servidor arriba a toda costa
     logService.error('UNCAUGHT EXCEPTION - SERVER KEPT ALIVE', err);
 });
 
 (process as any).on('unhandledRejection', (reason: any, promise: any) => {
-    // SILENCIADOR DE BAD MAC EN PROMESAS
     const msg = reason?.toString() || '';
-    if (msg.includes('Bad MAC') || msg.includes('Decryption failed') || msg.includes('No session found')) {
-        return; // Ignorar ruido en logs
+
+    // Ignorar ruido común de desconexión o sesión inválida que se auto-corrige
+    if (msg.includes('Bad MAC') || msg.includes('Decryption failed') || msg.includes('No session found') || msg.includes('Connection Closed')) {
+        return; 
+    }
+
+    // CONFLICTO 428 (Precondition Required) - Suele pasar al reconectar
+    if (reason?.output?.statusCode === 428) {
+        logService.warn('⚠️ [SESSION-CONFLICT] Conflicto de sesión (428). El cliente intentará reconectar.');
+        return;
     }
 
     console.error('🔥 [CRITICAL] Unhandled Rejection:', reason);
-    if (reason?.output?.statusCode === 428 || reason?.message === 'Connection Closed') {
-        logService.warn('WhatsApp Session Conflict (428) detected in background. Session needs reset.');
-    } else {
-        logService.error('UNHANDLED REJECTION - SERVER KEPT ALIVE', reason);
-    }
+    logService.error('UNHANDLED REJECTION - SERVER KEPT ALIVE', reason);
 });
 
-// ... (SEED DATA remains same)
+// ... (SEED DATA)
 const SEED_TESTIMONIALS = [
     { name: "Marcos López", location: "Mendoza", text: "Bueno, parece que soy el primero en comentar. La verdad entré medio de curioso y no entendía nada al principio, pero después de usarlo un poco me acomodó bastante el WhatsApp." },
     { name: "Emilia Ponce", location: "Rosario", text: "Ojalá lo sigan mejorando, pero la base está muy bien." },
@@ -60,26 +70,23 @@ app.use((req, res, next) => {
     next();
 });
 
-// STANDARD CORS MIDDLEWARE (FIX): Replaces faulty manual implementation.
-// This configuration correctly handles credentials with dynamic origins (like Vercel + ngrok).
+// STANDARD CORS MIDDLEWARE
 const corsOptions = {
-    origin: true, // Reflects the request origin. Essential for credentials mode.
+    origin: true, 
     methods: 'GET,POST,PUT,DELETE,OPTIONS',
     allowedHeaders: 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Cache-Control, ngrok-skip-browser-warning',
     credentials: true
 };
 app.use(cors(corsOptions));
-// Ensure pre-flight requests are handled for all routes
 app.options('*', cors(corsOptions));
 
-
-app.use(express.json({ limit: '10mb' }) as any);
+// Aumentar límite de payload para imágenes base64
+app.use(express.json({ limit: '50mb' }) as any);
 
 // ==========================================
 // API ROUTES
 // ==========================================
 
-// ... (login/register/user routes remain same)
 app.post('/api/login', async (req: any, res: any) => {
     const { username, password } = req.body;
     try {
@@ -128,13 +135,11 @@ app.get('/api/settings', authenticateToken, async (req: any, res: any) => {
     res.json(user.settings || {});
 });
 
-// UPDATE THIS ROUTE
 app.post('/api/settings', authenticateToken, async (req: any, res: any) => {
     const userId = req.user.id;
     const updated = await db.updateUserSettings(userId, req.body);
     logService.info('Configuración actualizada', userId, req.user.username);
     
-    // FIRE AND FORGET: Regenerate Simulation Script
     regenerateSimulationScript(userId).catch(err => {
         logService.error('Background script generation failed', err, userId);
     });
@@ -175,8 +180,6 @@ app.get('/api/metrics', authenticateToken, async (req: any, res: any) => {
 
 import * as apiController from './controllers/apiController.js';
 import * as adminController from './controllers/adminController.js';
-import { ELITE_BOT_JID, ELITE_BOT_NAME } from './whatsapp/client.js';
-
 
 // Standard Client Routes
 app.get('/api/status', authenticateToken, apiController.handleGetStatus); 
@@ -184,7 +187,7 @@ app.post('/api/connect', authenticateToken, apiController.handleConnect);
 app.get('/api/disconnect', authenticateToken, apiController.handleDisconnect);
 app.post('/api/send', authenticateToken, apiController.handleSendMessage);
 app.post('/api/conversation/update', authenticateToken, apiController.handleUpdateConversation);
-app.delete('/api/conversation/:id', authenticateToken, apiController.handleDeleteConversation); // NEW DELETE ROUTE
+app.delete('/api/conversation/:id', authenticateToken, apiController.handleDeleteConversation); 
 app.post('/api/conversation/force-run', authenticateToken, apiController.handleForceAiRun); 
 app.get('/api/conversations', authenticateToken, apiController.handleGetConversations);
 
@@ -193,14 +196,13 @@ app.post('/api/client/test-bot/start', authenticateToken, apiController.handleSt
 app.post('/api/client/test-bot/stop', authenticateToken, apiController.handleStopClientTestBot); 
 app.post('/api/client/test-bot/clear', authenticateToken, apiController.handleClearClientTestBotConversation);
 
-// AI Proxy Routes (NEW - FIX DEPLOYMENT)
+// AI Proxy Routes
 app.post('/api/ai/verify-key', authenticateToken, apiController.handleVerifyApiKey);
 app.post('/api/ai/analyze-website', authenticateToken, apiController.handleAnalyzeWebsite);
 app.post('/api/ai/execute-neural-path', authenticateToken, apiController.handleExecuteNeuralPath);
 app.post('/api/ai/generate-campaign-prompt', authenticateToken, apiController.handleGenerateCampaignPrompt);
 
-
-// Campaign Routes (NEW)
+// Campaign Routes
 app.get('/api/campaigns', authenticateToken, apiController.handleGetCampaigns);
 app.post('/api/campaigns', authenticateToken, apiController.handleCreateCampaign);
 app.put('/api/campaigns/:id', authenticateToken, apiController.handleUpdateCampaign);
@@ -208,26 +210,24 @@ app.delete('/api/campaigns/:id', authenticateToken, apiController.handleDeleteCa
 app.post('/api/campaigns/:id/execute', authenticateToken, apiController.handleForceExecuteCampaign); 
 app.get('/api/whatsapp/groups', authenticateToken, apiController.handleGetWhatsAppGroups);
 
-// Radar Routes (NEW RADAR 3.0)
+// Radar Routes
 app.get('/api/radar/signals', authenticateToken, apiController.handleGetRadarSignals);
 app.get('/api/radar/settings', authenticateToken, apiController.handleGetRadarSettings);
 app.post('/api/radar/settings', authenticateToken, apiController.handleUpdateRadarSettings);
-app.post('/api/radar/calibrate', authenticateToken, apiController.handleRadarAutoCalibration); // NEW BACKEND CALIBRATION ENDPOINT
+app.post('/api/radar/calibrate', authenticateToken, apiController.handleRadarAutoCalibration); 
 app.post('/api/radar/signals/:id/dismiss', authenticateToken, apiController.handleDismissRadarSignal);
 app.post('/api/radar/signals/:id/convert', authenticateToken, apiController.handleConvertRadarSignal); 
 app.post('/api/radar/simulate', authenticateToken, apiController.handleSimulateRadarSignal); 
 app.get('/api/radar/activity', authenticateToken, apiController.handleGetRadarActivityLogs); 
 
-// Network Routes (NEW)
+// Network Routes
 app.post('/api/network/signals', authenticateToken, apiController.handleCreateIntentSignal);
 app.get('/api/network/signals', authenticateToken, apiController.handleGetIntentSignals);
 app.get('/api/network/opportunities', authenticateToken, apiController.handleGetConnectionOpportunities);
 app.post('/api/network/opportunities/:id/request-permission', authenticateToken, apiController.handleRequestPermission);
-// reveal contact is a GET as per current apiController
 app.get('/api/network/opportunities/:id/reveal-contact', authenticateToken, apiController.handleRevealContact);
 app.get('/api/network/profile', authenticateToken, apiController.handleGetNetworkProfile);
 app.post('/api/network/profile', authenticateToken, apiController.handleUpdateNetworkProfile);
-
 
 // Public/Shared Routes
 app.get('/api/system/settings', adminController.handleGetSystemSettings); 
@@ -253,19 +253,12 @@ adminRouter.delete('/clients/:id', adminController.handleDeleteClient);
 adminRouter.post('/clients/:id/renew', adminController.handleRenewClient);
 adminRouter.post('/clients/:id/activate', adminController.handleActivateClient);
 adminRouter.get('/logs', adminController.handleGetLogs);
-// Admin System Settings
 adminRouter.get('/system/settings', adminController.handleGetSystemSettings);
 adminRouter.put('/system/settings', adminController.handleUpdateSystemSettings);
-
-// Admin Test Bot Routes
 adminRouter.post('/test-bot/start', adminController.handleStartTestBot);
 adminRouter.post('/test-bot/clear', adminController.handleClearTestBotConversation);
-
-// DEPTH CONTROL ROUTES (NEW)
 adminRouter.post('/depth/update', adminController.handleUpdateDepthLevel);
 adminRouter.post('/depth/boost', adminController.handleApplyDepthBoost);
-
-// Admin Network Overview (NEW)
 adminRouter.get('/network/overview', adminController.handleGetNetworkOverview);
 
 adminRouter.post('/system/reset', async (req: any, res, next) => {
@@ -283,7 +276,6 @@ app.get('/api/health', (req, res) => {
     res.status(200).json({ status: 'DOMINION_ONLINE', database: db.isReady() ? 'CONNECTED' : 'CONNECTING' });
 });
 
-// ... (Error handling and listen remains the same)
 app.use('/api', (req: any, res) => {
     logService.warn(`Ruta de API no encontrada: ${req.method} ${req.originalUrl}`, req.user?.id, req.user?.username);
     res.status(404).json({ message: 'Ruta de API no encontrada.' });
@@ -302,19 +294,17 @@ app.use((err: any, req: any, res: any, next: any) => {
     });
 });
 
-// FIX: Explicitly bind to '0.0.0.0' to ensure IPv4 availability.
-// CRITICAL FIX: Increased keepAliveTimeout to 65s (Cloudflare default is 60s).
-// This prevents 'wsarecv: An existing connection was forcibly closed' errors.
+// START SERVER
+// FIX CRÍTICO: Binding a 0.0.0.0 y Keep-Alive aumentado.
+// Esto soluciona los errores 502/504 con Cloudflare/Ngrok.
 const server = app.listen(Number(PORT), '0.0.0.0', async () => {
     console.log(`\x1b[33m%s\x1b[0m`, `\n    🦅 DOMINION BACKEND ACTIVO EN PUERTO ${PORT}\n`);
     try {
         await db.init();
         logService.info('El sistema backend se ha iniciado correctamente.');
         
-        // START NGROK AUTO-DETECTION
         ngrokService.startAutoDetection();
 
-        // ... (Testimonial seeding and TTS init logic remains the same)
         const seedCount = await db.countSeedTestimonials();
         if (seedCount === 0) {
             logService.info('[SERVER] No se detectaron testimonios de sistema ("system_seed"). Iniciando inyección DRIP...');
@@ -342,8 +332,6 @@ const server = app.listen(Number(PORT), '0.0.0.0', async () => {
             } catch (err) {
                 logService.error('[SERVER] ❌ Error crítico inyectando testimonios:', err);
             }
-        } else {
-            logService.info(`[SERVER] Testimonios de sistema verificados (${seedCount}). Integridad OK.`);
         }
 
         await ttsService.init(); 
@@ -353,35 +341,27 @@ const server = app.listen(Number(PORT), '0.0.0.0', async () => {
         for (const client of clients) {
             const isActivePlan = client.plan_status === 'active' || client.plan_status === 'trial';
             
-            // AGGRESSIVE RECONNECT LOGIC: 
-            // 1. If whatsapp_number exists, use it.
-            // 2. Fallback: If whatsapp_number is empty (wiped), check if username is a number (starts with 549...).
             const hasNumber = client.whatsapp_number && client.whatsapp_number.length > 8;
             const hasUsernameNumber = !hasNumber && client.username && client.username.startsWith('549') && client.username.length > 8;
             const shouldReconnect = hasNumber || hasUsernameNumber;
             
-            // We ignore isActive here to FORCE the attempt if plan is valid.
-            // But we will respect it later if we want to silence the bot, but CONNECTION should exist.
             if (isActivePlan && shouldReconnect) {
                 logService.info(`[SERVER] 🔄 Intentando recuperar sesión para: ${client.username}`, client.id);
                 
-                // FORCE REACTIVATION if it was disabled by error
                 if (!client.settings.isActive) {
                      logService.info(`[SERVER] Auto-reactivando bot para ${client.username}.`, client.id);
                      await db.updateUserSettings(client.id, { isActive: true });
                 }
                 
-                // If whatsapp_number is missing in DB but present in username, try to patch it implicitly on connect success
                 connectToWhatsApp(client.id).catch(err => {
                     logService.error(`[SERVER] Falló la reconexión inicial para el cliente ${client.username}`, err, client.id);
                 });
                 await new Promise(resolve => setTimeout(resolve, 500)); 
-            } else {
-                logService.info(`[SERVER] No se reconectará el nodo para el cliente: ${client.username} (plan: ${client.plan_status}, num: ${hasNumber || hasUsernameNumber})`, client.id);
             }
         }
-        logService.info('[SERVER] Proceso de reconexión de nodos iniciado para todos los clientes elegibles.');
+        logService.info('[SERVER] Proceso de reconexión de nodos completado.');
 
+        // ZOMBIE KICKER: Revisa sesiones muertas cada 5 min
         setInterval(async () => {
             const allClients = await db.getAllClients();
             for (const client of allClients) {
@@ -401,7 +381,8 @@ const server = app.listen(Number(PORT), '0.0.0.0', async () => {
     }
 });
 
-// Configure timeouts to be slightly higher than Cloudflare's default (60s)
-// to prevent 502 Bad Gateway errors.
+// AUMENTAR TIMEOUTS PARA EVITAR 502 BAD GATEWAY EN CLOUDFLARE
+// Cloudflare espera 60s por defecto. Si Node cierra antes, da error.
+// Ponemos 65s y 66s para estar seguros.
 server.keepAliveTimeout = 65000; 
 server.headersTimeout = 66000;
