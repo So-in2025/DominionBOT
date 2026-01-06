@@ -30,13 +30,28 @@ export const clearBindedSession = async (userId: string) => {
     }
 };
 
+/**
+ * Verifica si existen credenciales guardadas para este usuario.
+ * Vital para evitar que el servidor intente conectar "usuarios fantasmas" al reiniciar.
+ */
+export const hasValidSession = async (userId: string): Promise<boolean> => {
+    try {
+        // Buscamos si existe al menos la credencial principal 'creds'
+        const count = await SessionModel.countDocuments({ _id: `${userId}_creds` });
+        return count > 0;
+    } catch (e) {
+        return false;
+    }
+};
+
 export const useMongoDBAuthState = async (userId: string) => {
     const writeData = async (data: any, id: string) => {
         try {
             const serialized = JSON.stringify(data, BufferJSON.replacer);
+            // Usamos upsert para asegurar que si existe se actualice, si no se cree.
             await SessionModel.findByIdAndUpdate(id, { data: serialized }, { upsert: true });
         } catch (err) {
-            console.error(`[AUTH-WRITE-ERR]`, err);
+            console.error(`[AUTH-WRITE-ERR] Fallo escritura en DB para ${id}`, err);
         }
     };
 
@@ -44,16 +59,30 @@ export const useMongoDBAuthState = async (userId: string) => {
         try {
             const doc = await SessionModel.findById(id).lean() as IBaileysSession | null;
             if (doc && doc.data) {
-                return JSON.parse(doc.data, BufferJSON.reviver);
+                // --- ANTI-CORRUPTION LAYER (PROTECCIÓN CONTRA CORTES DE LUZ) ---
+                try {
+                    return JSON.parse(doc.data, BufferJSON.reviver);
+                } catch (parseError) {
+                    // Si el JSON está roto (corte de luz mientras escribía), es irrecuperable.
+                    // En lugar de crashear el servidor, borramos este dato corrupto.
+                    console.error(`[AUTH-CORRUPTION] 💥 Dato corrupto detectado en ${id}. Eliminando para evitar crash loop.`);
+                    await SessionModel.findByIdAndDelete(id);
+                    return null;
+                }
             }
-        } catch (error) {}
+        } catch (error) {
+            console.error(`[AUTH-READ-ERR] Error leyendo ${id}`, error);
+            return null;
+        }
         return null;
     };
 
     const removeData = async (id: string) => {
         try {
             await SessionModel.findByIdAndDelete(id);
-        } catch (error) {}
+        } catch (error) {
+            console.error(`[AUTH-RM-ERR] Error borrando ${id}`, error);
+        }
     };
 
     const credsKey = `${userId}_creds`;

@@ -1,10 +1,10 @@
 
-import { GoogleGenAI, Modality } from '@google/genai';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { logService } from './logService.js';
 import { Buffer } from 'buffer';
+import { generateAudioWithFallback } from './geminiService.js';
 
 const AUDIO_EVENTS: Record<string, string> = {
     // Landing Page
@@ -59,8 +59,6 @@ class TtsService {
             return;
         }
 
-        const ai = new GoogleGenAI({ apiKey });
-
         for (const [eventName, text] of Object.entries(AUDIO_EVENTS)) {
             const audioPath = path.join(this.audioDir, `${eventName}.mp3`);
             
@@ -70,18 +68,9 @@ class TtsService {
 
             try {
                 logService.info(`[TTS] Generando audio para el evento: ${eventName}`);
-                const response = await ai.models.generateContent({
-                    model: "gemini-2.5-flash-preview-tts",
-                    contents: [{ parts: [{ text }] }],
-                    config: {
-                        responseModalities: [Modality.AUDIO],
-                        speechConfig: {
-                            voiceConfig: {
-                                prebuiltVoiceConfig: { voiceName: 'Kore' }, // Professional and clear voice
-                            },
-                        },
-                    },
-                });
+                
+                // Usamos el servicio centralizado con sistema de fallback y blacklisting
+                const response = await generateAudioWithFallback(apiKey, text, 'Kore');
 
                 const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
                 if (!base64Audio) {

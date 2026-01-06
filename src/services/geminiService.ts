@@ -1,5 +1,5 @@
 
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Modality } from "@google/genai";
 import { db } from '../database.js';
 import { logService } from './logService.js';
 
@@ -9,6 +9,12 @@ const MODEL_PRIORITY = [
     "gemini-3-flash-preview",
     "gemini-2.5-pro",
     "gemini-3-pro-preview"
+];
+
+// Priority list specifically for Text-to-Speech
+const TTS_MODEL_PRIORITY = [
+    "gemini-2.5-flash-preview-tts"
+    // Future TTS models can be added here
 ];
 
 const MODEL_COOLDOWN_MS = 60 * 60 * 1000; // 60 Minutes
@@ -84,4 +90,52 @@ export const generateContentWithFallback = async ({
     // Si todos los modelos fallaron (o están en cooldown)
     logService.error('[GEMINI-SERVICE] CRITICAL: Todos los modelos de la matriz de derivación fallaron o están agotados.', new Error('All models failed'), undefined, undefined);
     throw new Error("Todos los modelos de IA fallaron. Por favor, intente más tarde.");
+};
+
+/**
+ * Genera Audio (TTS) utilizando la matriz de modelos soportados.
+ * Aplica la misma lógica de resiliencia que para texto.
+ */
+export const generateAudioWithFallback = async (apiKey: string, text: string, voiceName: string = 'Kore') => {
+    const ai = new GoogleGenAI({ apiKey });
+
+    for (const modelName of TTS_MODEL_PRIORITY) {
+        // 1. CHEQUEO DE LISTA NEGRA
+        const cooldownUntil = await db.getModelCooldown(modelName);
+        if (cooldownUntil && Date.now() < cooldownUntil) {
+            continue;
+        }
+
+        try {
+            const response = await ai.models.generateContent({
+                model: modelName,
+                contents: [{ parts: [{ text }] }],
+                config: {
+                    responseModalities: [Modality.AUDIO],
+                    speechConfig: {
+                        voiceConfig: {
+                            prebuiltVoiceConfig: { voiceName },
+                        },
+                    },
+                },
+            });
+
+            return response;
+
+        } catch (err: any) {
+            const errorMessage = err.message || '';
+            
+            if (errorMessage.includes('429') || errorMessage.includes('RESOURCE_EXHAUSTED')) {
+                logService.warn(`[GEMINI-TTS] ⚠️ RATE LIMIT (429) con ${modelName}. Bloqueando modelo.`, undefined, undefined);
+                await db.setModelCooldown(modelName, Date.now() + MODEL_COOLDOWN_MS);
+                continue;
+            }
+
+            logService.warn(`[GEMINI-TTS-FAILOVER] Fallo técnico con ${modelName}. Pasando al siguiente.`, undefined, undefined);
+            await db.setModelCooldown(modelName, Date.now() + (5 * 60 * 1000));
+        }
+    }
+
+    logService.error('[GEMINI-TTS] CRITICAL: Todos los modelos de audio fallaron.', new Error('All TTS models failed'), undefined, undefined);
+    throw new Error("El servicio de generación de audio no está disponible.");
 };

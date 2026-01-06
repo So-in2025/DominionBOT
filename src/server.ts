@@ -9,47 +9,35 @@ import { optionalAuthenticateToken } from './middleware/optionalAuth.js';
 import { logService } from './services/logService.js';
 import { ttsService } from './services/ttsService.js'; 
 import { campaignService } from './services/campaignService.js'; 
-import { connectToWhatsApp, getSessionStatus } from './whatsapp/client.js'; 
+import { connectToWhatsApp, getSessionStatus, closeAllSessions } from './whatsapp/client.js'; 
 import { ConnectionStatus } from './types.js'; 
 import { v4 as uuidv4 } from 'uuid'; 
 import { regenerateSimulationScript } from './services/aiService.js'; 
 import { ngrokService } from './services/ngrokService.js'; 
+import { hasValidSession } from './whatsapp/mongoAuth.js'; 
 
 // --- ACTIVE RESILIENCE PROTOCOL ---
-// MANEJO DE ERRORES CRÍTICOS PARA EVITAR QUE EL SERVIDOR SE CAIGA
-
 (process as any).on('uncaughtException', (err: any) => {
     const msg = err?.message || '';
-    
-    // IGNORE COMMON CRYPTO NOISE
     if (msg.includes('Bad MAC') || msg.includes('Decryption failed') || msg.includes('Key used already')) {
-        // Do not log stack trace for these, they are protocol noise
-        // logService.warn('🛡️ [AUTO-HEALING] Protocol error ignored to maintain uptime.');
         return; 
     }
-
     console.error('🔥 [CRITICAL] Uncaught Exception:', err);
     logService.error('UNCAUGHT EXCEPTION - SERVER KEPT ALIVE', err);
 });
 
 (process as any).on('unhandledRejection', (reason: any, promise: any) => {
     const msg = reason?.toString() || '';
-
-    // IGNORE COMMON NOISE
     if (msg.includes('Bad MAC') || msg.includes('Decryption failed') || msg.includes('No session found') || msg.includes('Connection Closed') || msg.includes('503') || msg.includes('428')) {
         return; 
     }
-
-    // 428 is Precondition Required, usually means session mismatch, client auto-handles it.
     if (reason?.output?.statusCode === 428) {
         return;
     }
-
     console.error('🔥 [CRITICAL] Unhandled Rejection:', reason);
     logService.error('UNHANDLED REJECTION - SERVER KEPT ALIVE', reason);
 });
 
-// ... (SEED DATA)
 const SEED_TESTIMONIALS = [
     { name: "Marcos López", location: "Mendoza", text: "Bueno, parece que soy el primero en comentar. La verdad entré medio de curioso y no entendía nada al principio, pero después de usarlo un poco me acomodó bastante el WhatsApp." },
     { name: "Emilia Ponce", location: "Rosario", text: "Ojalá lo sigan mejorando, pero la base está muy bien." },
@@ -68,7 +56,6 @@ app.use((req, res, next) => {
     next();
 });
 
-// STANDARD CORS MIDDLEWARE
 const corsOptions = {
     origin: true, 
     methods: 'GET,POST,PUT,DELETE,OPTIONS',
@@ -78,7 +65,6 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 
-// Aumentar límite de payload para imágenes base64
 app.use(express.json({ limit: '50mb' }) as any);
 
 // ==========================================
@@ -340,12 +326,11 @@ const server = app.listen(Number(PORT), '0.0.0.0', async () => {
         for (const client of clients) {
             const isActivePlan = client.plan_status === 'active' || client.plan_status === 'trial';
             
-            const hasNumber = client.whatsapp_number && client.whatsapp_number.length > 8;
-            const hasUsernameNumber = !hasNumber && client.username && client.username.startsWith('549') && client.username.length > 8;
-            const shouldReconnect = hasNumber || hasUsernameNumber;
+            // OPTIMIZACIÓN CRÍTICA: Solo intentar reconectar si existe una sesión válida
+            const sessionExists = await hasValidSession(client.id);
             
-            if (isActivePlan && shouldReconnect) {
-                logService.info(`[SERVER] 🔄 Intentando recuperar sesión para: ${client.username}`, client.id);
+            if (isActivePlan && sessionExists) {
+                logService.info(`[SERVER] 🔄 Reanudando sesión existente para: ${client.username}`, client.id);
                 
                 if (!client.settings.isActive) {
                      logService.info(`[SERVER] Auto-reactivando bot para ${client.username}.`, client.id);
@@ -356,6 +341,8 @@ const server = app.listen(Number(PORT), '0.0.0.0', async () => {
                     logService.error(`[SERVER] Falló la reconexión inicial para el cliente ${client.username}`, err, client.id);
                 });
                 await new Promise(resolve => setTimeout(resolve, 500)); 
+            } else if (isActivePlan && !sessionExists) {
+                logService.info(`[SERVER] 💤 Cliente ${client.username} activo pero sin sesión vinculada. Esperando vinculación manual.`, client.id);
             }
         }
         logService.info('[SERVER] Proceso de reconexión de nodos completado.');
@@ -367,9 +354,13 @@ const server = app.listen(Number(PORT), '0.0.0.0', async () => {
                 const isActivePlan = client.plan_status === 'active' || client.plan_status === 'trial';
                 if (isActivePlan && client.settings.isActive) {
                     const status = getSessionStatus(client.id);
+                    // Solo intentar revivir si realmente debería estar conectado
                     if (status.status === ConnectionStatus.DISCONNECTED) {
-                        logService.warn(`[ZOMBIE-KICKER] 🧟 Reviviendo sesión muerta para ${client.username}`, client.id);
-                        connectToWhatsApp(client.id).catch(e => logService.error(`[ZOMBIE-KICKER] Falló resurrección para ${client.username}`, e, client.id));
+                        const sessionExists = await hasValidSession(client.id);
+                        if (sessionExists) {
+                            logService.warn(`[ZOMBIE-KICKER] 🧟 Reviviendo sesión muerta para ${client.username}`, client.id);
+                            connectToWhatsApp(client.id).catch(e => logService.error(`[ZOMBIE-KICKER] Falló resurrección para ${client.username}`, e, client.id));
+                        }
                     }
                 }
             }
@@ -379,6 +370,25 @@ const server = app.listen(Number(PORT), '0.0.0.0', async () => {
         logService.error('Fallo crítico al inicializar la base de datos o el servicio TTS', e);
     }
 });
+
+// GRACEFUL SHUTDOWN HANDLERS
+const gracefulShutdown = async () => {
+    logService.warn('🛑 SEÑAL DE APAGADO RECIBIDA. Iniciando Graceful Shutdown...');
+    try {
+        await closeAllSessions();
+        logService.info('✅ Todas las sesiones de WhatsApp cerradas correctamente.');
+        server.close(() => {
+            logService.info('✅ Servidor HTTP cerrado.');
+            process.exit(0);
+        });
+    } catch (error) {
+        console.error('Error durante el apagado:', error);
+        process.exit(1);
+    }
+};
+
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
 
 // AUMENTAR TIMEOUTS PARA EVITAR 502 BAD GATEWAY EN CLOUDFLARE
 server.keepAliveTimeout = 65000; 
