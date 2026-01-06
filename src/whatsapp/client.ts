@@ -28,9 +28,11 @@ const sessions = new Map<string, WASocket>();
 const qrCache = new Map<string, string>(); 
 const codeCache = new Map<string, string>(); 
 const isConnecting = new Map<string, boolean>(); 
-
-// RETRY CACHE (CRITICAL FOR BAD MAC RESILIENCE)
 const retryMap = new Map<string, any>();
+
+// CRASH COUNTER FOR BAD MAC DETECTION
+const crashCounters = new Map<string, { count: number, lastCrash: number }>();
+
 const msgRetryCounterCache = {
     get: (key: string) => retryMap.get(key),
     set: (key: string, value: any) => { retryMap.set(key, value); },
@@ -38,7 +40,7 @@ const msgRetryCounterCache = {
     flushAll: () => { retryMap.clear(); }
 };
 
-// Logger setup - Silent to avoid console spam
+// Logger setup - Silent to avoid console spam in production
 const logger = pino({ level: 'silent' }); 
 
 export const ELITE_BOT_JID = '5491112345678@s.whatsapp.net';
@@ -98,18 +100,17 @@ export function getSocket(userId: string): WASocket | undefined {
 }
 
 // ----------------------------------------------------------------------
-// CORE CONNECTION LOGIC (STABLE v3.3 - BACK TO BASICS)
+// CORE CONNECTION LOGIC (STABLE v3.4 - ANTI BAD MAC)
 // ----------------------------------------------------------------------
 export async function connectToWhatsApp(userId: string, phoneNumber?: string, isManual: boolean = false) {
-    if (isConnecting.get(userId)) {
-        return;
-    }
+    if (isConnecting.get(userId)) return;
     
+    // Clean up existing session wrapper if exists but broken
     const existingSock = sessions.get(userId);
-    if (existingSock?.user) {
+    if (existingSock) {
         // @ts-ignore
-        if (existingSock.ws && existingSock.ws.isOpen) {
-            return; 
+        if (existingSock.ws && existingSock.ws.isOpen && existingSock.user) {
+            return; // Already connected and healthy
         } else {
             sessions.delete(userId);
         }
@@ -117,7 +118,6 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
 
     try {
         isConnecting.set(userId, true);
-        
         qrCache.delete(userId);
         codeCache.delete(userId);
 
@@ -142,12 +142,12 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
             syncFullHistory: false, 
             markOnlineOnConnect: false, 
             
-            // Timeouts
-            connectTimeoutMs: 60000, 
-            defaultQueryTimeoutMs: 90000, // Aumentado para evitar Timeouts en prekeys
-            keepAliveIntervalMs: 20000, // Reduced to 20s to detect zombies faster
+            // Aggressive Timeouts for Faster Recovery
+            connectTimeoutMs: 30000, 
+            defaultQueryTimeoutMs: 60000, 
+            keepAliveIntervalMs: 15000, // Ping faster to detect zombies
             
-            retryRequestDelayMs: 5000, 
+            retryRequestDelayMs: 2000, 
             msgRetryCounterCache: msgRetryCounterCache, 
             
             getMessage: async (key) => {
@@ -164,7 +164,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
             const pairingCode = (update as any).pairingCode;
 
             if (qr) {
-                if (phoneNumber && !codeCache.get(userId) && !qrCache.get(userId)) {
+                if (phoneNumber && !codeCache.get(userId)) {
                     setTimeout(async () => {
                         try {
                             const currentSock = sessions.get(userId);
@@ -175,7 +175,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
                         } catch (e) {
                             console.error("Pairing code error", e);
                         }
-                    }, 3000);
+                    }, 2000);
                 }
                 qrCache.set(userId, await QRCode.toDataURL(qr));
             }
@@ -191,15 +191,46 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
                 const disconnectError = lastDisconnect?.error as Boom | any;
                 const statusCode = disconnectError?.output?.statusCode;
                 
-                const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+                // --- CRASH LOOP DETECTION (BAD MAC KILLER) ---
+                const now = Date.now();
+                const crashData = crashCounters.get(userId) || { count: 0, lastCrash: 0 };
                 
+                // If crash happened recently (within 2 mins)
+                if (now - crashData.lastCrash < 120000) {
+                    crashData.count++;
+                } else {
+                    crashData.count = 1; // Reset counter if it's been a while
+                }
+                crashData.lastCrash = now;
+                crashCounters.set(userId, crashData);
+
+                // Analyze Disconnect Reason
+                const isLoggedOut = statusCode === DisconnectReason.loggedOut;
+                const isBadSession = statusCode === DisconnectReason.badSession;
+                const isConnectionLost = statusCode === DisconnectReason.connectionLost;
+                const isRestartRequired = statusCode === DisconnectReason.restartRequired;
+                const isTimedOut = statusCode === DisconnectReason.timedOut;
+
+                // TACTICAL AMNESIA: If too many crashes or Bad Session, WIPE IT.
+                if (crashData.count > 5 || isBadSession) {
+                    logService.error(`[WA] 💀 SESIÓN CORRUPTA DETECTADA (${crashData.count} fallos). EJECUTANDO HARD RESET AUTOMÁTICO.`, null, userId);
+                    await clearBindedSession(userId);
+                    await db.updateUserSettings(userId, { isActive: false });
+                    crashCounters.delete(userId);
+                    // Do not reconnect automatically, force user to rescan to fix crypto keys
+                    return; 
+                }
+
+                const shouldReconnect = !isLoggedOut;
                 qrCache.delete(userId);
                 codeCache.delete(userId);
 
                 if (shouldReconnect) {
-                    const delay = statusCode === DisconnectReason.restartRequired ? 1000 : 5000;
+                    // Fast Reconnect for minor issues, Slow for major ones
+                    const delay = isRestartRequired ? 500 : (isTimedOut ? 2000 : 5000);
+                    
                     if (statusCode !== DisconnectReason.restartRequired) {
-                        logService.warn(`[WA] Desconectado (${statusCode}). Reconectando en ${delay}ms...`, userId);
+                        logService.warn(`[WA] Desconectado (${statusCode}). Reintentando en ${delay}ms...`, userId);
                     }
                     setTimeout(() => connectToWhatsApp(userId, phoneNumber), delay);
                 } else {
@@ -207,8 +238,10 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
                     await clearBindedSession(userId);
                     await db.updateUserSettings(userId, { isActive: false });
                 }
+
             } else if (connection === 'open') {
                 isConnecting.set(userId, false);
+                crashCounters.delete(userId); // Reset crash counter on success
                 logService.info(`[WA] ✅ CONEXIÓN ESTABLECIDA.`, userId);
                 qrCache.delete(userId);
                 codeCache.delete(userId);
@@ -226,7 +259,20 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
             if (type !== 'notify' && type !== 'append') return;
 
             for (const msg of messages) {
-                // --- PROTOCOLO DE INGESTA SILENCIOSA ---
+                // Ignore status updates
+                if (msg.key.remoteJid === 'status@broadcast') continue;
+
+                // --- HARD FILTER: IGNORED JIDS (PRE-PROCESSING) ---
+                // Check blacklist BEFORE anything else to save CPU
+                const rawJid = msg.key.remoteJid;
+                const canonicalJid = normalizeJid(rawJid);
+                if (!canonicalJid || canonicalJid.endsWith('@newsletter')) continue;
+
+                if (user?.settings?.ignoredJids?.some(blocked => canonicalJid.includes(blocked))) {
+                    continue; // DROP PACKET IMMEDIATELY
+                }
+
+                // Time check
                 const msgTime = (typeof msg.messageTimestamp === 'number' 
                     ? msg.messageTimestamp 
                     : (msg.messageTimestamp as any)?.low) || Math.floor(Date.now() / 1000);
@@ -234,18 +280,9 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
                 const now = Math.floor(Date.now() / 1000);
                 const ageInSeconds = now - msgTime;
                 
-                if (ageInSeconds > 86400) continue; 
+                if (ageInSeconds > 86400) continue; // Ignore messages older than 24h
 
                 if (!msg.message) continue;
-                
-                const rawJid = msg.key.remoteJid;
-                const canonicalJid = normalizeJid(rawJid);
-                if (!canonicalJid || canonicalJid === 'status@broadcast' || canonicalJid.endsWith('@newsletter')) continue;
-                
-                if (user?.settings?.ignoredJids?.includes(canonicalJid.split('@')[0])) {
-                    continue; 
-                }
-
                 if (isJidGroup(canonicalJid)) continue; 
 
                 const messageText = extractMessageContent(msg);
@@ -266,13 +303,13 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
 
                 // --- AI TRIGGER LOGIC ---
                 if (!isMe) {
-                    logService.info(`[INBOX] 📩 ${canonicalJid}: ${messageText.substring(0, 30)}...`, userId);
-                    
-                    if (ageInSeconds > 600) {
-                        logService.info(`[SILENT-INGEST] Mensaje antiguo (${ageInSeconds}s). Guardado sin respuesta IA.`, userId);
-                        continue; // SKIP AI
+                    // SILENT INGEST PROTOCOL
+                    if (ageInSeconds > 300) { // Reduced to 5 mins
+                        logService.debug(`[SILENT-INGEST] Msj antiguo (${ageInSeconds}s). Guardado sin respuesta.`, userId);
+                        continue; 
                     }
 
+                    logService.info(`[INBOX] 📩 ${canonicalJid}: ${messageText.substring(0, 30)}...`, userId);
                     await processAiResponseForJid(userId, canonicalJid);
                 }
             }
@@ -309,6 +346,7 @@ export async function softResetConnection(userId: string) {
     qrCache.delete(userId);
     codeCache.delete(userId);
     msgRetryCounterCache.flushAll();
+    // Force connect with manual flag to bypass checks
     await connectToWhatsApp(userId, undefined, true);
 }
 
@@ -325,7 +363,7 @@ export async function sendMessage(senderId: string, jid: string, text: string, i
             throw new Error("Socket cerrado");
         }
 
-        // 8-Second timeout for the write operation
+        // 5-Second timeout for faster failure detection
         return await Promise.race([
             (async () => {
                 if (imageUrl) {
@@ -337,7 +375,7 @@ export async function sendMessage(senderId: string, jid: string, text: string, i
                     return await currentSock.sendMessage(canonicalJid, { text });
                 }
             })(),
-            new Promise((_, reject) => setTimeout(() => reject(new Error("TIMEOUT_SEND")), 8000))
+            new Promise((_, reject) => setTimeout(() => reject(new Error("TIMEOUT_SEND")), 5000))
         ]);
     };
 
@@ -347,31 +385,34 @@ export async function sendMessage(senderId: string, jid: string, text: string, i
         return result as any;
 
     } catch (e: any) {
-        console.error(`[SEND-FAIL] Primer intento fallido para ${canonicalJid}:`, e.message);
+        // Only log if it's not a common timeout to avoid spam
+        if (e.message !== 'TIMEOUT_SEND') {
+            console.error(`[SEND-FAIL] Intento 1 fallido para ${canonicalJid}:`, e.message);
+        }
 
-        // CHECK IF RECOVERABLE (Zombie Socket or Timeout)
-        if (e.message === 'TIMEOUT_SEND' || e.message === 'Socket cerrado' || e.message.includes('Stream Ended')) {
-            logService.warn(`[SELF-HEALING] 🚑 Detectado Socket Zombie al enviar a ${canonicalJid}. Iniciando resucitación...`, senderId);
+        // CHECK IF RECOVERABLE
+        if (e.message === 'TIMEOUT_SEND' || e.message === 'Socket cerrado' || e.message.includes('Stream Ended') || e.message.includes('enc-')) {
+            logService.warn(`[SELF-HEALING] 🚑 Socket Zombie o Error Crypto detectado en ${canonicalJid}. Resucitando...`, senderId);
             
             // 1. Force Soft Reset
             await softResetConnection(senderId);
             
-            // 2. Wait for reconnection (2.5s)
-            await new Promise(r => setTimeout(r, 2500));
+            // 2. Wait for reconnection (3s)
+            await new Promise(r => setTimeout(r, 3000));
             
             // 3. Get New Socket
             const newSock = sessions.get(senderId);
             if (!newSock) throw new Error("No se pudo restablecer la conexión para reintentar el envío.");
 
-            logService.info(`[SELF-HEALING] 🔄 Reintentando envío a ${canonicalJid}...`, senderId);
+            logService.info(`[SELF-HEALING] 🔄 Reintentando envío...`, senderId);
             
             // ATTEMPT 2: Retry with fresh socket
             try {
                 const retryResult = await attemptSend(newSock);
-                logService.info(`[SELF-HEALING] ✅ Reintento exitoso. Mensaje entregado.`, senderId);
+                logService.info(`[SELF-HEALING] ✅ Mensaje entregado tras recuperación.`, senderId);
                 return retryResult as any;
             } catch (retryError: any) {
-                logService.error(`[SELF-HEALING] 💀 Falló el reintento final. El mensaje no salió.`, retryError, senderId);
+                logService.error(`[SELF-HEALING] 💀 Fallo total.`, retryError, senderId);
                 throw new Error("Error persistente de conexión: " + retryError.message);
             }
         }
@@ -418,17 +459,16 @@ export async function processAiResponseForJid(userId: string, jid: string, force
     if (aiResult?.responseText) {
         try {
             // HUMAN DELAY & TYPING PRESENCE
-            // Obtener socket fresco justo antes de usar
             const sock = sessions.get(userId); 
             
             // @ts-ignore
             if (sock && sock.ws && sock.ws.isOpen) {
                 await sock.sendPresenceUpdate('composing', jid);
-                // Delay aleatorio entre 1.5s y 2.5s para simular humano
-                await new Promise(r => setTimeout(r, 1500 + Math.random() * 1000)); 
+                // Random Delay 2s - 4s
+                await new Promise(r => setTimeout(r, 2000 + Math.random() * 2000)); 
             }
 
-            // USAR LA NUEVA FUNCIÓN ROBUSTA DE ENVÍO
+            // USE ROBUST SEND
             const sent = await sendMessage(userId, jid, aiResult.responseText);
             
             if (sent?.key.id) {

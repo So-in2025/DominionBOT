@@ -17,36 +17,31 @@ import { ngrokService } from './services/ngrokService.js';
 
 // --- ACTIVE RESILIENCE PROTOCOL ---
 // MANEJO DE ERRORES CRÍTICOS PARA EVITAR QUE EL SERVIDOR SE CAIGA
-// Si Baileys falla con "Bad MAC" o "Connection Closed", atrapamos el error aquí
-// para que el proceso de Node.js siga vivo y pueda reintentar.
 
 (process as any).on('uncaughtException', (err: any) => {
     const msg = err?.message || '';
     
-    // BAD MAC / DECRYPTION ERROR:
-    // Error común de protocolo. No es fatal para el servidor, solo para esa sesión.
-    if (msg.includes('Bad MAC') || msg.includes('Decryption failed')) {
-        // Logueamos pero NO salimos. El cliente de WhatsApp tiene lógica de reintento.
-        // logService.warn('🛡️ [AUTO-HEALING] Fallo criptográfico (Bad MAC) ignorado para mantener uptime.', 'SYSTEM');
+    // IGNORE COMMON CRYPTO NOISE
+    if (msg.includes('Bad MAC') || msg.includes('Decryption failed') || msg.includes('Key used already')) {
+        // Do not log stack trace for these, they are protocol noise
+        // logService.warn('🛡️ [AUTO-HEALING] Protocol error ignored to maintain uptime.');
         return; 
     }
 
     console.error('🔥 [CRITICAL] Uncaught Exception:', err);
-    // Solo logueamos, intentamos mantener el servidor arriba a toda costa
     logService.error('UNCAUGHT EXCEPTION - SERVER KEPT ALIVE', err);
 });
 
 (process as any).on('unhandledRejection', (reason: any, promise: any) => {
     const msg = reason?.toString() || '';
 
-    // Ignorar ruido común de desconexión o sesión inválida que se auto-corrige
-    if (msg.includes('Bad MAC') || msg.includes('Decryption failed') || msg.includes('No session found') || msg.includes('Connection Closed')) {
+    // IGNORE COMMON NOISE
+    if (msg.includes('Bad MAC') || msg.includes('Decryption failed') || msg.includes('No session found') || msg.includes('Connection Closed') || msg.includes('503') || msg.includes('428')) {
         return; 
     }
 
-    // CONFLICTO 428 (Precondition Required) - Suele pasar al reconectar
+    // 428 is Precondition Required, usually means session mismatch, client auto-handles it.
     if (reason?.output?.statusCode === 428) {
-        logService.warn('⚠️ [SESSION-CONFLICT] Conflicto de sesión (428). El cliente intentará reconectar.');
         return;
     }
 
@@ -296,8 +291,10 @@ app.use((req: any, res) => {
 });
 
 app.use((err: any, req: any, res: any, next: any) => {
-    logService.error('Error no manejado en Express', err, req.user?.id, req.user?.username, { path: req.path, method: req.method });
-    console.error("DEBUG: Global Express Error:", err); 
+    // Only log real errors, not protocol noise
+    if (!err?.message?.includes('Bad MAC')) {
+        logService.error('Error no manejado en Express', err, req.user?.id, req.user?.username, { path: req.path, method: req.method });
+    }
     res.status(err.status || 500).json({
         message: err.message || 'Error interno del servidor.',
         error: process.env.NODE_ENV === 'development' ? err : {} 
@@ -305,8 +302,6 @@ app.use((err: any, req: any, res: any, next: any) => {
 });
 
 // START SERVER
-// FIX CRÍTICO: Binding a 0.0.0.0 y Keep-Alive aumentado.
-// Esto soluciona los errores 502/504 con Cloudflare/Ngrok.
 const server = app.listen(Number(PORT), '0.0.0.0', async () => {
     console.log(`\x1b[33m%s\x1b[0m`, `\n    🦅 DOMINION BACKEND ACTIVO EN PUERTO ${PORT}\n`);
     try {
@@ -319,8 +314,6 @@ const server = app.listen(Number(PORT), '0.0.0.0', async () => {
         if (seedCount === 0) {
             logService.info('[SERVER] No se detectaron testimonios de sistema ("system_seed"). Iniciando inyección MANUAL...');
             const seededData = SEED_TESTIMONIALS.map((t, index) => {
-                // FIXED DATE LOGIC: No more future dates or drip logic. All testimonials inserted now.
-                // First 3 visible by default, others hidden for manual activation.
                 const isVisible = index < 3; 
                 return {
                     userId: 'system_seed',
@@ -388,7 +381,5 @@ const server = app.listen(Number(PORT), '0.0.0.0', async () => {
 });
 
 // AUMENTAR TIMEOUTS PARA EVITAR 502 BAD GATEWAY EN CLOUDFLARE
-// Cloudflare espera 60s por defecto. Si Node cierra antes, da error.
-// Ponemos 65s y 66s para estar seguros.
 server.keepAliveTimeout = 65000; 
 server.headersTimeout = 66000;
