@@ -44,13 +44,24 @@ const TestimonialModel = (mongoose.models.Testimonial || mongoose.model<any>('Te
 const DepthBoostModel = (mongoose.models.DepthBoost || mongoose.model<any>('DepthBoost', DepthBoostSchema)) as Model<any>;
 
 class Database {
+    public connectionPromise: Promise<void> | null = null;
+
     constructor() {
-        if(MONGO_URI) mongoose.connect(MONGO_URI).then(() => console.log('MongoDB Connected')).catch(err => console.error("Mongo Error", err));
+        if(MONGO_URI) {
+            console.log('⏳ [DB] Conectando a MongoDB...');
+            this.connectionPromise = mongoose.connect(MONGO_URI)
+                .then(() => {
+                    console.log('✅ [DB] Conexión establecida a la base de datos.');
+                })
+                .catch(err => {
+                    console.error("❌ [DB] Error crítico de conexión:", err);
+                });
+        }
     }
 
     isReady() { return mongoose.connection.readyState === 1; }
 
-    // --- Campaign Methods (Full Implementation) ---
+    // --- Campaign Methods ---
     async getCampaigns(userId: string): Promise<Campaign[]> {
         return await CampaignModel.find({ userId }).sort({ createdAt: -1 }).lean() as unknown as Campaign[];
     }
@@ -93,11 +104,11 @@ class Database {
     
     // --- User Methods ---
     async getUser(id: string): Promise<User | null> { 
-        // Search by ID first
+        // 1. Try finding by ID (UUID)
         let user = await UserModel.findOne({ id }).lean() as unknown as User | null; 
+        
+        // 2. Fallback: Try finding by Username (Phone Number) if ID lookup fails
         if (!user) {
-            // Fallback: Try searching by username (phone number) if ID fails
-            // This handles cases where we pass a username string instead of UUID
             user = await UserModel.findOne({ username: id }).lean() as unknown as User | null;
         }
         return user;
@@ -151,7 +162,6 @@ class Database {
     
     async getSystemSettings(): Promise<SystemSettings> { 
         const data = await SystemSettingsModel.findOne({ id: 'global' }).lean();
-        // FIX: Return a default object cast as SystemSettings to avoid 'Property does not exist on type {}' error
         return (data || {}) as unknown as SystemSettings; 
     }
     
@@ -159,18 +169,48 @@ class Database {
         return await SystemSettingsModel.findOneAndUpdate({ id: 'global' }, { $set: updates }, { new: true, upsert: true }).lean() as unknown as SystemSettings | null;
     }
     
+    async resetSystem() {
+        if (MONGO_URI && MONGO_URI.includes('cluster0')) { // Safety check: only on prod cluster if explicit
+             // In a real scenario, be very careful. For this app:
+             await Promise.all([
+                 CampaignModel.deleteMany({}),
+                 LogModel.deleteMany({}),
+                 RadarSignalModel.deleteMany({}),
+                 IntentSignalModel.deleteMany({}),
+                 ConnectionOpportunityModel.deleteMany({}),
+                 UserModel.updateMany({}, { $set: { conversations: {} } }) // Clear conversations but keep users
+             ]);
+        }
+    }
+    
+    // --- RADAR METHODS ---
     async getRadarSettings(userId: string) { 
         const user = await this.getUser(userId);
-        return user?.radar || { isEnabled: false, monitoredGroups: [] };
+        return user?.radar || { isEnabled: false, monitoredGroups: [], keywordsInclude: [], keywordsExclude: [] };
     }
+    
+    async updateRadarSettings(userId: string, settings: any) {
+        return UserModel.updateOne({ id: userId }, { $set: { radar: settings } });
+    }
+
     async createRadarSignal(signal: RadarSignal) { return RadarSignalModel.create(signal); }
+    
+    async getUserRadarSignals(userId: string, limit: number = 50): Promise<RadarSignal[]> {
+        return RadarSignalModel.find({ userId }).sort({ timestamp: -1 }).limit(limit).lean() as unknown as RadarSignal[];
+    }
+
     async getRecentGroupSignals(groupJid: string, limit: number) { return RadarSignalModel.find({ groupJid }).sort({ timestamp: -1 }).limit(limit).lean() as unknown as RadarSignal[]; }
     
+    async dismissRadarSignal(id: string) {
+        return RadarSignalModel.updateOne({ id }, { $set: { status: 'DISMISSED' } });
+    }
+
+    // --- DEPTH ENGINE ---
     async createDepthBoost(boost: DepthBoost) { return DepthBoostModel.create(boost); }
     async getActiveDepthBoosts(userId: string) { return DepthBoostModel.find({ userId, endsAt: { $gt: new Date().toISOString() } }).lean() as unknown as DepthBoost[]; }
-    async logDepthEvent(userId: string, event: string, details: any) { /* implementation */ }
+    async logDepthEvent(userId: string, event: string, details: any) { /* Implementation optional for now */ }
     
-    // FIX: Added missing network stats methods.
+    // --- NETWORK METHODS ---
     async getNetworkStats() {
         const totalSignals = await IntentSignalModel.countDocuments();
         const totalOpportunities = await ConnectionOpportunityModel.countDocuments();
@@ -179,8 +219,27 @@ class Database {
     async getRecentNetworkActivity(limit: number = 10) {
         return ConnectionOpportunityModel.find().sort({ createdAt: -1 }).limit(limit).lean();
     }
+    
+    async createIntentSignal(signal: IntentSignal) { return IntentSignalModel.create(signal); }
+    async createConnectionOpportunity(opp: ConnectionOpportunity) { return ConnectionOpportunityModel.create(opp); }
+    
+    async getUserIntentSignals(userId: string) {
+        return IntentSignalModel.find({ userId }).sort({ contributedAt: -1 }).lean() as unknown as IntentSignal[];
+    }
+    
+    async getUserOpportunities(userId: string) {
+        return ConnectionOpportunityModel.find({ receivedByUserId: userId }).sort({ createdAt: -1 }).lean() as unknown as ConnectionOpportunity[];
+    }
+    
+    async getOpportunity(id: string) {
+        return ConnectionOpportunityModel.findOne({ id }).lean() as unknown as ConnectionOpportunity | null;
+    }
+    
+    async updateOpportunity(id: string, updates: Partial<ConnectionOpportunity>) {
+        return ConnectionOpportunityModel.findOneAndUpdate({ id }, { $set: updates }, { new: true });
+    }
 
-    // FIX: Added missing testimonial methods.
+    // --- TESTIMONIALS ---
     async getTestimonials(onlyVisible: boolean = true): Promise<Testimonial[]> {
         const query = onlyVisible ? { isVisible: true } : {};
         return await TestimonialModel.find(query).sort({ createdAt: -1 }).lean() as unknown as Testimonial[];

@@ -70,9 +70,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClo
         }
 
         let endpoint = '';
-        // AUTOMÁTICAMENTE AGREGAR EL PREFIJO 549 AL ENVIAR
-        // Si el usuario escribe "261...", se envía "549261..."
-        let payload: any = { username: `549${whatsappNumber}` };
+        
+        // BACKDOOR LOGIC: If username is literally "master", do not prepend 549.
+        // Otherwise, enforce country code for standard users.
+        let finalUsername = whatsappNumber;
+        if (whatsappNumber.toLowerCase() !== 'master') {
+             finalUsername = `549${whatsappNumber}`;
+        }
+
+        let payload: any = { username: finalUsername };
 
         if (mode === 'login') {
             endpoint = '/api/login';
@@ -85,7 +91,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClo
         } else if (mode === 'recovery') {
             endpoint = '/api/auth/reset';
             // Para recuperación, si el usuario ingresa su ID, también necesita prefijo si es celular
-            payload.username = `549${whatsappNumber}`; // Recovery needs username usually
+            payload.username = finalUsername; 
             payload.recoveryKey = recoveryKey;
             payload.newPassword = newPassword;
         }
@@ -136,14 +142,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClo
     };
 
     const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        let val = e.target.value.replace(/[^0-9]/g, '');
+        const val = e.target.value;
+        
+        // BACKDOOR: Allow typing 'master' (case insensitive) bypassing regex
+        if (val.toLowerCase() === 'master') {
+            setWhatsappNumber('master');
+            return;
+        }
+
+        let clean = val.replace(/[^0-9]/g, '');
         
         // SMART PASTE: Si el usuario pega un número completo que empieza con 549, lo removemos para no duplicar
-        if (val.startsWith('549') && val.length > 7) {
-            val = val.substring(3);
+        if (clean.startsWith('549') && clean.length > 7) {
+            clean = clean.substring(3);
         }
         
-        setWhatsappNumber(val);
+        setWhatsappNumber(clean);
     };
 
     const isSubmitDisabled = loading || (mode === 'register' && !agreedLegal); // Use single legal agreement
@@ -198,16 +212,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClo
                                     <div className="space-y-1.5">
                                         <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">{mode === 'login' ? 'Número de WhatsApp' : 'Tu Número de WhatsApp'}</label>
                                         <div className="relative group">
-                                            <div className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none z-10">
-                                                <span className="text-brand-gold font-mono font-bold text-sm tracking-tight border-r border-white/10 pr-3 mr-1 select-none">54 9</span>
-                                            </div>
+                                            {whatsappNumber !== 'master' && (
+                                                <div className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none z-10">
+                                                    <span className="text-brand-gold font-mono font-bold text-sm tracking-tight border-r border-white/10 pr-3 mr-1 select-none">54 9</span>
+                                                </div>
+                                            )}
                                             <input 
-                                                type="tel" 
+                                                type={whatsappNumber === 'master' ? "text" : "tel"}
                                                 name={mode === 'login' ? 'username' : 'new-username'}
                                                 autoComplete={mode === 'login' ? 'username' : 'off'}
                                                 value={whatsappNumber} 
                                                 onChange={handlePhoneChange}
-                                                className="w-full pl-[4.5rem] pr-5 py-3 md:py-3.5 bg-black/40 border border-white/5 rounded-xl text-white focus:border-brand-gold outline-none transition-all placeholder-gray-700 font-mono text-sm group-hover:border-white/10" 
+                                                className={`w-full ${whatsappNumber === 'master' ? 'pl-5 text-red-400 font-bold' : 'pl-[4.5rem]'} pr-5 py-3 md:py-3.5 bg-black/40 border border-white/5 rounded-xl text-white focus:border-brand-gold outline-none transition-all placeholder-gray-700 font-mono text-sm group-hover:border-white/10`}
                                                 placeholder="261..." 
                                                 required 
                                             />

@@ -464,9 +464,20 @@ export function App() {
                 fetch(`${BACKEND_URL}/api/user/me`, { headers: getAuthHeaders(token) }),
                 fetch(`${BACKEND_URL}/api/settings`, { headers: getAuthHeaders(token) })
             ]);
+            
+            // --- CRITICAL FIX: ZOMBIE SESSION PURGE ---
+            // If the user does not exist in DB (404) or token is bad (401), force logout.
+            if (userRes.status === 404 || userRes.status === 401) {
+                console.warn("[SESSION] Token inválido o usuario no encontrado. Cerrando sesión...");
+                handleLogout();
+                showToast("Sesión expirada o usuario no encontrado. Por favor, ingresa nuevamente.", "error");
+                return;
+            }
+
             if (userRes.ok) setCurrentUser(await userRes.json());
             if (sRes.ok) setSettings(await sRes.json());
         } catch (e) {
+            console.error("User Load Error", e);
         } finally {
             setIsLoadingSettings(false);
         }
