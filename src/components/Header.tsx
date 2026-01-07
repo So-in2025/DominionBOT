@@ -1,5 +1,4 @@
 
-
 import React from 'react';
 import { View, ConnectionStatus } from '../types';
 
@@ -19,6 +18,7 @@ interface HeaderProps {
   connectionStatus: ConnectionStatus;
   isMobile: boolean; 
   tunnelLatency: number | null; 
+  onOpenNetworkConfig: () => void; // NEW PROP
 }
 
 const Header: React.FC<HeaderProps> = ({ 
@@ -36,7 +36,8 @@ const Header: React.FC<HeaderProps> = ({
     onNavigate, 
     connectionStatus,
     isMobile,
-    tunnelLatency
+    tunnelLatency,
+    onOpenNetworkConfig
 }) => {
   const isSuperAdmin = userRole === 'super_admin';
 
@@ -105,7 +106,11 @@ const Header: React.FC<HeaderProps> = ({
                     <div className="flex items-center gap-2 mt-1">
                         <p className="text-[9px] md:text-[10px] text-gray-500 uppercase tracking-widest font-bold hidden sm:block">Infraestructura Comercial</p>
                         {isLoggedIn && (
-                            <div className="flex items-center gap-1 bg-white/5 px-1.5 py-0.5 rounded border border-white/5" title="Latencia del Túnel (Ngrok)">
+                            <div 
+                                className="flex items-center gap-1 bg-white/5 px-1.5 py-0.5 rounded border border-white/5 cursor-pointer hover:bg-white/10 transition-colors" 
+                                title="Latencia del Túnel (Click para configurar)"
+                                onClick={onOpenNetworkConfig}
+                            >
                                 <div className={`w-1.5 h-1.5 rounded-full ${tunnelColor} ${tunnelLatency === null ? 'animate-pulse' : ''}`}></div>
                                 <span className="text-[8px] font-mono text-gray-400">{tunnelText}</span>
                             </div>

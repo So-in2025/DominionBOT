@@ -15,6 +15,7 @@ import AgencyDashboard from './components/AgencyDashboard';
 import { CampaignsPanel } from './components/CampaignsPanel'; 
 import RadarPanel from './components/RadarPanel'; 
 import NetworkPanel from './components/NetworkPanel'; 
+import NetworkConfigModal from './components/NetworkConfigModal'; // IMPORTADO
 import Toast, { ToastData } from './components/Toast';
 import HowItWorksArt from './components/HowItWorksArt';
 import HowItWorksSection from './components/HowItWorksSection';
@@ -24,7 +25,7 @@ import TestimonialsCarousel from './components/TestimonialsCarousel';
 import { BACKEND_URL, API_HEADERS, getAuthHeaders } from './config';
 import { audioService } from './services/audioService';
 import { openSupportWhatsApp } from './utils/textUtils';
-import { socketClient } from './services/socketClient'; // NEW: Import Socket Client
+import { socketClient } from './services/socketClient';
 
 // --- DUAL LOOP SIMULATION SCRIPTS ---
 
@@ -110,7 +111,8 @@ const LandingPage: React.FC<{
   showToast: (message: string, type: 'success' | 'error' | 'info') => void;
   isMobile: boolean;
   settings: SystemSettings | null;
-}> = ({ onAuth, onRegister, visibleMessages, isSimTyping, simScrollRef, onOpenLegal, isServerReady, isLoggedIn, token, showToast, isMobile, settings }) => {
+  onOpenNetworkConfig: () => void; // NEW PROP
+}> = ({ onAuth, onRegister, visibleMessages, isSimTyping, simScrollRef, onOpenLegal, isServerReady, isLoggedIn, token, showToast, isMobile, settings, onOpenNetworkConfig }) => {
     return (
         <div className="w-full min-h-screen bg-brand-black font-sans relative overflow-x-hidden">
             <div className="absolute inset-0 neural-grid opacity-40 z-0 pointer-events-none"></div>
@@ -118,9 +120,9 @@ const LandingPage: React.FC<{
             <div className="relative z-20 flex flex-col items-center justify-center p-6 md:p-12 pt-24 pb-32">
                 <div className="max-w-7xl w-full grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-24 items-center">
                     <div className="space-y-10 text-center lg:text-left">
-                        <div className={`inline-flex items-center gap-3 px-4 py-1.5 border rounded-full text-[11px] font-black uppercase tracking-[0.3em] backdrop-blur-xl transition-all ${isServerReady ? 'border-green-500/30 bg-green-500/10 text-green-400 shadow-[0_0_20px_rgba(34,197,94,0.2)]' : 'border-red-500/30 bg-red-500/10 text-red-400'}`}>
+                        <div onClick={onOpenNetworkConfig} className={`inline-flex items-center gap-3 px-4 py-1.5 border rounded-full text-[11px] font-black uppercase tracking-[0.3em] backdrop-blur-xl transition-all cursor-pointer hover:bg-white/5 ${isServerReady ? 'border-green-500/30 bg-green-500/10 text-green-400 shadow-[0_0_20px_rgba(34,197,94,0.2)]' : 'border-red-500/30 bg-red-500/10 text-red-400'}`}>
                             <span className={`w-2 h-2 rounded-full ${isServerReady ? 'bg-green-500 animate-pulse' : 'bg-red-500 animate-pulse'}`}></span>
-                            {isServerReady ? 'SISTEMA ONLINE' : 'CONECTANDO NODO...'}
+                            {isServerReady ? 'SISTEMA ONLINE' : 'OFFLINE (CLICK PARA CONFIGURAR)'}
                         </div>
                         
                         <h1 className="text-5xl md:text-8xl lg:text-[90px] font-black text-white leading-tight tracking-normal py-2">
@@ -246,7 +248,8 @@ export function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [userRole, setUserRole] = useState<string | null>(localStorage.getItem('saas_role'));
   const [authModal, setAuthModal] = useState<{ isOpen: boolean; mode: 'login' | 'register' }>({ isOpen: false, mode: 'login' });
-  const [legalModalType, setLegalModalType] = useState<'privacy' | 'terms' | 'manifesto' | 'network' | null>(null); 
+  const [legalModalType, setLegalModalType] = useState<'privacy' | 'terms' | 'manifesto' | 'network' | null>(null);
+  const [showNetworkModal, setShowNetworkModal] = useState(false); // NEW STATE
   const [currentView, setCurrentView] = useState<View>(() => {
     const role = localStorage.getItem('saas_role');
     return role === 'super_admin' ? View.ADMIN_GLOBAL : View.CHATS;
@@ -707,6 +710,9 @@ export function App() {
       <AuthModal isOpen={authModal.isOpen} initialMode={authModal.mode} onClose={() => setAuthModal({ ...authModal, isOpen: false })} onSuccess={handleLoginSuccess} onOpenLegal={setLegalModalType} />
       <LegalModal type={legalModalType} onClose={() => setLegalModalType(null)} />
       
+      {/* INTEGRACION: Network Config Modal */}
+      <NetworkConfigModal isOpen={showNetworkModal} onClose={() => setShowNetworkModal(false)} />
+      
       <div className="flex-none z-50 relative flex flex-col">
           <Header 
               isLoggedIn={!!token} 
@@ -723,14 +729,15 @@ export function App() {
               onNavigate={handleNavigate} 
               connectionStatus={connectionStatus}
               isMobile={isMobileView} 
-              tunnelLatency={tunnelLatency} 
+              tunnelLatency={tunnelLatency}
+              onOpenNetworkConfig={() => setShowNetworkModal(true)} // PASAMOS EL HANDLER
           />
           {isAppView && <PlanStatusBanner user={currentUser} />}
       </div>
 
       <main className={`flex-1 relative ${isAppView ? 'flex overflow-hidden pb-20 lg:pb-0' : 'block'}`}>
         {backendError && <div className="absolute top-0 left-0 right-0 z-[200] flex items-center justify-center p-2 text-[10px] font-black shadow-xl animate-pulse bg-red-600/95 text-white"><span>⚠️ {backendError}</span></div>}
-        {(!token || showLanding) ? <LandingPage onAuth={() => setAuthModal({ isOpen: true, mode: 'login' })} onRegister={() => setAuthModal({ isOpen: true, mode: 'register' })} visibleMessages={visibleMessages} isSimTyping={isSimTyping} simScrollRef={simScrollRef} onOpenLegal={setLegalModalType} isServerReady={true} isLoggedIn={!!token} token={token} showToast={showToast} isMobile={isMobileView} settings={systemSettings} /> : renderClientView()}
+        {(!token || showLanding) ? <LandingPage onAuth={() => setAuthModal({ isOpen: true, mode: 'login' })} onRegister={() => setAuthModal({ isOpen: true, mode: 'register' })} visibleMessages={visibleMessages} isSimTyping={isSimTyping} simScrollRef={simScrollRef} onOpenLegal={setLegalModalType} isServerReady={true} isLoggedIn={!!token} token={token} showToast={showToast} isMobile={isMobileView} settings={systemSettings} onOpenNetworkConfig={() => setShowNetworkModal(true)} /> : renderClientView()}
       </main>
     </div>
   );

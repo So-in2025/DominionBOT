@@ -13,7 +13,7 @@ import { campaignQueue } from './infrastructure/queues.js';
 import { db } from './database.js';
 import { initCampaignWorker } from './workers/campaignWorker.js';
 import { ttsService } from './services/ttsService.js';
-import { connectToWhatsApp, getSessionStatus, softResetConnection, purgeSession } from './whatsapp/client.js';
+import { connectToWhatsApp, getSessionStatus, softResetConnection, purgeSession, disconnectWhatsApp, activeSessions } from './whatsapp/client.js';
 import { logService } from './services/logService.js';
 import { ConnectionStatus, SocketEvents, RadarSignal } from './types.js';
 import { v4 as uuidv4 } from 'uuid';
@@ -443,13 +443,43 @@ app.get('/api/tts/:filename', optionalAuthenticateToken, (req, res) => {
     }
 });
 
+// --- GRACEFUL SHUTDOWN (The Missing Piece) ---
+// Esto asegura que al reiniciar el servidor, las sesiones de WhatsApp se cierren limpiamente
+// y se guarden los estados pendientes, evitando corrupción de llaves.
+const gracefulShutdown = async () => {
+    console.log('\n🛑 [SERVER] Deteniendo servidor (Graceful Shutdown)...');
+    
+    // Close all active WA sessions
+    const sessions = activeSessions; // Importado de client.ts
+    const closingPromises = [];
+    
+    for (const [userId, sock] of sessions.entries()) {
+        console.log(`   Closing session for ${userId}...`);
+        try {
+            // Usamos disconnectWhatsApp pero sin await para disparar todos en paralelo
+            // y no bloquear el apagado demasiado tiempo.
+            disconnectWhatsApp(userId);
+        } catch (e) {
+            console.error(`   Error closing session ${userId}`, e);
+        }
+    }
+    
+    // Give it a second to flush
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    console.log('✅ [SERVER] Servidor detenido.');
+    process.exit(0);
+};
+
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
+
 
 // Start server
-// MODIFICATION: Bind to 0.0.0.0 to fix Cloudflare Tunnel IPv6 connection refusal
 httpServer.listen(Number(PORT), '0.0.0.0', async () => {
   console.log(`\n    🦅 DOMINION BACKEND ACTIVO EN PUERTO ${PORT}`);
-  console.log(`    🌍 ARQUITECTURA: LOCAL + CLOUD FLARE / VERCEL + SOCKET.IO`);
-  console.log(`    📡 ESCUCHANDO EN: 0.0.0.0 (Acepta conexiones externas/túnel) \n`);
+  console.log(`    🌍 ARQUITECTURA: LOCAL + CLOUDFLARE ZERO TRUST + SOCKET.IO`);
+  console.log(`    📡 CLOUDFLARE TUNNEL: Ejecuta 'cloudflared tunnel --url http://localhost:3001 --protocol quic' si usas túnel.`);
+  console.log(`    🔗 LUEGO COPIA LA URL (https://....trycloudflare.com) EN EL MODAL DE "ENLACE SATELITAL" DEL FRONTEND.`);
   
   // 1. Initialize Workers (Independent)
   initCampaignWorker();

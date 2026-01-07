@@ -1,3 +1,4 @@
+
 /**
  * DOMINION BOT - Configuración de Infraestructura (FRONTEND-ONLY)
  * ESTRICTO: La variable de entorno de Vercel es la ÚNICA fuente de verdad.
@@ -59,4 +60,7 @@ export const getAuthHeaders = (token: string | null) => ({
 if (typeof window !== 'undefined') {
     console.log(`%c 🦅 DOMINION NETWORK `, 'background: #D4AF37; color: #000; font-weight: bold; padding: 2px 6px; border-radius: 4px;');
     console.log(`%c 🔗 API Target: ${BACKEND_URL}`, 'color: #D4AF37; font-family: monospace;');
+    if (BACKEND_URL.includes('trycloudflare.com')) {
+        console.log(`%c ⚡ Cloudflare Tunnel Detectado. Protocolo Quic recomendado.`, 'color: #3498db; font-style: italic;');
+    }
 }
