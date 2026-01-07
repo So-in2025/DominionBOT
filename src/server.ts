@@ -125,7 +125,8 @@ app.post('/api/register', async (req, res) => {
             plan_type: 'pro',
             plan_status: 'trial',
             billing_start_date: new Date().toISOString(),
-            billing_end_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+            // TRIAL EXTENDED TO 14 DAYS
+            billing_end_date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
             recoveryKey,
             settings: {
                 isActive: false,
