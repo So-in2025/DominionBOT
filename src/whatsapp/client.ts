@@ -31,8 +31,9 @@ const codeCache = new Map<string, string>();
 const isConnecting = new Map<string, boolean>(); 
 const retryMap = new Map<string, any>();
 
-// RECONNECTION STATE (Exponential Backoff)
+// RECONNECTION STATE (Exponential Backoff & Timeout Tracking)
 const reconnectAttempts = new Map<string, number>();
+const reconnectTimeouts = new Map<string, NodeJS.Timeout>();
 
 const msgRetryCounterCache = {
     get: (key: string) => retryMap.get(key),
@@ -108,6 +109,12 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
         // [DEEP TRACE] Warning about lock
         logService.warn(`[WA] ⚠️ Intento de conexión duplicado ignorado. Lock activo.`, userId);
         return;
+    }
+    
+    // Clear any pending reconnects since we are connecting now
+    if (reconnectTimeouts.has(userId)) {
+        clearTimeout(reconnectTimeouts.get(userId));
+        reconnectTimeouts.delete(userId);
     }
     
     // Safety: If automatic, ensure session exists
@@ -277,11 +284,20 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
                 qrCache.delete(userId);
                 codeCache.delete(userId);
 
-                setTimeout(() => connectToWhatsApp(userId, phoneNumber), delay);
+                // TRACK TIMEOUT TO ALLOW CANCELLATION
+                const timeoutId = setTimeout(() => connectToWhatsApp(userId, phoneNumber), delay);
+                reconnectTimeouts.set(userId, timeoutId);
 
             } else if (connection === 'open') {
                 isConnecting.set(userId, false);
                 reconnectAttempts.delete(userId); // Success! Reset counters
+                
+                // Clear any pending timeout just in case
+                if (reconnectTimeouts.has(userId)) {
+                    clearTimeout(reconnectTimeouts.get(userId));
+                    reconnectTimeouts.delete(userId);
+                }
+
                 logService.info(`[WA] ✅ CONEXIÓN ESTABLECIDA EXITOSAMENTE.`, userId);
                 
                 qrCache.delete(userId);
@@ -357,6 +373,15 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
 
 export async function disconnectWhatsApp(userId: string) {
     logService.info(`[WA] Solicitud de desconexión manual.`, userId);
+    
+    // CANCEL PENDING RECONNECTS
+    const pendingTimeout = reconnectTimeouts.get(userId);
+    if (pendingTimeout) {
+        clearTimeout(pendingTimeout);
+        reconnectTimeouts.delete(userId);
+        logService.debug(`[WA] Reintento pendiente cancelado para ${userId}`);
+    }
+
     const sock = sessions.get(userId);
     if (sock) {
         try {
@@ -374,6 +399,13 @@ export async function disconnectWhatsApp(userId: string) {
 
 export async function softResetConnection(userId: string) {
     logService.warn(`[WA] Soft Reset solicitado para usuario`, userId);
+    
+    // CANCEL RECONNECTS
+    if (reconnectTimeouts.has(userId)) {
+        clearTimeout(reconnectTimeouts.get(userId));
+        reconnectTimeouts.delete(userId);
+    }
+
     const sock = sessions.get(userId);
     if (sock) {
         try { sock.end(undefined); } catch (e) {}
@@ -390,6 +422,42 @@ export async function softResetConnection(userId: string) {
     await connectToWhatsApp(userId, undefined, true);
 }
 
+// HARD PURGE: Deletes session from DB/Redis + Stops process
+export async function purgeSession(userId: string) {
+    logService.warn(`[WA] ☢️ PURGA DE SESIÓN SOLICITADA (NUCLEAR).`, userId);
+    
+    // 1. Cancel Reconnects
+    if (reconnectTimeouts.has(userId)) {
+        clearTimeout(reconnectTimeouts.get(userId));
+        reconnectTimeouts.delete(userId);
+    }
+
+    // 2. Kill Socket
+    const sock = sessions.get(userId);
+    if (sock) {
+        try { sock.end(undefined); } catch (e) {}
+        sessions.delete(userId);
+    }
+    
+    // 3. Clear Memory State
+    isConnecting.set(userId, false);
+    reconnectAttempts.delete(userId);
+    qrCache.delete(userId);
+    codeCache.delete(userId);
+    
+    // Nuke retry cache
+    const keys = Array.from(retryMap.keys());
+    keys.forEach(k => {
+        if(k.startsWith(userId)) retryMap.delete(k);
+    });
+
+    // 4. Clear Persistence (Mongo + Redis)
+    await clearBindedSession(userId);
+    await db.updateUserSettings(userId, { isActive: false });
+    
+    socketService.emitToUser(userId, SocketEvents.SESSION_STATUS_UPDATE, { status: ConnectionStatus.DISCONNECTED });
+}
+
 // GRACEFUL SHUTDOWN HELPER
 export async function closeAllSessions() {
     logService.info('[WA-MANAGER] Cerrando todas las sesiones para apagado seguro...');
@@ -402,6 +470,9 @@ export async function closeAllSessions() {
         }
     }
     sessions.clear();
+    // Clear all timeouts
+    for (const t of reconnectTimeouts.values()) clearTimeout(t);
+    reconnectTimeouts.clear();
 }
 
 /**

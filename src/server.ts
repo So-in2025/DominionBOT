@@ -13,7 +13,7 @@ import { campaignQueue } from './infrastructure/queues.js';
 import { db } from './database.js';
 import { initCampaignWorker } from './workers/campaignWorker.js';
 import { ttsService } from './services/ttsService.js';
-import { connectToWhatsApp, getSessionStatus, softResetConnection } from './whatsapp/client.js';
+import { connectToWhatsApp, getSessionStatus, softResetConnection, purgeSession } from './whatsapp/client.js';
 import { logService } from './services/logService.js';
 import { ConnectionStatus, SocketEvents, RadarSignal } from './types.js';
 import { v4 as uuidv4 } from 'uuid';
@@ -251,6 +251,11 @@ app.get('/api/disconnect', authenticateToken, async (req: any, res) => {
 
 app.post('/api/connection/soft-reset', authenticateToken, async (req: any, res) => {
     await softResetConnection(req.user.id);
+    res.json({ success: true });
+});
+
+app.post('/api/connection/purge', authenticateToken, async (req: any, res) => {
+    await purgeSession(req.user.id);
     res.json({ success: true });
 });
 
