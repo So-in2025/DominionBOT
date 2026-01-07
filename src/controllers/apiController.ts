@@ -18,14 +18,14 @@ export interface AuthenticatedRequest<P = any, ResBody = any, ReqBody = any, Req
 
 const getClientUser = (req: AuthenticatedRequest) => req.user;
 
-// --- FALLBACK USER GENERATOR ---
+// --- FALLBACK USER GENERATOR (Anti-Crash) ---
 const getFallbackUser = (userId: string, username: string): User => ({
     id: userId,
     username: username,
-    business_name: 'Usuario (Sin Datos)',
+    business_name: 'Usuario (Recuperado)',
     whatsapp_number: username,
     role: 'client',
-    plan_type: 'pro', // Default to PRO to avoid blocking UI
+    plan_type: 'pro', // Default to PRO to avoid blocking UI during recovery
     plan_status: 'active',
     billing_start_date: new Date().toISOString(),
     billing_end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
@@ -70,7 +70,7 @@ export const handleGetMetrics = async (req: AuthenticatedRequest, res: any) => {
         
         let user = await db.getUser(userId) as unknown as User;
         
-        // CRITICAL FALLBACK: If DB fails, return a mock user structure so UI loads
+        // CRITICAL FALLBACK: If DB fails or user is missing, return a mock user structure so UI loads
         if (!user) {
             logService.warn(`[API] User ${userId} not found in DB. Returning fallback metrics.`, userId);
             user = getFallbackUser(userId, username);
@@ -86,7 +86,7 @@ export const handleGetMetrics = async (req: AuthenticatedRequest, res: any) => {
         const totalMessages = conversations.reduce((sum, c) => sum + (c.messages?.length || 0), 0);
         
         const conversionRate = totalLeads > 0 ? Math.round((hotLeads / totalLeads) * 100) : 0;
-        const revenueEstimated = hotLeads * (user.settings?.ticketValue || 100); // Default ticket value 100 if missing
+        const revenueEstimated = hotLeads * (user.settings?.ticketValue || 100); 
         
         const campaignsActive = campaigns.filter(c => c.status === 'ACTIVE').length;
         const campaignMessagesSent = campaigns.reduce((sum, c) => sum + (c.stats?.totalSent || 0), 0);
@@ -108,7 +108,7 @@ export const handleGetMetrics = async (req: AuthenticatedRequest, res: any) => {
 
     } catch (error: any) {
         logService.error('Error fetching dashboard metrics', error, getClientUser(req).id);
-        // Never return 500 for metrics, return zeros to keep dashboard alive
+        // SAFETY NET: Never return 500 for metrics, return zeros to keep dashboard alive
         res.json({
             totalLeads: 0, hotLeads: 0, warmLeads: 0, coldLeads: 0,
             totalMessages: 0, conversionRate: 0, revenueEstimated: 0,
@@ -124,7 +124,8 @@ export const handleGetCampaigns = async (req: AuthenticatedRequest, res: any) =>
         res.json(campaigns || []); // Ensure array
     } catch (error: any) {
         logService.error('Error fetching campaigns', error, getClientUser(req).id);
-        res.status(500).json({ message: 'Error interno del servidor.' });
+        // Fallback to empty array
+        res.json([]);
     }
 };
 
@@ -179,8 +180,9 @@ export const handleGetWhatsAppGroups = async (req: AuthenticatedRequest, res: an
         const groups: WhatsAppGroup[] = await fetchUserGroups(userId);
         res.json(groups.sort((a,b) => (a.subject || '').localeCompare(b.subject || '')));
     } catch(e: any) {
-        logService.error('Error fetching whatsapp groups', e, getClientUser(req).id);
-        res.status(500).json({ message: e.message });
+        // Don't crash, just return empty groups
+        logService.warn('Error fetching whatsapp groups (non-fatal)', getClientUser(req).id);
+        res.json([]);
     }
 };
 

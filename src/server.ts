@@ -173,10 +173,13 @@ app.get('/api/user/me', authenticateToken, async (req: any, res) => {
 app.get('/api/settings', authenticateToken, async (req: any, res) => {
     try {
         const user = await db.getUser(req.user.id);
-        if (!user) return res.status(404).json({ message: "User missing" });
-        res.json(user.settings || {});
+        if (!user) {
+             // Fallback instead of 404/500 to keep UI alive
+             return res.json({ productName: 'Sin Configurar', isActive: false, ignoredJids: [] });
+        }
+        res.json(user.settings || { productName: 'Sin Configurar', isActive: false, ignoredJids: [] });
     } catch(e) {
-        res.status(500).json({ message: "Error" });
+        res.json({}); 
     }
 });
 
