@@ -62,7 +62,7 @@ class SocketService {
             // socket.on('ping', () => socket.emit('pong'));
         });
 
-        console.log(`✅ [SOCKET] Servicio de Real-Time inicializado.`);
+        console.log(`\x1b[32m✅ [SOCKET] Servicio de Real-Time inicializado.\x1b[0m`);
     }
 
     /**

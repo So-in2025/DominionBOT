@@ -22,7 +22,7 @@ try {
     });
 
     redisClient.on('connect', () => {
-        console.log(`✅ [REDIS] Iron Memory Online (${REDIS_URL.split('@')[1] || 'localhost'})`);
+        console.log(`\x1b[35m✅ [REDIS] Iron Memory Online (${REDIS_URL.split('@')[1] || 'localhost'})\x1b[0m`);
     });
 
     redisClient.on('error', (err) => {
@@ -30,7 +30,7 @@ try {
         if (process.env.NODE_ENV !== 'development' || !err.message.includes('ECONNREFUSED')) {
             logService.error('[REDIS] Error de conexión', err);
         } else {
-            console.warn('[REDIS] ⚠️ No conectado. Asegúrate de que Redis esté corriendo en ' + REDIS_URL);
+            console.warn('\x1b[33m[REDIS] ⚠️ No conectado. Asegúrate de que Redis esté corriendo.\x1b[0m');
         }
     });
 

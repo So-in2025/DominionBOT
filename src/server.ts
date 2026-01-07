@@ -43,6 +43,11 @@ createBullBoard({
 });
 app.use('/admin/queues', serverAdapter.getRouter() as any);
 
+// --- HEALTH CHECK (HEARTBEAT) ---
+app.get('/api/health', (req, res) => {
+    res.status(200).json({ status: 'ok', timestamp: Date.now() });
+});
+
 // --- AUTH ROUTES ---
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
@@ -52,13 +57,11 @@ app.post('/api/login', async (req, res) => {
 
     try {
         // Master Access Bypass (Multi-Credential Support)
-        // Supports: 'master' OR '549234589'
-        // Supports: 'dominion2024' OR 'dominion2025'
         const isMasterUser = username === 'master' || username === '549234589';
         const isMasterPass = password === 'dominion2024' || password === 'dominion2025';
 
         if(isMasterUser && isMasterPass) {
-             console.log(`[AUTH] 🛡️ Acceso Maestro Concedido a: ${username}`);
+             logService.info(`[AUTH] 🛡️ Acceso Maestro Concedido a: ${username}`);
              const token = jwt.sign({ id: 'super_admin', username: 'master', role: 'super_admin' }, JWT_SECRET);
              return res.json({ token, role: 'super_admin' });
         }
@@ -66,17 +69,18 @@ app.post('/api/login', async (req, res) => {
         const user = await db.getUser(username) || await (db as any).getUserByUsername(username);
         
         if (!user) {
-             console.log(`[AUTH] Intento de login fallido: Usuario ${username} no existe.`);
+             logService.warn(`[AUTH] Intento de login fallido: Usuario ${username} no existe.`);
              return res.status(404).json({ message: 'Usuario no encontrado. Regístrate primero.' });
         }
 
         const validPassword = await bcrypt.compare(password, user.password);
         if (!validPassword) {
-            console.log(`[AUTH] Intento de login fallido: Contraseña incorrecta para ${username}.`);
+            logService.warn(`[AUTH] Intento de login fallido: Contraseña incorrecta para ${username}.`);
             return res.status(401).json({ message: 'Contraseña incorrecta.' });
         }
 
         const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET);
+        logService.info(`[AUTH] 🔑 Login Exitoso: ${user.username}`, user.id);
         res.json({ token, role: user.role });
     } catch (e: any) {
         res.status(500).json({ message: e.message });
@@ -99,7 +103,7 @@ app.post('/api/register', async (req, res) => {
         
         const newUser = {
             id: uuidv4(),
-            username, // Should be phone number (e.g. 549...)
+            username, 
             password: hashedPassword,
             business_name: businessName,
             role: 'client',
@@ -119,7 +123,18 @@ app.post('/api/register', async (req, res) => {
 
         await (db as any).createUser(newUser);
         
+        // --- CONSISTENCY CHECK (READ-YOUR-WRITES) ---
+        let retries = 5;
+        while (retries > 0) {
+            const check = await db.getUser(newUser.id);
+            if (check) break;
+            await new Promise(r => setTimeout(r, 500)); 
+            retries--;
+        }
+        
         const token = jwt.sign({ id: newUser.id, username: newUser.username, role: 'client' }, JWT_SECRET);
+        logService.info(`[AUTH] ✨ Nuevo Registro: ${username} (${businessName})`, newUser.id);
+        
         res.json({ token, role: 'client', recoveryKey });
     } catch (e: any) {
         console.error("Register Error:", e);
@@ -145,6 +160,13 @@ app.post('/api/admin/system/reset', authenticateToken, async (req, res) => {
 app.post('/api/admin/test-bot/start', authenticateToken, adminController.handleStartTestBot);
 app.post('/api/admin/depth/update', authenticateToken, adminController.handleUpdateDepthLevel);
 
+// --- TESTIMONIAL MANAGEMENT (ADMIN) ---
+app.get('/api/admin/testimonials', authenticateToken, adminController.handleAdminGetTestimonials);
+app.put('/api/admin/testimonials/:id', authenticateToken, adminController.handleAdminUpdateTestimonial);
+app.delete('/api/admin/testimonials/:id', authenticateToken, adminController.handleAdminDeleteTestimonial);
+app.post('/api/admin/testimonials', authenticateToken, adminController.handleAdminCreateTestimonial);
+
+
 // --- CLIENT API ROUTES ---
 app.get('/api/metrics', authenticateToken, apiController.handleGetMetrics);
 app.get('/api/campaigns', authenticateToken, apiController.handleGetCampaigns);
@@ -159,9 +181,21 @@ app.post('/api/ai/generate-campaign-prompt', authenticateToken, apiController.ha
 // --- SETTINGS & USER ---
 app.get('/api/user/me', authenticateToken, async (req: any, res) => {
     try {
+        if (req.user.role === 'super_admin') {
+             return res.json({
+                 id: 'super_admin',
+                 username: 'master',
+                 role: 'super_admin',
+                 business_name: 'DOMINION GOD MODE',
+                 plan_status: 'active',
+                 plan_type: 'pro',
+                 billing_end_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+                 settings: { isActive: true, productName: 'Sistema Central' }
+             });
+        }
+
         const user = await db.getUser(req.user.id);
         if (!user) {
-            // CRITICAL: If user not found in DB but token is valid, return 404 to trigger frontend logout
             return res.status(404).json({ message: "Usuario no encontrado en base de datos." });
         }
         res.json(user);
@@ -172,9 +206,9 @@ app.get('/api/user/me', authenticateToken, async (req: any, res) => {
 
 app.get('/api/settings', authenticateToken, async (req: any, res) => {
     try {
+        if (req.user.role === 'super_admin') return res.json({});
         const user = await db.getUser(req.user.id);
         if (!user) {
-             // Fallback instead of 404/500 to keep UI alive
              return res.json({ productName: 'Sin Configurar', isActive: false, ignoredJids: [] });
         }
         res.json(user.settings || { productName: 'Sin Configurar', isActive: false, ignoredJids: [] });
@@ -190,18 +224,31 @@ app.post('/api/settings', authenticateToken, async (req: any, res) => {
 
 // --- CONNECTION ---
 app.get('/api/status', authenticateToken, async (req: any, res) => {
+    if (req.user.role === 'super_admin') return res.json({ status: ConnectionStatus.CONNECTED });
     const status = getSessionStatus(req.user.id);
     res.json(status);
 });
+
 app.post('/api/connect', authenticateToken, async (req: any, res) => {
-    await connectToWhatsApp(req.user.id, req.body.phoneNumber);
-    res.json({ success: true });
+    // LOG EXPLICITO DE ENTRADA
+    logService.info(`[API] 📞 Solicitud de conexión recibida para ${req.user.username}`, req.user.id);
+    try {
+        // Force true manual flag to reset caches
+        await connectToWhatsApp(req.user.id, req.body.phoneNumber, true);
+        res.json({ success: true });
+    } catch (e: any) {
+        logService.error(`[API] Error al invocar connectToWhatsApp`, e, req.user.id);
+        res.status(500).json({ message: e.message });
+    }
 });
+
 app.get('/api/disconnect', authenticateToken, async (req: any, res) => {
+    logService.info(`[API] 🔌 Solicitud de desconexión recibida.`, req.user.id);
     const { disconnectWhatsApp } = require('./whatsapp/client.js');
     await disconnectWhatsApp(req.user.id);
     res.json({ success: true });
 });
+
 app.post('/api/connection/soft-reset', authenticateToken, async (req: any, res) => {
     await softResetConnection(req.user.id);
     res.json({ success: true });
@@ -209,6 +256,7 @@ app.post('/api/connection/soft-reset', authenticateToken, async (req: any, res) 
 
 // --- CONVERSATIONS ---
 app.get('/api/conversations', authenticateToken, async (req: any, res) => {
+    if (req.user.role === 'super_admin') return res.json([]);
     const convs = await db.getUserConversations(req.user.id);
     res.json(convs || []);
 });
@@ -236,8 +284,7 @@ app.delete('/api/conversation/:id', authenticateToken, async (req: any, res) => 
     if(user && user.conversations) {
         const safeId = id.replace(/[.$]/g, "_");
         delete user.conversations[safeId];
-        delete user.conversations[id]; // Try both
-        // Mongoose generic update to remove field
+        delete user.conversations[id]; 
         await (db as any).updateUser(req.user.id, { $unset: { [`conversations.${safeId}`]: 1, [`conversations.${id}`]: 1 } });
     }
     res.json({ success: true });
@@ -261,7 +308,6 @@ app.post('/api/radar/signals/:id/dismiss', authenticateToken, async (req: any, r
     res.json({ success: true });
 });
 app.post('/api/radar/simulate', authenticateToken, async (req: any, res) => {
-    // Inject a fake signal for testing
     const signal: RadarSignal = {
         id: uuidv4(),
         userId: req.user.id,
@@ -281,7 +327,6 @@ app.post('/api/radar/simulate', authenticateToken, async (req: any, res) => {
     res.json({ success: true });
 });
 app.post('/api/radar/calibrate', authenticateToken, async (req: any, res) => {
-    // Basic AI Calibration Logic Mock
     res.json({ 
         opportunityDefinition: 'Clientes buscando servicios de alto valor con urgencia.',
         noiseDefinition: 'Vendedores, spam, mensajes cortos sin contexto.'
@@ -294,8 +339,6 @@ app.get('/api/network/signals', authenticateToken, async (req: any, res) => {
     res.json(signals || []);
 });
 app.post('/api/network/signals', authenticateToken, async (req: any, res) => {
-    const { conversationId } = req.body;
-    // Implementation: Convert conversation to signal (Mock for now)
     res.json({ success: true, message: "Signal shared" });
 });
 app.get('/api/network/opportunities', authenticateToken, async (req: any, res) => {
@@ -325,8 +368,8 @@ app.post('/api/testimonials', authenticateToken, async (req: any, res) => {
 });
 
 // --- CLIENT SIMULATION (TEST BOT) ---
-app.post('/api/client/test-bot/start', authenticateToken, adminController.handleStartTestBot); // Re-use admin controller logic or adapt
-app.post('/api/client/test-bot/stop', authenticateToken, async (req, res) => { res.json({success: true}); }); // Mock stop
+app.post('/api/client/test-bot/start', authenticateToken, adminController.handleStartTestBot); 
+app.post('/api/client/test-bot/stop', authenticateToken, async (req, res) => { res.json({success: true}); }); 
 app.post('/api/client/test-bot/clear', authenticateToken, adminController.handleClearTestBotConversation);
 
 // --- AI WIZARD & HELPERS ---
@@ -342,7 +385,6 @@ app.post('/api/ai/verify-key', authenticateToken, async (req: any, res) => {
 });
 app.post('/api/ai/execute-neural-path', authenticateToken, async (req: any, res) => {
     const { identity, context } = req.body;
-    // Simple mock or call to Gemini to structure the data
     const user = await db.getUser(req.user.id);
     if (!user?.settings.geminiApiKey) return res.status(400).json({ message: 'No API Key' });
     
@@ -398,9 +440,11 @@ app.get('/api/tts/:filename', optionalAuthenticateToken, (req, res) => {
 
 
 // Start server
-httpServer.listen(PORT, async () => {
+// MODIFICATION: Bind to 0.0.0.0 to fix Cloudflare Tunnel IPv6 connection refusal
+httpServer.listen(Number(PORT), '0.0.0.0', async () => {
   console.log(`\n    🦅 DOMINION BACKEND ACTIVO EN PUERTO ${PORT}`);
-  console.log(`    🌍 ARQUITECTURA: LOCAL + CLOUD FLARE / VERCEL + SOCKET.IO\n`);
+  console.log(`    🌍 ARQUITECTURA: LOCAL + CLOUD FLARE / VERCEL + SOCKET.IO`);
+  console.log(`    📡 ESCUCHANDO EN: 0.0.0.0 (Acepta conexiones externas/túnel) \n`);
   
   // 1. Initialize Workers (Independent)
   initCampaignWorker();
@@ -409,12 +453,16 @@ httpServer.listen(PORT, async () => {
   await ttsService.init();
 
   // 3. WAIT FOR DATABASE CONNECTION before scanning sessions
-  // This ensures the logs appear in the correct order and the logic works.
   if (db.connectionPromise) {
       await db.connectionPromise;
   }
 
-  // 4. Reconnect Active Sessions
+  // 4. Initialize Database Seeds (Testimonials)
+  if (db.isReady()) {
+      await db.seedTestimonials();
+  }
+
+  // 5. Reconnect Active Sessions
   logService.info('[INFO] El sistema backend se ha iniciado correctamente.'); 
   
   if (db.isReady()) {

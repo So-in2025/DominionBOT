@@ -91,6 +91,91 @@ const PlanEditorCard: React.FC<{
 
 // --- SUB-COMPONENTS ---
 
+const TestimonialManager: React.FC<{ token: string; backendUrl: string; showToast: (msg: string, type: 'success'|'error') => void }> = ({ token, backendUrl, showToast }) => {
+    const [testimonials, setTestimonials] = useState<Testimonial[]>([]);
+    const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        fetchTestimonials();
+    }, []);
+
+    const fetchTestimonials = async () => {
+        setLoading(true);
+        try {
+            const res = await fetch(`${backendUrl}/api/admin/testimonials`, { headers: getAuthHeaders(token) });
+            if (res.ok) setTestimonials(await res.json());
+        } catch (e) {
+            showToast('Error cargando testimonios', 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const toggleVisibility = async (t: Testimonial) => {
+        try {
+            const res = await fetch(`${backendUrl}/api/admin/testimonials/${t._id}`, {
+                method: 'PUT',
+                headers: getAuthHeaders(token),
+                body: JSON.stringify({ isVisible: !t.isVisible })
+            });
+            if (res.ok) {
+                setTestimonials(prev => prev.map(item => item._id === t._id ? { ...item, isVisible: !item.isVisible } : item));
+                showToast(`Testimonio ${!t.isVisible ? 'activado' : 'oculto'}.`, 'success');
+            }
+        } catch (e) { showToast('Error al actualizar.', 'error'); }
+    };
+
+    const deleteTestimonial = async (id: string) => {
+        if (!confirm('¿Eliminar testimonio permanentemente?')) return;
+        try {
+            const res = await fetch(`${backendUrl}/api/admin/testimonials/${id}`, {
+                method: 'DELETE',
+                headers: getAuthHeaders(token)
+            });
+            if (res.ok) {
+                setTestimonials(prev => prev.filter(item => item._id !== id));
+                showToast('Testimonio eliminado.', 'success');
+            }
+        } catch (e) { showToast('Error al eliminar.', 'error'); }
+    };
+
+    return (
+        <div className="space-y-6">
+            <div className="flex justify-between items-center">
+                <h3 className="text-sm font-black text-gray-400 uppercase tracking-widest">Base de Datos de Reseñas</h3>
+                <button onClick={fetchTestimonials} className="text-xs text-gray-500 hover:text-white">Refrescar</button>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {testimonials.map(t => (
+                    <div key={t._id} className={`p-4 rounded-xl border transition-all relative group ${t.isVisible ? 'bg-green-900/10 border-green-500/30' : 'bg-black/40 border-white/5 opacity-70 hover:opacity-100'}`}>
+                        <div className="flex justify-between items-start mb-2">
+                            <div>
+                                <p className="text-xs font-bold text-white">{t.name || 'Anónimo'}</p>
+                                <p className="text-[10px] text-gray-500">{t.location || 'Ubicación desconocida'}</p>
+                            </div>
+                            <div className={`w-2 h-2 rounded-full ${t.isVisible ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500'}`}></div>
+                        </div>
+                        <p className="text-xs text-gray-300 italic mb-4 line-clamp-3">"{t.text}"</p>
+                        <div className="flex justify-between items-center pt-2 border-t border-white/5">
+                            <span className="text-[9px] text-gray-600 font-mono">{new Date(t.createdAt).toLocaleDateString()}</span>
+                            <div className="flex gap-2">
+                                <button onClick={() => deleteTestimonial(t._id!)} className="text-[9px] text-red-500 hover:text-red-400 font-bold uppercase">Borrar</button>
+                                <button 
+                                    onClick={() => toggleVisibility(t)} 
+                                    className={`text-[9px] font-bold uppercase px-2 py-1 rounded border ${t.isVisible ? 'border-red-500/30 text-red-400 hover:bg-red-900/20' : 'border-green-500/30 text-green-400 hover:bg-green-900/20'}`}
+                                >
+                                    {t.isVisible ? 'Ocultar' : 'Publicar'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
+
 const LandingPageManager: React.FC<{
     settings: SystemSettings;
     onSave: (updates: Partial<SystemSettings>) => void;
@@ -169,15 +254,18 @@ const LandingPageManager: React.FC<{
 const ClientTable: React.FC<{ clients: User[]; getPlanPill: (status: string, type: string) => React.ReactNode; onAudit: (user: User) => void; }> = ({ clients, getPlanPill, onAudit }) => {
     const [filter, setFilter] = useState('');
 
-    const filteredClients = clients.filter(c => 
-        c.username.toLowerCase().includes(filter.toLowerCase()) || 
-        c.business_name?.toLowerCase().includes(filter.toLowerCase())
+    // Defensive check: Ensure clients is an array
+    const safeClients = Array.isArray(clients) ? clients : [];
+
+    const filteredClients = safeClients.filter(c => 
+        (c.username || '').toLowerCase().includes(filter.toLowerCase()) || 
+        (c.business_name || '').toLowerCase().includes(filter.toLowerCase())
     );
 
     return (
         <div className="bg-brand-surface border border-white/5 rounded-[24px] overflow-hidden shadow-2xl flex flex-col h-full min-h-[600px]">
             <div className="p-6 border-b border-white/5 flex justify-between items-center bg-black/20">
-                <h3 className="text-sm font-black text-gray-400 uppercase tracking-widest">Base de Datos de Clientes ({clients.length})</h3>
+                <h3 className="text-sm font-black text-gray-400 uppercase tracking-widest">Base de Datos de Clientes ({safeClients.length})</h3>
                 <input 
                     type="text" 
                     placeholder="Buscar cliente..." 
@@ -199,7 +287,7 @@ const ClientTable: React.FC<{ clients: User[]; getPlanPill: (status: string, typ
                     </thead>
                     <tbody className="divide-y divide-white/5 text-xs">
                         {filteredClients.map(client => (
-                            <tr key={client.id} className="hover:bg-white/5 transition-colors group">
+                            <tr key={client.id || Math.random().toString()} className="hover:bg-white/5 transition-colors group">
                                 <td className="p-5">
                                     <div className="flex items-center gap-3">
                                         <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-gray-800 to-black border border-white/10 flex items-center justify-center text-xs font-bold text-white shadow-inner">
@@ -207,17 +295,17 @@ const ClientTable: React.FC<{ clients: User[]; getPlanPill: (status: string, typ
                                         </div>
                                         <div>
                                             <div className="font-bold text-white">{client.business_name || 'Sin Nombre'}</div>
-                                            <div className="text-[9px] text-gray-500 font-mono">{client.id.substring(0, 8)}...</div>
+                                            <div className="text-[9px] text-gray-500 font-mono">{client.id ? client.id.substring(0, 8) : '???'}...</div>
                                         </div>
                                     </div>
                                 </td>
                                 <td className="p-5">
-                                    <span className="font-mono text-gray-400 bg-black/40 px-2 py-1 rounded border border-white/5">{client.username}</span>
+                                    <span className="font-mono text-gray-400 bg-black/40 px-2 py-1 rounded border border-white/5">{client.username || 'Sin Usuario'}</span>
                                 </td>
-                                <td className="p-5">{getPlanPill(client.plan_status, client.plan_type)}</td>
+                                <td className="p-5">{getPlanPill(client.plan_status || 'unknown', client.plan_type || 'unknown')}</td>
                                 <td className="p-5">
-                                    <span className={`font-mono text-[10px] ${new Date(client.billing_end_date) < new Date() ? 'text-red-400 font-bold' : 'text-gray-400'}`}>
-                                        {new Date(client.billing_end_date).toLocaleDateString()}
+                                    <span className={`font-mono text-[10px] ${client.billing_end_date && new Date(client.billing_end_date) < new Date() ? 'text-red-400 font-bold' : 'text-gray-400'}`}>
+                                        {client.billing_end_date ? new Date(client.billing_end_date).toLocaleDateString() : 'Sin Fecha'}
                                     </span>
                                 </td>
                                 <td className="p-5 text-right">
@@ -235,6 +323,35 @@ const ClientTable: React.FC<{ clients: User[]; getPlanPill: (status: string, typ
 };
 
 const LogTable: React.FC<{ logs: LogEntry[]; getLogLevelPill: (level: string) => React.ReactNode; }> = ({ logs, getLogLevelPill }) => {
+    const getLevelConfig = (level: string) => {
+        switch (level) {
+            case 'ERROR': return {
+                rowClass: 'bg-red-900/10 border-l-2 border-l-red-500 hover:bg-red-900/20',
+                textClass: 'text-red-300 font-bold'
+            };
+            case 'WARN': return {
+                rowClass: 'bg-yellow-900/10 border-l-2 border-l-yellow-500 hover:bg-yellow-900/20',
+                textClass: 'text-yellow-300 font-medium'
+            };
+            case 'AUDIT': return {
+                rowClass: 'bg-purple-900/10 border-l-2 border-l-purple-500 hover:bg-purple-900/20',
+                textClass: 'text-purple-300 font-bold'
+            };
+            case 'INFO': return {
+                rowClass: 'bg-transparent border-l-2 border-l-blue-500/30 hover:bg-blue-900/10',
+                textClass: 'text-gray-300'
+            };
+            case 'DEBUG': return {
+                rowClass: 'bg-transparent border-l-2 border-l-gray-700/30 hover:bg-white/5 opacity-70',
+                textClass: 'text-gray-500 font-mono'
+            };
+            default: return {
+                rowClass: 'hover:bg-white/5 border-l-2 border-l-transparent',
+                textClass: 'text-gray-400'
+            };
+        }
+    };
+
     return (
         <div className="bg-[#0a0a0a] border border-white/10 rounded-2xl overflow-hidden shadow-xl flex flex-col h-[600px]">
             <div className="p-4 border-b border-white/5 bg-black/40 flex justify-between items-center">
@@ -245,34 +362,38 @@ const LogTable: React.FC<{ logs: LogEntry[]; getLogLevelPill: (level: string) =>
                 </div>
             </div>
             <div className="overflow-auto custom-scrollbar flex-1 p-2">
-                <table className="w-full text-left table-auto border-collapse">
+                <table className="w-full text-left table-auto border-collapse border-spacing-y-1">
                     <tbody className="text-[10px] font-mono">
-                        {logs.map((log, idx) => (
-                            <tr key={log._id || idx} className="hover:bg-white/5 transition-colors border-b border-white/5 last:border-0">
-                                <td className="p-2 text-gray-600 whitespace-nowrap align-top w-24">
-                                    {new Date(log.timestamp).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                                </td>
-                                <td className="p-2 align-top w-20">{getLogLevelPill(log.level)}</td>
-                                <td className="p-2 text-gray-300 align-top">
-                                    <span className="text-white font-bold mr-2">{log.message}</span>
-                                    {log.username && <span className="text-gray-600">[{log.username}]</span>}
-                                    {log.metadata && (
-                                        <div className="mt-1 text-gray-500 bg-black/40 p-1.5 rounded border border-white/5 overflow-x-auto">
-                                            {JSON.stringify(log.metadata)}
+                        {logs.map((log, idx) => {
+                            const styles = getLevelConfig(log.level);
+                            return (
+                                <tr key={log._id || idx} className={`transition-all border-b border-white/5 last:border-0 ${styles.rowClass}`}>
+                                    <td className="p-3 text-gray-500 whitespace-nowrap align-top w-28">
+                                        {new Date(log.timestamp).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                    </td>
+                                    <td className="p-3 align-top w-24">{getLogLevelPill(log.level)}</td>
+                                    <td className={`p-3 align-top break-words ${styles.textClass}`}>
+                                        <div className="flex flex-col">
+                                            <span>
+                                                {log.message}
+                                                {log.username && <span className="ml-2 opacity-60 font-normal text-[9px] border border-current px-1 rounded inline-block">User: {log.username}</span>}
+                                            </span>
+                                            {log.metadata && (
+                                                <div className="mt-2 text-[9px] opacity-70 bg-black/40 p-2 rounded border border-white/10 overflow-x-auto whitespace-pre-wrap font-mono">
+                                                    {JSON.stringify(log.metadata, null, 2)}
+                                                </div>
+                                            )}
                                         </div>
-                                    )}
-                                </td>
-                            </tr>
-                        ))}
+                                    </td>
+                                </tr>
+                            );
+                        })}
                     </tbody>
                 </table>
             </div>
         </div>
     );
 };
-
-// ... (Existing NetworkMonitor & TestimonialsManager components remain similar but styled)
-// Re-using TestimonialsManager & NetworkMonitor with enhanced styles below in main render
 
 // --- MAIN DASHBOARD ---
 
@@ -305,7 +426,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
                 fetch(`${backendUrl}/api/admin/dashboard-metrics`, { headers: getAuthHeaders(token) }),
                 fetch(`${backendUrl}/api/admin/system/settings`, { headers: getAuthHeaders(token) })
             ]);
-            if (clientsRes.ok) setClients(await clientsRes.json());
+            
+            if (clientsRes.ok) {
+                const data = await clientsRes.json();
+                setClients(Array.isArray(data) ? data : []);
+            }
             if (logsRes.ok) setLogs(await logsRes.json());
             if (metricsRes.ok) setMetrics(await metricsRes.json());
             if (settingsRes.ok) {
@@ -400,8 +525,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
     };
 
     const getLogLevelPill = (level: string) => {
-        const color = level === 'ERROR' ? 'text-red-500' : level === 'WARN' ? 'text-yellow-500' : level === 'AUDIT' ? 'text-purple-400' : 'text-blue-400';
-        return <span className={`font-black ${color}`}>{level}</span>;
+        let color = 'text-gray-400 bg-gray-500/10 border-gray-500/20';
+        if (level === 'ERROR') color = 'text-red-400 bg-red-500/10 border-red-500/20';
+        if (level === 'WARN') color = 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20';
+        if (level === 'AUDIT') color = 'text-purple-400 bg-purple-500/10 border-purple-500/20';
+        if (level === 'INFO') color = 'text-blue-400 bg-blue-500/10 border-blue-500/20';
+
+        return <span className={`px-2 py-0.5 rounded border text-[9px] font-black uppercase tracking-wider ${color}`}>{level}</span>;
     };
 
     const tabs: { id: AdminView, label: string, icon: string }[] = [
@@ -605,10 +735,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ token, backendUrl, onAu
                             </div>
                         )}
                         
-                        {/* VIEW: TESTIMONIALS PLACEHOLDER */}
+                        {/* VIEW: TESTIMONIALS MANAGER */}
                         {view === 'testimonials' && (
-                             <div className="flex flex-col items-center justify-center py-20 text-center">
-                                <p className="text-gray-500 text-xs font-bold uppercase tracking-widest">Gestor de Testimonios - Próximamente integrado aquí.</p>
+                             <div className="max-w-5xl mx-auto space-y-8">
+                                <SectionHeader title="Gestor de Testimonios" subtitle="Administración de Reseñas para la Landing Page" />
+                                <TestimonialManager token={token} backendUrl={backendUrl} showToast={showToast} />
                             </div>
                         )}
                     </div>

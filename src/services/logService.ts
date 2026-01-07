@@ -13,6 +13,36 @@ const CONSOLE_LOG_LEVELS: { [key in LogLevel]: number } = {
 
 const CURRENT_LOG_LEVEL = CONSOLE_LOG_LEVELS[LOG_LEVEL.toUpperCase() as LogLevel] ?? CONSOLE_LOG_LEVELS.INFO;
 
+// --- COLOR UTILS ---
+const COLORS = {
+    Reset: "\x1b[0m",
+    Bright: "\x1b[1m",
+    Dim: "\x1b[2m",
+    Red: "\x1b[31m",
+    Green: "\x1b[32m",
+    Yellow: "\x1b[33m",
+    Blue: "\x1b[34m",
+    Magenta: "\x1b[35m",
+    Cyan: "\x1b[36m",
+    White: "\x1b[37m",
+    Gray: "\x1b[90m",
+};
+
+const TAG_COLORS: Record<string, string> = {
+    '[DB]': COLORS.Cyan,
+    '[REDIS]': COLORS.Magenta,
+    '[SOCKET]': COLORS.Green,
+    '[HYDRA]': COLORS.Blue,
+    '[AUTH]': COLORS.Yellow,
+    '[TTS]': COLORS.Blue,
+    '[SERVER]': COLORS.White,
+    '[WORKER]': COLORS.Blue,
+    '[CAMPAIGN]': COLORS.Magenta,
+    '[RADAR]': COLORS.Red,
+    '[WA]': COLORS.Green,
+    '[INFO]': COLORS.White
+};
+
 class LogService {
     public debug(message: string, userId?: string, username?: string, metadata?: Record<string, any>): void {
         this.log('DEBUG', message, userId, username, metadata);
@@ -39,10 +69,19 @@ class LogService {
         this.log('AUDIT', message, userId, username, metadata);
     }
 
+    private colorizeTags(message: string): string {
+        let coloredMessage = message;
+        for (const [tag, color] of Object.entries(TAG_COLORS)) {
+            if (message.includes(tag)) {
+                coloredMessage = coloredMessage.replace(tag, `${color}${tag}${COLORS.Reset}`);
+            }
+        }
+        return coloredMessage;
+    }
+
     private log(level: LogLevel, message: string, userId?: string, username?: string, metadata?: Record<string, any>): void {
         const timestamp = new Date();
         const logEntry = {
-            // FIX: Convert Date object to ISO string to match the LogEntry type.
             timestamp: timestamp.toISOString(),
             level,
             message,
@@ -53,15 +92,27 @@ class LogService {
         
         // Log to console only if level is high enough
         if (CONSOLE_LOG_LEVELS[level] >= CURRENT_LOG_LEVEL) {
-            const colorMap = { DEBUG: '\x1b[90m', INFO: '\x1b[34m', WARN: '\x1b[33m', ERROR: '\x1b[31m', AUDIT: '\x1b[35m' };
+            const levelColorMap = { 
+                DEBUG: COLORS.Gray, 
+                INFO: COLORS.Blue, 
+                WARN: COLORS.Yellow, 
+                ERROR: COLORS.Red, 
+                AUDIT: COLORS.Magenta 
+            };
+            
             const time = timestamp.toLocaleTimeString();
             const userPart = username ? `(${username})` : (userId ? `(${userId})` : '');
-            console.log(`\x1b[90m[${time}]\x1b[0m ${colorMap[level]}[${level}]\x1b[0m ${message} \x1b[90m${userPart}\x1b[0m`);
+            
+            // Format: [TIME] [LEVEL] [TAG] Message (User)
+            const formattedMessage = this.colorizeTags(message);
+            
+            // Use levelColor for the [LEVEL] tag
+            const levelTag = `${levelColorMap[level]}[${level}]${COLORS.Reset}`;
+            
+            console.log(`${COLORS.Gray}[${time}]${COLORS.Reset} ${levelTag} ${formattedMessage} ${COLORS.Gray}${userPart}${COLORS.Reset}`);
         }
 
         // Persist to database (excluding debug logs)
-        // CRITICAL FIX: Only attempt DB write if connection is READY.
-        // This prevents "MongoServerSelectionError" loops during network outages.
         if (level !== 'DEBUG') {
             if (db.isReady()) {
                 db.createLog(logEntry).catch(e => console.error("Failed to persist log (DB Write Error):", e.message));

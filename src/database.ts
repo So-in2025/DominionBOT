@@ -3,6 +3,7 @@ import mongoose, { Schema, Document, Model } from 'mongoose';
 import { User, Campaign, Conversation, LogEntry, SystemSettings, RadarSignal, IntentSignal, ConnectionOpportunity, NetworkProfile, Testimonial, DepthBoost } from './types.js';
 import { MONGO_URI } from './env.js';
 import { v4 as uuidv4 } from 'uuid';
+import { logService } from './services/logService.js';
 
 export function sanitizeKey(key: string) { return key.replace(/[.$]/g, "_"); }
 
@@ -43,6 +44,20 @@ const ConnectionOpportunityModel = (mongoose.models.ConnectionOpportunity || mon
 const TestimonialModel = (mongoose.models.Testimonial || mongoose.model<any>('Testimonial', TestimonialSchema)) as Model<any>;
 const DepthBoostModel = (mongoose.models.DepthBoost || mongoose.model<any>('DepthBoost', DepthBoostSchema)) as Model<any>;
 
+// --- DEFAULT SETTINGS CONSTANTS ---
+const DEFAULT_SYSTEM_SETTINGS: Partial<SystemSettings> = {
+    dolarBlueRate: 1450,
+    planStandardPriceUSD: 19,
+    planSniperPriceUSD: 39,
+    planNeuroBoostPriceUSD: 5,
+    planStandardTitle: 'Protocolo Standard',
+    planSniperTitle: 'Protocolo Sniper',
+    planNeuroBoostTitle: 'Inyección de Potencia',
+    planStandardDescription: 'El punto de entrada para automatizar tu WhatsApp. Filtra consultas, responde al instante y califica la intención de compra.',
+    planSniperDescription: 'La experiencia Dominion completa. Diseñado para ventas de alto valor donde cada detalle importa.',
+    planNeuroBoostDescription: 'Potencia cognitiva bajo demanda para momentos críticos. Activa la máxima capacidad de razonamiento.'
+};
+
 class Database {
     public connectionPromise: Promise<void> | null = null;
 
@@ -51,7 +66,7 @@ class Database {
             console.log('⏳ [DB] Conectando a MongoDB...');
             this.connectionPromise = mongoose.connect(MONGO_URI)
                 .then(() => {
-                    console.log('✅ [DB] Conexión establecida a la base de datos.');
+                    console.log('\x1b[36m✅ [DB] Conexión establecida a la base de datos.\x1b[0m');
                 })
                 .catch(err => {
                     console.error("❌ [DB] Error crítico de conexión:", err);
@@ -162,7 +177,8 @@ class Database {
     
     async getSystemSettings(): Promise<SystemSettings> { 
         const data = await SystemSettingsModel.findOne({ id: 'global' }).lean();
-        return (data || {}) as unknown as SystemSettings; 
+        // Merge defaults with stored data to ensure all fields exist
+        return { ...DEFAULT_SYSTEM_SETTINGS, ...(data || {}) } as unknown as SystemSettings; 
     }
     
     async updateSystemSettings(updates: Partial<SystemSettings>): Promise<SystemSettings | null> {
@@ -170,15 +186,14 @@ class Database {
     }
     
     async resetSystem() {
-        if (MONGO_URI && MONGO_URI.includes('cluster0')) { // Safety check: only on prod cluster if explicit
-             // In a real scenario, be very careful. For this app:
+        if (MONGO_URI && MONGO_URI.includes('cluster0')) { 
              await Promise.all([
                  CampaignModel.deleteMany({}),
                  LogModel.deleteMany({}),
                  RadarSignalModel.deleteMany({}),
                  IntentSignalModel.deleteMany({}),
                  ConnectionOpportunityModel.deleteMany({}),
-                 UserModel.updateMany({}, { $set: { conversations: {} } }) // Clear conversations but keep users
+                 UserModel.updateMany({}, { $set: { conversations: {} } }) 
              ]);
         }
     }
@@ -262,6 +277,49 @@ class Database {
     async deleteTestimonial(id: string): Promise<boolean> {
         const result = await TestimonialModel.findByIdAndDelete(id);
         return !!result;
+    }
+
+    // --- SEEDING ---
+    async seedTestimonials() {
+        const count = await TestimonialModel.countDocuments();
+        if (count > 0) return; // Already seeded
+
+        const SEED_DATA = [
+            { name: "Martín R.", location: "Buenos Aires", text: "Increíble cómo filtra los curiosos. Mi equipo de ventas ahora solo habla con gente que tiene la tarjeta en la mano." },
+            { name: "Sofía L.", location: "Mendoza", text: "La configuración fue súper fácil. En 10 minutos tenía el bot respondiendo como si fuera yo. El modo 'Sniper' es una locura." },
+            { name: "Carlos G.", location: "Córdoba", text: "Estaba perdiendo el 40% de las ventas por no responder rápido. Dominion se pagó solo en la primera semana." },
+            { name: "Agencia Boost", location: "Rosario", text: "Usamos el Neuro-Boost para un lanzamiento y manejó 500 chats sin transpirar. Una bestia." },
+            { name: "Julián M.", location: "CABA", text: "Lo mejor es que no parece un bot. Mis clientes piensan que tengo una secretaria 24/7." },
+            { name: "Laura V.", location: "Tucumán", text: "El soporte es excelente y la herramienta es muy intuitiva. Me encanta el panel de métricas." },
+            { name: "Esteban K.", location: "Neuquén", text: "Soy inmobiliario y esto me salvó la vida. Filtra a los que solo quieren ver fotos y me pasa a los inversores reales." },
+            { name: "TechSolutions", location: "Remote", text: "Integramos el Radar con nuestro CRM y ahora captamos leads de grupos de Facebook y WhatsApp automáticamente." },
+            { name: "VentasClick", location: "La Plata", text: "La función de campañas es muy segura. Mandamos ofertas a 1000 clientes y cero bloqueos." },
+            { name: "Roberto F.", location: "San Juan", text: "Simple, potente y efectivo. No tiene vueltas raras. Hace lo que dice que hace." },
+            { name: "Ana P.", location: "Mar del Plata", text: "Me gusta que mis datos no se usen para entrenar IA de otros. La privacidad es clave para mi negocio." },
+            { name: "Diego S.", location: "Santa Fe", text: "El sistema de 'Shadow Mode' es brillante. La IA hace el trabajo sucio y yo entro solo a cobrar." },
+            { name: "Mariana T.", location: "Salta", text: "Probé muchos bots, pero este es el único que entiende el contexto y no responde pavadas." },
+            { name: "Lucas R.", location: "Bariloche", text: "Excelente herramienta para temporada alta. Gestionó todos los alquileres mientras yo estaba esquiando." },
+            { name: "GlobalTraders", location: "CABA", text: "El análisis de sentimiento del Radar nos da una ventaja competitiva enorme. Sabemos cuándo el mercado está caliente." },
+            { name: "Patricia N.", location: "Jujuy", text: "Muy recomendado para emprendedores que están solos y no pueden estar todo el día con el celular." },
+            { name: "Fernando A.", location: "San Luis", text: "La inversión es mínima comparada con lo que facturamos extra gracias a la velocidad de respuesta." },
+            { name: "Grupo Fenix", location: "Mendoza", text: "La red colaborativa es una gran idea. Hemos intercambiado leads de muy buena calidad." },
+            { name: "Clara B.", location: "Entre Ríos", text: "Interfaz súper limpia y fácil de usar. Me siento como en una película de ciencia ficción." },
+            { name: "Gonzalo D.", location: "Corrientes", text: "Si vendes servicios high-ticket, necesitas esto. No hay excusa para seguir contestando a mano." }
+        ];
+
+        console.log('🌱 [DB] Sembrando testimonios iniciales...');
+        for (const t of SEED_DATA) {
+            const testimonial = new TestimonialModel({
+                userId: 'system_seed',
+                name: t.name,
+                location: t.location,
+                text: t.text,
+                isVisible: false, // Hidden by default, Admin must enable
+                createdAt: new Date().toISOString()
+            });
+            await testimonial.save();
+        }
+        console.log('✅ [DB] 20 Testimonios sembrados correctamente.');
     }
 }
 

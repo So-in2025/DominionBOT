@@ -104,28 +104,45 @@ export function getSocket(userId: string): WASocket | undefined {
 // CORE CONNECTION LOGIC (v4.0 - ANTI-FRAGILE)
 // ----------------------------------------------------------------------
 export async function connectToWhatsApp(userId: string, phoneNumber?: string, isManual: boolean = false) {
-    if (isConnecting.get(userId)) return;
+    if (isConnecting.get(userId)) {
+        // [DEEP TRACE] Warning about lock
+        logService.warn(`[WA] ⚠️ Intento de conexión duplicado ignorado. Lock activo.`, userId);
+        return;
+    }
     
     // Safety: If automatic, ensure session exists
     if (!isManual) {
         const hasSession = await hasValidSession(userId);
-        if (!hasSession) return;
+        if (!hasSession) {
+            // logService.debug(`[WA] No hay sesión previa válida para autoconectar.`, userId);
+            return;
+        }
     }
 
     try {
         isConnecting.set(userId, true);
+        
+        // [DEEP TRACE] Step 1: Initialization
+        logService.info(`[WA] 🚀 [STEP 1/4] Iniciando secuencia de arranque para ${phoneNumber || 'QR Mode'}`, userId);
         socketService.emitToUser(userId, SocketEvents.SESSION_STATUS_UPDATE, { status: ConnectionStatus.GENERATING_QR });
         
         // Reset QR/Code caches on new attempt
         if (isManual) {
             qrCache.delete(userId);
             codeCache.delete(userId);
-            reconnectAttempts.set(userId, 0); // Reset backoff on manual trigger
+            reconnectAttempts.set(userId, 0); 
         }
 
+        // [DEEP TRACE] Step 2: DB & Auth State
+        logService.info(`[WA] [STEP 2/4] Cargando estado de autenticación (MongoDB/Redis)...`, userId);
         const { state, saveCreds } = await useMongoDBAuthState(userId);
+        
+        logService.info(`[WA] [STEP 2.5/4] Obteniendo versión de Baileys...`, userId);
         const { version } = await fetchLatestBaileysVersion();
         const user = await db.getUser(userId);
+
+        // [DEEP TRACE] Step 3: Socket Construction
+        logService.info(`[WA] [STEP 3/4] Construyendo Socket...`, userId);
 
         const sock = makeWASocket({
             version,
@@ -143,10 +160,10 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
             // --- STABILITY SETTINGS ---
             syncFullHistory: false, 
             markOnlineOnConnect: false, 
-            connectTimeoutMs: 45000, 
+            connectTimeoutMs: 60000, // Increased timeout
             defaultQueryTimeoutMs: 60000, 
             keepAliveIntervalMs: 25000,
-            retryRequestDelayMs: 3000, 
+            retryRequestDelayMs: 5000, 
             msgRetryCounterCache: msgRetryCounterCache, 
             getMessage: async (key) => { return undefined; }
         });
@@ -155,31 +172,53 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
 
         sock.ev.on('creds.update', saveCreds);
 
+        // [DEEP TRACE] Step 4: Event Listening
+        logService.info(`[WA] [STEP 4/4] Escuchando eventos de conexión...`, userId);
+
+        // [PAIRING CODE LOGIC] - Needs to be triggered explicitly if phone provided
+        if (phoneNumber && !sock.authState.creds.registered) {
+            logService.info(`[WA] 🔢 Solicitando código de emparejamiento para ${phoneNumber}... (Esperando inicio de socket)`, userId);
+            
+            setTimeout(async () => {
+                try {
+                    // Check if socket is still valid
+                    const currentSock = sessions.get(userId);
+                    if (!currentSock) {
+                         logService.warn(`[WA] Socket muerto antes de pedir código.`, userId);
+                         return;
+                    }
+                    
+                    if (!currentSock.authState.creds.me && !codeCache.get(userId)) {
+                        logService.info(`[WA] ⏳ Ejecutando requestPairingCode...`, userId);
+                        const code = await currentSock.requestPairingCode(phoneNumber);
+                        codeCache.set(userId, code);
+                        logService.info(`[WA] ✅ CÓDIGO RECIBIDO: ${code}`, userId);
+                        socketService.emitToUser(userId, SocketEvents.SESSION_STATUS_UPDATE, { status: ConnectionStatus.AWAITING_SCAN, pairingCode: code });
+                    }
+                } catch (e: any) {
+                    logService.error(`[WA] ❌ Error solicitando código de emparejamiento: ${e.message}`, e, userId);
+                    socketService.emitToUser(userId, SocketEvents.SESSION_STATUS_UPDATE, { status: ConnectionStatus.DISCONNECTED });
+                    isConnecting.set(userId, false); // Release lock on error
+                }
+            }, 6000); // Wait 6s for socket to be fully ready
+        }
+
         sock.ev.on('connection.update', async (update) => {
             const { connection, lastDisconnect, qr } = update;
             const pairingCode = (update as any).pairingCode;
 
+            // [DEEP TRACE] Connection Update Log
+            if (connection) logService.info(`[WA] 🔄 Estado de conexión: ${connection}`, userId);
+
             if (qr) {
-                if (phoneNumber && !codeCache.get(userId)) {
-                    setTimeout(async () => {
-                        try {
-                            const currentSock = sessions.get(userId);
-                            if (currentSock === sock && !currentSock.authState.creds.me && !codeCache.get(userId)) {
-                                const code = await currentSock.requestPairingCode(phoneNumber);
-                                codeCache.set(userId, code);
-                                socketService.emitToUser(userId, SocketEvents.SESSION_STATUS_UPDATE, { status: ConnectionStatus.AWAITING_SCAN, pairingCode: code });
-                            }
-                        } catch (e) {
-                            console.error("Pairing code error", e);
-                        }
-                    }, 3000);
-                }
+                logService.info(`[WA] 📸 QR GENERADO. Enviando a cliente...`, userId);
                 const qrDataUrl = await QRCode.toDataURL(qr);
                 qrCache.set(userId, qrDataUrl);
                 socketService.emitToUser(userId, SocketEvents.SESSION_STATUS_UPDATE, { status: ConnectionStatus.AWAITING_SCAN, qr: qrDataUrl });
             }
 
             if (pairingCode) {
+                logService.info(`[WA] 🔢 Evento de código recibido: ${pairingCode}`, userId);
                 codeCache.set(userId, pairingCode);
                 socketService.emitToUser(userId, SocketEvents.SESSION_STATUS_UPDATE, { status: ConnectionStatus.AWAITING_SCAN, pairingCode });
             }
@@ -191,6 +230,8 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
                 const disconnectError = lastDisconnect?.error as Boom | any;
                 const statusCode = disconnectError?.output?.statusCode;
                 
+                logService.warn(`[WA] 🔌 Conexión cerrada. Código: ${statusCode}`, userId);
+
                 // --- NUCLEAR ERROR HANDLING ---
                 
                 // 1. LOGOUT / BAD SESSION (Radioactive)
@@ -241,7 +282,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
             } else if (connection === 'open') {
                 isConnecting.set(userId, false);
                 reconnectAttempts.delete(userId); // Success! Reset counters
-                logService.info(`[WA] ✅ CONEXIÓN ESTABLECIDA.`, userId);
+                logService.info(`[WA] ✅ CONEXIÓN ESTABLECIDA EXITOSAMENTE.`, userId);
                 
                 qrCache.delete(userId);
                 codeCache.delete(userId);
@@ -308,13 +349,14 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
         });
 
     } catch (error) {
-        logService.error(`[WA] Error fatal en inicialización`, error, userId);
+        logService.error(`[WA] ❌ ERROR FATAL en inicialización de cliente`, error, userId);
         isConnecting.set(userId, false);
         socketService.emitToUser(userId, SocketEvents.SESSION_STATUS_UPDATE, { status: ConnectionStatus.DISCONNECTED });
     }
 }
 
 export async function disconnectWhatsApp(userId: string) {
+    logService.info(`[WA] Solicitud de desconexión manual.`, userId);
     const sock = sessions.get(userId);
     if (sock) {
         try {
