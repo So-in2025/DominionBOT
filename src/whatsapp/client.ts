@@ -43,11 +43,11 @@ const reconnectTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
 // Esto soluciona la corrupción de llaves tras reinicios.
 // Si el bot crashea esperando un reintento, Redis recuerda el estado.
 const msgRetryCounterCache = {
-    get: async (key: string) => {
+    get: async <T>(key: string): Promise<T | undefined> => {
         try {
             const data = await redis.get(`wa:retry:${key}`);
-            return data ? JSON.parse(data) : null;
-        } catch (e) { return null; }
+            return data ? (JSON.parse(data) as T) : undefined;
+        } catch (e) { return undefined; }
     },
     set: async (key: string, value: any) => {
         try {
@@ -183,7 +183,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
             defaultQueryTimeoutMs: 60000, 
             keepAliveIntervalMs: 25000,
             retryRequestDelayMs: 5000, 
-            msgRetryCounterCache: msgRetryCounterCache, // AHORA USA REDIS
+            msgRetryCounterCache: msgRetryCounterCache, // AHORA USA REDIS Y TIPADO CORRECTO
             getMessage: async (key) => { return undefined; }
         });
 
