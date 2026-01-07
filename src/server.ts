@@ -14,6 +14,7 @@ import { db } from './database.js';
 import { initCampaignWorker } from './workers/campaignWorker.js';
 import { ttsService } from './services/ttsService.js';
 import { connectToWhatsApp, getSessionStatus, softResetConnection, purgeSession, disconnectWhatsApp, activeSessions } from './whatsapp/client.js';
+import { hasValidSession } from './whatsapp/mongoAuth.js'; // IMPORTED
 import { logService } from './services/logService.js';
 import { ConnectionStatus, SocketEvents, RadarSignal } from './types.js';
 import { v4 as uuidv4 } from 'uuid';
@@ -470,9 +471,8 @@ const gracefulShutdown = async () => {
     for (const [userId, sock] of sessions.entries()) {
         console.log(`   Closing session for ${userId}...`);
         try {
-            // Usamos disconnectWhatsApp pero sin await para disparar todos en paralelo
-            // y no bloquear el apagado demasiado tiempo.
-            disconnectWhatsApp(userId);
+            // Usamos disconnectWhatsApp pero con persistConfig = true para NO desactivar el bot en DB
+            disconnectWhatsApp(userId, true);
         } catch (e) {
             console.error(`   Error closing session ${userId}`, e);
         }
@@ -523,13 +523,17 @@ httpServer.listen(Number(PORT), '0.0.0.0', async () => {
           for (const client of clients) {
               if (client.settings.isActive) {
                   const status = getSessionStatus(client.id);
-                  if (status.status === ConnectionStatus.DISCONNECTED) {
+                  // Check if we already have valid credentials to avoid loop of QR generation for lost sessions
+                  const validSession = await hasValidSession(client.id);
+                  
+                  if (status.status === ConnectionStatus.DISCONNECTED && validSession) {
                       connectToWhatsApp(client.id);
                       activeNodes++;
                   }
               }
           }
           if (activeNodes === 0) logService.info('[SERVER] No hay nodos activos pendientes.');
+          else logService.info(`[SERVER] Reconectando ${activeNodes} nodos activos.`);
       } catch (e) {
           logService.error('[SERVER] Error en reconexión masiva', e);
       }

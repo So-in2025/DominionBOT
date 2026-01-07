@@ -1,3 +1,4 @@
+
 import makeWASocket, {
   DisconnectReason,
   makeCacheableSignalKeyStore,
@@ -59,9 +60,11 @@ const msgRetryCounterCache = {
     }
 };
 
-// Logger setup - Silent to avoid console spam in production
+// Logger setup - SILENT MODE FOR PRODUCTION
+// Solo mostramos errores fatales que detengan el proceso.
+// Los errores de desencriptación son manejados internamente por Baileys (retries).
 const logger = pino({ 
-    level: 'error', 
+    level: 'fatal', 
     timestamp: () => `,"time":"${new Date().toISOString()}"`
 }); 
 
@@ -137,9 +140,14 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
         return;
     }
     
+    // Si no es manual (es reconexión automática), verificamos que realmente exista una sesión
+    // para evitar generar QRs infinitos en el log del servidor.
     if (!isManual) {
         const hasSession = await hasValidSession(userId);
-        if (!hasSession) return;
+        if (!hasSession) {
+            logService.info(`[WA] Omitiendo reconexión automática para ${userId}: No hay sesión válida.`, userId);
+            return;
+        }
     }
 
     try {
@@ -318,7 +326,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
                         await processAiResponseForJid(userId, canonicalJid);
                     }
                 } catch (err: any) {
-                    console.error("Error processing message:", err.message);
+                    // console.error("Error processing message:", err.message); // Silent for now
                 }
             }
         });
@@ -333,7 +341,12 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
 // EXPORT PARA EL SERVIDOR (Graceful Shutdown)
 export const activeSessions = sessions;
 
-export async function disconnectWhatsApp(userId: string) {
+/**
+ * Desconecta la sesión de WhatsApp.
+ * @param userId ID del usuario
+ * @param persistConfig (Opcional) Si es true, NO actualiza isActive a false en la DB. Útil para reinicios de servidor.
+ */
+export async function disconnectWhatsApp(userId: string, persistConfig: boolean = false) {
     if (reconnectTimeouts.has(userId)) {
         clearTimeout(reconnectTimeouts.get(userId));
         reconnectTimeouts.delete(userId);
@@ -348,7 +361,12 @@ export async function disconnectWhatsApp(userId: string) {
     reconnectAttempts.delete(userId);
     qrCache.delete(userId);
     codeCache.delete(userId);
-    await db.updateUserSettings(userId, { isActive: false });
+    
+    // Solo desactivamos el bot si el usuario lo pidió explícitamente (persistConfig = false)
+    if (!persistConfig) {
+        await db.updateUserSettings(userId, { isActive: false });
+    }
+    
     updateStatus(userId, ConnectionStatus.DISCONNECTED);
 }
 

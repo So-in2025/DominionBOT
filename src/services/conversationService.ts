@@ -79,9 +79,7 @@ class ConversationService {
               updates[safeJid] = conversation;
               hasUpdates = true;
           } else {
-              // AGGRESSIVE NAME UPDATE:
-              // Si item.name existe y es diferente al actual, actualizamos.
-              // PROTECCIÓN: Solo si NO ha sido editado manualmente.
+              // AGGRESSIVE NAME UPDATE (ONLY FROM HYDRATION/HISTORY)
               if (item.name && conversation.leadName !== item.name && !isEliteBotJid && !conversation.isNameEdited) {
                   conversation.leadName = item.name;
                   updates[safeJid] = conversation;
@@ -156,9 +154,9 @@ class ConversationService {
         }
 
         // AGGRESSIVE NAME UPDATE ON NEW MESSAGE
-        // Si llega un leadName nuevo (PushName) y es distinto al actual, actualizamos.
-        // PROTECCIÓN: Solo si NO ha sido editado manualmente por el vendedor.
-        if (leadName && leadName !== conversation.leadName && !isEliteBotJid && !conversation.isNameEdited) {
+        // FIX: Solo actualizamos el nombre si el mensaje viene del USUARIO (cliente).
+        // Nunca actualizamos el nombre si el mensaje lo envía el 'owner' (vendedor) o el 'bot'.
+        if (message.sender === 'user' && leadName && leadName !== conversation.leadName && !isEliteBotJid && !conversation.isNameEdited) {
              conversation.leadName = leadName;
         }
     }

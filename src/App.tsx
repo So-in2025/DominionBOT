@@ -15,7 +15,7 @@ import AgencyDashboard from './components/AgencyDashboard';
 import { CampaignsPanel } from './components/CampaignsPanel'; 
 import RadarPanel from './components/RadarPanel'; 
 import NetworkPanel from './components/NetworkPanel'; 
-import NetworkConfigModal from './components/NetworkConfigModal'; // IMPORTADO
+// NetworkConfigModal ELIMINADO
 import Toast, { ToastData } from './components/Toast';
 import HowItWorksArt from './components/HowItWorksArt';
 import HowItWorksSection from './components/HowItWorksSection';
@@ -122,7 +122,7 @@ const LandingPage: React.FC<{
                     <div className="space-y-10 text-center lg:text-left">
                         <div onClick={onOpenNetworkConfig} className={`inline-flex items-center gap-3 px-4 py-1.5 border rounded-full text-[11px] font-black uppercase tracking-[0.3em] backdrop-blur-xl transition-all cursor-pointer hover:bg-white/5 ${isServerReady ? 'border-green-500/30 bg-green-500/10 text-green-400 shadow-[0_0_20px_rgba(34,197,94,0.2)]' : 'border-red-500/30 bg-red-500/10 text-red-400'}`}>
                             <span className={`w-2 h-2 rounded-full ${isServerReady ? 'bg-green-500 animate-pulse' : 'bg-red-500 animate-pulse'}`}></span>
-                            {isServerReady ? 'SISTEMA ONLINE' : 'OFFLINE (CLICK PARA CONFIGURAR)'}
+                            {isServerReady ? 'SISTEMA ONLINE' : 'OFFLINE (CLICK PARA RECARGAR)'}
                         </div>
                         
                         <h1 className="text-5xl md:text-8xl lg:text-[90px] font-black text-white leading-tight tracking-normal py-2">
@@ -250,7 +250,7 @@ export const App = () => {
   
   const [isServerReady, setIsServerReady] = useState(false);
   const [tunnelLatency, setTunnelLatency] = useState<number | null>(null);
-  const [isNetworkConfigOpen, setIsNetworkConfigOpen] = useState(false);
+  // ELIMINADO: const [isNetworkConfigOpen, setIsNetworkConfigOpen] = useState(false);
 
   // SIMULATOR STATE (Landing Page)
   const [simStep, setSimStep] = useState(0);
@@ -318,11 +318,6 @@ export const App = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // ... (rest of the file remains unchanged)
-  // [Truncated for brevity - ensuring the rest of the file logic is preserved]
-  // This includes socket initialization, landing page simulation logic, 
-  // conversation fetching, settings updates, and the main render return.
-  
   // Initialize Socket Client
   useEffect(() => {
       if (token) {
@@ -646,7 +641,6 @@ export const App = () => {
   if (!token) {
       return (
           <>
-            <NetworkConfigModal isOpen={isNetworkConfigOpen} onClose={() => setIsNetworkConfigOpen(false)} />
             <LandingPage 
                 onAuth={() => { setAuthMode('login'); setIsAuthModalOpen(true); }}
                 onRegister={() => { setAuthMode('register'); setIsAuthModalOpen(true); }}
@@ -660,7 +654,7 @@ export const App = () => {
                 showToast={showToast}
                 isMobile={isMobile}
                 settings={null} 
-                onOpenNetworkConfig={() => setIsNetworkConfigOpen(true)}
+                onOpenNetworkConfig={() => window.location.reload()}
             />
             <AuthModal 
                 isOpen={isAuthModalOpen} 
@@ -693,7 +687,7 @@ export const App = () => {
                   connectionStatus={ConnectionStatus.CONNECTED}
                   isMobile={isMobile}
                   tunnelLatency={tunnelLatency}
-                  onOpenNetworkConfig={() => setIsNetworkConfigOpen(true)}
+                  onOpenNetworkConfig={() => window.location.reload()}
               />
               <AdminDashboard 
                   token={token} 
@@ -702,7 +696,6 @@ export const App = () => {
                   showToast={showToast}
                   onLogout={handleLogout}
               />
-              <NetworkConfigModal isOpen={isNetworkConfigOpen} onClose={() => setIsNetworkConfigOpen(false)} />
               <Toast toast={toast} onClose={() => setToast(null)} />
           </div>
       );
@@ -729,7 +722,7 @@ export const App = () => {
           connectionStatus={connectionStatus}
           isMobile={isMobile}
           tunnelLatency={tunnelLatency}
-          onOpenNetworkConfig={() => setIsNetworkConfigOpen(true)}
+          onOpenNetworkConfig={() => window.location.reload()}
       />
 
       <div className="flex-1 flex overflow-hidden relative">
@@ -862,7 +855,6 @@ export const App = () => {
           )}
       </div>
 
-      <NetworkConfigModal isOpen={isNetworkConfigOpen} onClose={() => setIsNetworkConfigOpen(false)} />
       <LegalModal type={legalModalType} onClose={() => setLegalModalType(null)} />
       <Toast toast={toast} onClose={() => setToast(null)} />
     </div>
