@@ -16,11 +16,35 @@ interface ImportMeta {
 
 // CLAVE DE ALMACENAMIENTO LOCAL PARA LA URL DINÁMICA (SMART LINK)
 export const STORAGE_KEY_BACKEND = 'dominion_backend_url';
+// CLAVE PARA RASTREAR CAMBIOS EN EL DEPLOYMENT
+const DEPLOYMENT_HASH_KEY = 'dominion_deploy_hash';
 
 // Detección segura y ordenada de la URL del Backend para el cliente.
 const getEnvUrl = (): { url: string; source: string } => {
+    // FIX: Cast import.meta to `any`
+    const viteUrl = (import.meta as any).env.VITE_BACKEND_URL;
+
+    // --- DEPLOYMENT DETECTOR (AUTO-PURGE) ---
+    // Si detectamos que la variable de entorno de Vercel cambió (hubo un redeploy con nueva URL),
+    // forzamos la limpieza del LocalStorage para evitar que el usuario se quede pegado a la URL vieja.
+    if (typeof window !== 'undefined' && window.localStorage && viteUrl) {
+        const lastKnownDeploy = window.localStorage.getItem(DEPLOYMENT_HASH_KEY);
+        
+        if (lastKnownDeploy !== viteUrl) {
+            console.log(`%c [CONFIG] 🚀 DETECTADO NUEVO DEPLOYMENT. URL: ${viteUrl}`, 'color: #00ff00; font-weight: bold;');
+            console.log(`%c [CONFIG] 🧹 Purgando Smart Link antiguo (${lastKnownDeploy}) para priorizar Vercel.`, 'color: #FFA500;');
+            
+            // Borramos la sobreescritura manual antigua
+            window.localStorage.removeItem(STORAGE_KEY_BACKEND);
+            // Actualizamos el hash del deployment actual
+            window.localStorage.setItem(DEPLOYMENT_HASH_KEY, viteUrl);
+        }
+    }
+    // ----------------------------------------
+
     // 1. PRIORIDAD MÁXIMA: URL dinámica desde LocalStorage (Smart Link del Frontend)
     // Permite al usuario final sobreescribir la URL sin necesidad de un redeploy.
+    // Solo aplica si NO acabamos de detectar un cambio de deployment arriba.
     if (typeof window !== 'undefined' && window.localStorage) {
         const storedUrl = window.localStorage.getItem(STORAGE_KEY_BACKEND);
         if (storedUrl && storedUrl.startsWith('http')) {
@@ -29,24 +53,16 @@ const getEnvUrl = (): { url: string; source: string } => {
     }
 
     // 2. ENTORNO VITE (Vercel / Build de Producción)
-    // Vite reemplaza 'import.meta.env.VITE_BACKEND_URL' con el valor real durante el build.
-    // Esta es la forma correcta y principal de configurar la URL en producción.
-    // FIX: Cast import.meta to `any` to access the `env` property, as the TypeScript compiler is not picking up the interface augmentation.
-    const viteUrl = (import.meta as any).env.VITE_BACKEND_URL;
     if (viteUrl && viteUrl.length > 5) {
         return { url: viteUrl, source: 'Vite Environment (Vercel)' };
     }
 
     // 3. ENTORNO DE DESARROLO LOCAL
-    // 'import.meta.env.DEV' es una variable booleana que Vite establece en true cuando corres 'npm run dev'.
-    // FIX: Cast import.meta to `any` to access the `env` property, as the TypeScript compiler is not picking up the interface augmentation.
     if ((import.meta as any).env.DEV) {
-        // En desarrollo local, apuntamos a tu máquina local por defecto
         return { url: "http://localhost:3001", source: 'Localhost (Dev)' };
     }
     
     // 4. RED DE SEGURIDAD (FALLBACK DE PRODUCCIÓN)
-    // Si el build de producción se ejecuta sin la variable VITE_BACKEND_URL, usará esta URL.
     const HARDCODED_BACKEND_URL = "http://localhost:3001";
     return { url: HARDCODED_BACKEND_URL, source: 'Hardcoded Fallback' };
 };
