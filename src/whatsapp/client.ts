@@ -1,4 +1,3 @@
-
 import makeWASocket, {
   DisconnectReason,
   makeCacheableSignalKeyStore,
@@ -23,7 +22,7 @@ import * as QRCode from 'qrcode';
 import { Buffer } from 'buffer'; 
 import { normalizeJid } from '../utils/jidUtils.js';
 import { socketService } from '../services/socketService.js';
-import { redis } from '../redis.js'; // IMPORTANTE: Usar Redis para el Retry Cache
+import { redis } from '../redis.js'; 
 
 // GLOBAL STATE
 // Mantenemos sessions en RAM porque son objetos Socket vivos (TCP connections)
@@ -39,30 +38,24 @@ const connectionStateMap = new Map<string, ConnectionStatus>();
 const reconnectAttempts = new Map<string, number>();
 const reconnectTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
 
-// --- PERSISTENT RETRY CACHE (REDIS) ---
-// Esto soluciona la corrupción de llaves tras reinicios.
-// Si el bot crashea esperando un reintento, Redis recuerda el estado.
+// --- IN-MEMORY RETRY CACHE ---
+// Baileys 'CacheStore' interface requires synchronous access.
+// Redis is async, so we cannot use it directly here without blocking the event loop.
+// We use a Map for standard in-memory caching.
+const retryCacheMap = new Map<string, any>();
+
 const msgRetryCounterCache = {
-    get: async <T>(key: string): Promise<T | undefined> => {
-        try {
-            const data = await redis.get(`wa:retry:${key}`);
-            return data ? (JSON.parse(data) as T) : undefined;
-        } catch (e) { return undefined; }
+    get: <T>(key: string): T | undefined => {
+        return retryCacheMap.get(key) as T | undefined;
     },
-    set: async (key: string, value: any) => {
-        try {
-            // Guardamos el estado del reintento por 24hs.
-            await redis.set(`wa:retry:${key}`, JSON.stringify(value), 'EX', 60 * 60 * 24);
-        } catch (e) { console.error('Redis Retry Set Error', e); }
+    set: (key: string, value: any) => {
+        retryCacheMap.set(key, value);
     },
-    del: async (key: string) => {
-        try {
-            await redis.del(`wa:retry:${key}`);
-        } catch (e) { console.error('Redis Retry Del Error', e); }
+    del: (key: string) => {
+        retryCacheMap.delete(key);
     },
-    flushAll: async () => {
-        // No borramos todo Redis por seguridad, dejamos que expiren solos o borramos por patrón si fuera necesario.
-        // await redis.del(...) 
+    flushAll: () => {
+        retryCacheMap.clear();
     }
 };
 
@@ -132,7 +125,7 @@ export function getSocket(userId: string): WASocket | undefined {
 }
 
 // ----------------------------------------------------------------------
-// CORE CONNECTION LOGIC (v5.5 - REDIS RETRY PERSISTENCE)
+// CORE CONNECTION LOGIC (v5.5 - MEMORY RETRY CACHE)
 // ----------------------------------------------------------------------
 export async function connectToWhatsApp(userId: string, phoneNumber?: string, isManual: boolean = false) {
     if (reconnectTimeouts.has(userId)) {
@@ -183,7 +176,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
             defaultQueryTimeoutMs: 60000, 
             keepAliveIntervalMs: 25000,
             retryRequestDelayMs: 5000, 
-            msgRetryCounterCache: msgRetryCounterCache, // AHORA USA REDIS Y TIPADO CORRECTO
+            msgRetryCounterCache: msgRetryCounterCache, // Synchronous Cache
             getMessage: async (key) => { return undefined; }
         });
 
@@ -385,10 +378,9 @@ export async function purgeSession(userId: string) {
     codeCache.delete(userId);
     connectionStateMap.delete(userId); 
     
-    // Clear Redis Retry Cache for this user
+    // Clear Redis Retry Cache for this user if it were used
     try {
-        const keys = await redis.keys(`wa:retry:*`); // Ideally scope this to user if Baileys supports it better, but for now flush retry keys is safer on nuke
-        if (keys.length > 0) await redis.del(keys);
+        // await redis.del(`wa:retry:${userId}`); // No longer applicable with Map
     } catch(e) {}
 
     await clearBindedSession(userId);

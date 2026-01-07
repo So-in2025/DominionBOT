@@ -27,6 +27,20 @@ const { createBullBoard } = require('@bull-board/api');
 const { BullMQAdapter } = require('@bull-board/api/bullMQAdapter');
 const { ExpressAdapter } = require('@bull-board/express');
 
+// --- GLOBAL ERROR HANDLERS (THE AIRBAGS) ---
+// Esto evita que el servidor crashee completamente si falla Redis o WhatsApp inesperadamente.
+process.on('uncaughtException', (err) => {
+    console.error('🚨 [CRITICAL] Uncaught Exception:', err);
+    // No salimos del proceso, solo logueamos. El sistema debe intentar seguir vivo.
+    logService.error('[SYSTEM] Uncaught Exception (Server kept alive)', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('🚨 [CRITICAL] Unhandled Rejection at:', promise, 'reason:', reason);
+    // Captura errores de promesas no manejadas (común en desconexiones de base de datos/red)
+    logService.error('[SYSTEM] Unhandled Rejection (Server kept alive)', reason as any);
+});
+
 const app = express();
 app.use(cors() as any);
 app.use(express.json({ limit: '10mb' }) as any);
@@ -478,7 +492,8 @@ process.on('SIGINT', gracefulShutdown);
 httpServer.listen(Number(PORT), '0.0.0.0', async () => {
   console.log(`\n    🦅 DOMINION BACKEND ACTIVO EN PUERTO ${PORT}`);
   console.log(`    🌍 ARQUITECTURA: LOCAL + CLOUDFLARE ZERO TRUST + SOCKET.IO`);
-  console.log(`    📡 CLOUDFLARE TUNNEL: Ejecuta 'cloudflared tunnel --url http://localhost:3001 --protocol quic' si usas túnel.`);
+  console.log(`\x1b[36m    🛡️ COMANDO BLINDADO (Anti-Corte):`);
+  console.log(`    cloudflared tunnel --url http://localhost:3001 --protocol http2 --ha-connections 4\x1b[0m`);
   console.log(`    🔗 LUEGO COPIA LA URL (https://....trycloudflare.com) EN EL MODAL DE "ENLACE SATELITAL" DEL FRONTEND.`);
   
   // 1. Initialize Workers (Independent)
