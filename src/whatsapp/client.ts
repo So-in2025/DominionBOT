@@ -31,9 +31,12 @@ const codeCache = new Map<string, string>();
 const isConnecting = new Map<string, boolean>(); 
 const retryMap = new Map<string, any>();
 
+// REAL-TIME STATE TRACKING (Source of Truth)
+const connectionStateMap = new Map<string, ConnectionStatus>();
+
 // RECONNECTION STATE (Exponential Backoff & Timeout Tracking)
 const reconnectAttempts = new Map<string, number>();
-const reconnectTimeouts = new Map<string, NodeJS.Timeout>();
+const reconnectTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
 
 const msgRetryCounterCache = {
     get: (key: string) => retryMap.get(key),
@@ -48,6 +51,13 @@ const logger = pino({ level: 'silent' });
 export const ELITE_BOT_JID = '5491112345678@s.whatsapp.net';
 export const ELITE_BOT_NAME = 'Simulador Neural';
 export const DOMINION_NETWORK_JID = '5491110000000@s.whatsapp.net';
+
+// --- HELPERS ---
+const updateStatus = (userId: string, status: ConnectionStatus) => {
+    connectionStateMap.set(userId, status);
+    // Emit to socket immediately for UI responsiveness
+    socketService.emitToUser(userId, SocketEvents.SESSION_STATUS_UPDATE, { status });
+};
 
 // --- MESSAGE EXTRACTION UTILS ---
 function extractMessageContent(msg: proto.IWebMessageInfo | proto.IMessage): string | null {
@@ -82,19 +92,19 @@ function extractMessageContent(msg: proto.IWebMessageInfo | proto.IMessage): str
 }
 
 export function getSessionStatus(userId: string): { status: ConnectionStatus, qr?: string, pairingCode?: string } {
-    const sock = sessions.get(userId);
+    const currentStatus = connectionStateMap.get(userId) || ConnectionStatus.DISCONNECTED;
     const qr = qrCache.get(userId);
     const code = codeCache.get(userId);
 
-    // @ts-ignore
-    if (sock?.user) return { status: ConnectionStatus.CONNECTED };
-    
-    if (code) return { status: ConnectionStatus.AWAITING_SCAN, pairingCode: code };
-    if (qr) return { status: ConnectionStatus.AWAITING_SCAN, qr };
-    
-    if (isConnecting.get(userId)) return { status: ConnectionStatus.GENERATING_QR };
+    // Prioritize QR/Code presence if we are in waiting state
+    if (currentStatus === ConnectionStatus.AWAITING_SCAN || currentStatus === ConnectionStatus.GENERATING_QR) {
+        if (code) return { status: ConnectionStatus.AWAITING_SCAN, pairingCode: code };
+        if (qr) return { status: ConnectionStatus.AWAITING_SCAN, qr };
+    }
 
-    return { status: ConnectionStatus.DISCONNECTED };
+    // Use the explicit state map instead of inferring from 'sock.user'
+    // This prevents "False Connected" states when credentials exist but socket is closed.
+    return { status: currentStatus };
 }
 
 export function getSocket(userId: string): WASocket | undefined {
@@ -105,33 +115,31 @@ export function getSocket(userId: string): WASocket | undefined {
 // CORE CONNECTION LOGIC (v4.0 - ANTI-FRAGILE)
 // ----------------------------------------------------------------------
 export async function connectToWhatsApp(userId: string, phoneNumber?: string, isManual: boolean = false) {
-    if (isConnecting.get(userId)) {
-        // [DEEP TRACE] Warning about lock
-        logService.warn(`[WA] ⚠️ Intento de conexión duplicado ignorado. Lock activo.`, userId);
-        return;
-    }
-    
-    // Clear any pending reconnects since we are connecting now
+    // CRITICAL: Clear any pending reconnection timer to avoid race conditions
     if (reconnectTimeouts.has(userId)) {
         clearTimeout(reconnectTimeouts.get(userId));
         reconnectTimeouts.delete(userId);
+    }
+
+    if (isConnecting.get(userId)) {
+        logService.warn(`[WA] ⚠️ Intento de conexión duplicado ignorado. Lock activo.`, userId);
+        return;
     }
     
     // Safety: If automatic, ensure session exists
     if (!isManual) {
         const hasSession = await hasValidSession(userId);
         if (!hasSession) {
-            // logService.debug(`[WA] No hay sesión previa válida para autoconectar.`, userId);
             return;
         }
     }
 
     try {
         isConnecting.set(userId, true);
+        // Set initial state to GENERATING_QR (or Connecting) to indicate activity
+        updateStatus(userId, ConnectionStatus.GENERATING_QR);
         
-        // [DEEP TRACE] Step 1: Initialization
         logService.info(`[WA] 🚀 [STEP 1/4] Iniciando secuencia de arranque para ${phoneNumber || 'QR Mode'}`, userId);
-        socketService.emitToUser(userId, SocketEvents.SESSION_STATUS_UPDATE, { status: ConnectionStatus.GENERATING_QR });
         
         // Reset QR/Code caches on new attempt
         if (isManual) {
@@ -140,7 +148,6 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
             reconnectAttempts.set(userId, 0); 
         }
 
-        // [DEEP TRACE] Step 2: DB & Auth State
         logService.info(`[WA] [STEP 2/4] Cargando estado de autenticación (MongoDB/Redis)...`, userId);
         const { state, saveCreds } = await useMongoDBAuthState(userId);
         
@@ -148,7 +155,6 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
         const { version } = await fetchLatestBaileysVersion();
         const user = await db.getUser(userId);
 
-        // [DEEP TRACE] Step 3: Socket Construction
         logService.info(`[WA] [STEP 3/4] Construyendo Socket...`, userId);
 
         const sock = makeWASocket({
@@ -167,7 +173,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
             // --- STABILITY SETTINGS ---
             syncFullHistory: false, 
             markOnlineOnConnect: false, 
-            connectTimeoutMs: 60000, // Increased timeout
+            connectTimeoutMs: 60000, 
             defaultQueryTimeoutMs: 60000, 
             keepAliveIntervalMs: 25000,
             retryRequestDelayMs: 5000, 
@@ -179,16 +185,13 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
 
         sock.ev.on('creds.update', saveCreds);
 
-        // [DEEP TRACE] Step 4: Event Listening
         logService.info(`[WA] [STEP 4/4] Escuchando eventos de conexión...`, userId);
 
-        // [PAIRING CODE LOGIC] - Needs to be triggered explicitly if phone provided
         if (phoneNumber && !sock.authState.creds.registered) {
-            logService.info(`[WA] 🔢 Solicitando código de emparejamiento para ${phoneNumber}... (Esperando inicio de socket)`, userId);
+            logService.info(`[WA] 🔢 Solicitando código de emparejamiento para ${phoneNumber}...`, userId);
             
             setTimeout(async () => {
                 try {
-                    // Check if socket is still valid
                     const currentSock = sessions.get(userId);
                     if (!currentSock) {
                          logService.warn(`[WA] Socket muerto antes de pedir código.`, userId);
@@ -200,39 +203,41 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
                         const code = await currentSock.requestPairingCode(phoneNumber);
                         codeCache.set(userId, code);
                         logService.info(`[WA] ✅ CÓDIGO RECIBIDO: ${code}`, userId);
+                        updateStatus(userId, ConnectionStatus.AWAITING_SCAN);
                         socketService.emitToUser(userId, SocketEvents.SESSION_STATUS_UPDATE, { status: ConnectionStatus.AWAITING_SCAN, pairingCode: code });
                     }
                 } catch (e: any) {
-                    logService.error(`[WA] ❌ Error solicitando código de emparejamiento: ${e.message}`, e, userId);
-                    socketService.emitToUser(userId, SocketEvents.SESSION_STATUS_UPDATE, { status: ConnectionStatus.DISCONNECTED });
-                    isConnecting.set(userId, false); // Release lock on error
+                    logService.error(`[WA] ❌ Error solicitando código: ${e.message}`, e, userId);
+                    updateStatus(userId, ConnectionStatus.DISCONNECTED);
+                    isConnecting.set(userId, false); 
                 }
-            }, 6000); // Wait 6s for socket to be fully ready
+            }, 6000); 
         }
 
         sock.ev.on('connection.update', async (update) => {
             const { connection, lastDisconnect, qr } = update;
             const pairingCode = (update as any).pairingCode;
 
-            // [DEEP TRACE] Connection Update Log
             if (connection) logService.info(`[WA] 🔄 Estado de conexión: ${connection}`, userId);
 
             if (qr) {
                 logService.info(`[WA] 📸 QR GENERADO. Enviando a cliente...`, userId);
                 const qrDataUrl = await QRCode.toDataURL(qr);
                 qrCache.set(userId, qrDataUrl);
+                updateStatus(userId, ConnectionStatus.AWAITING_SCAN);
                 socketService.emitToUser(userId, SocketEvents.SESSION_STATUS_UPDATE, { status: ConnectionStatus.AWAITING_SCAN, qr: qrDataUrl });
             }
 
             if (pairingCode) {
-                logService.info(`[WA] 🔢 Evento de código recibido: ${pairingCode}`, userId);
                 codeCache.set(userId, pairingCode);
+                updateStatus(userId, ConnectionStatus.AWAITING_SCAN);
                 socketService.emitToUser(userId, SocketEvents.SESSION_STATUS_UPDATE, { status: ConnectionStatus.AWAITING_SCAN, pairingCode });
             }
 
             if (connection === 'close') {
                 isConnecting.set(userId, false);
                 sessions.delete(userId);
+                updateStatus(userId, ConnectionStatus.DISCONNECTED);
                 
                 const disconnectError = lastDisconnect?.error as Boom | any;
                 const statusCode = disconnectError?.output?.statusCode;
@@ -249,56 +254,49 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
                     qrCache.delete(userId);
                     codeCache.delete(userId);
                     reconnectAttempts.delete(userId);
-                    
-                    socketService.emitToUser(userId, SocketEvents.SESSION_STATUS_UPDATE, { status: ConnectionStatus.DISCONNECTED });
-                    return; // DO NOT RECONNECT
+                    // State already updated to DISCONNECTED above
+                    return; 
                 }
 
-                // 2. CONNECTION REPLACED (Another instance opened)
+                // 2. CONNECTION REPLACED 
                 if (statusCode === DisconnectReason.connectionReplaced) {
-                    logService.warn(`[WA] ⚠️ Conexión reemplazada desde otro nodo. Deteniendo este proceso.`, userId);
-                    socketService.emitToUser(userId, SocketEvents.SESSION_STATUS_UPDATE, { status: ConnectionStatus.DISCONNECTED });
-                    return; // DO NOT RECONNECT
+                    logService.warn(`[WA] ⚠️ Conexión reemplazada.`, userId);
+                    return; 
                 }
 
-                // 3. RESTART REQUIRED (Crypto issue, usually fixable by restart)
+                // 3. RESTART REQUIRED 
                 if (statusCode === DisconnectReason.restartRequired) {
-                    logService.info(`[WA] Reinicio de protocolo criptográfico solicitado.`, userId);
-                    socketService.emitToUser(userId, SocketEvents.SESSION_STATUS_UPDATE, { status: ConnectionStatus.RESETTING });
-                    connectToWhatsApp(userId, phoneNumber); // Fast reconnect
+                    logService.info(`[WA] Reinicio solicitado.`, userId);
+                    updateStatus(userId, ConnectionStatus.RESETTING);
+                    connectToWhatsApp(userId, phoneNumber); 
                     return;
                 }
 
-                // 4. CONNECTION LOST / TIMED OUT (Network Issue)
-                // Implement Exponential Backoff to prevent DB hammering
+                // 4. CONNECTION LOST / TIMED OUT
                 const attempts = reconnectAttempts.get(userId) || 0;
-                // Cap delay at 60 seconds. Formula: 2^attempts * 1000
                 const delay = Math.min(Math.pow(2, attempts) * 1000, 60000);
                 
                 logService.warn(`[WA] Desconectado (${statusCode}). Reintento #${attempts + 1} en ${delay}ms...`, userId);
                 
-                socketService.emitToUser(userId, SocketEvents.SESSION_STATUS_UPDATE, { status: ConnectionStatus.DISCONNECTED });
-                
                 reconnectAttempts.set(userId, attempts + 1);
-                
                 qrCache.delete(userId);
                 codeCache.delete(userId);
 
-                // TRACK TIMEOUT TO ALLOW CANCELLATION
                 const timeoutId = setTimeout(() => connectToWhatsApp(userId, phoneNumber), delay);
                 reconnectTimeouts.set(userId, timeoutId);
 
             } else if (connection === 'open') {
                 isConnecting.set(userId, false);
-                reconnectAttempts.delete(userId); // Success! Reset counters
+                reconnectAttempts.delete(userId); 
                 
-                // Clear any pending timeout just in case
                 if (reconnectTimeouts.has(userId)) {
                     clearTimeout(reconnectTimeouts.get(userId));
                     reconnectTimeouts.delete(userId);
                 }
 
+                // *** CRITICAL: THIS IS THE ONLY PLACE WE SET 'CONNECTED' ***
                 logService.info(`[WA] ✅ CONEXIÓN ESTABLECIDA EXITOSAMENTE.`, userId);
+                updateStatus(userId, ConnectionStatus.CONNECTED);
                 
                 qrCache.delete(userId);
                 codeCache.delete(userId);
@@ -308,8 +306,6 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
                     await db.updateUser(userId, { whatsapp_number: number });
                     await db.updateUserSettings(userId, { isActive: true });
                 }
-                
-                socketService.emitToUser(userId, SocketEvents.SESSION_STATUS_UPDATE, { status: ConnectionStatus.CONNECTED });
             }
         });
 
@@ -367,17 +363,15 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
     } catch (error) {
         logService.error(`[WA] ❌ ERROR FATAL en inicialización de cliente`, error, userId);
         isConnecting.set(userId, false);
-        socketService.emitToUser(userId, SocketEvents.SESSION_STATUS_UPDATE, { status: ConnectionStatus.DISCONNECTED });
+        updateStatus(userId, ConnectionStatus.DISCONNECTED);
     }
 }
 
 export async function disconnectWhatsApp(userId: string) {
     logService.info(`[WA] Solicitud de desconexión manual.`, userId);
     
-    // CANCEL PENDING RECONNECTS
-    const pendingTimeout = reconnectTimeouts.get(userId);
-    if (pendingTimeout) {
-        clearTimeout(pendingTimeout);
+    if (reconnectTimeouts.has(userId)) {
+        clearTimeout(reconnectTimeouts.get(userId));
         reconnectTimeouts.delete(userId);
         logService.debug(`[WA] Reintento pendiente cancelado para ${userId}`);
     }
@@ -394,13 +388,12 @@ export async function disconnectWhatsApp(userId: string) {
     qrCache.delete(userId);
     codeCache.delete(userId);
     await db.updateUserSettings(userId, { isActive: false });
-    socketService.emitToUser(userId, SocketEvents.SESSION_STATUS_UPDATE, { status: ConnectionStatus.DISCONNECTED });
+    updateStatus(userId, ConnectionStatus.DISCONNECTED);
 }
 
 export async function softResetConnection(userId: string) {
     logService.warn(`[WA] Soft Reset solicitado para usuario`, userId);
     
-    // CANCEL RECONNECTS
     if (reconnectTimeouts.has(userId)) {
         clearTimeout(reconnectTimeouts.get(userId));
         reconnectTimeouts.delete(userId);
@@ -417,45 +410,41 @@ export async function softResetConnection(userId: string) {
     codeCache.delete(userId);
     msgRetryCounterCache.flushAll();
     
-    socketService.emitToUser(userId, SocketEvents.SESSION_STATUS_UPDATE, { status: ConnectionStatus.RESETTING });
+    updateStatus(userId, ConnectionStatus.RESETTING);
     // Force connect with manual flag
     await connectToWhatsApp(userId, undefined, true);
 }
 
-// HARD PURGE: Deletes session from DB/Redis + Stops process
+// HARD PURGE
 export async function purgeSession(userId: string) {
     logService.warn(`[WA] ☢️ PURGA DE SESIÓN SOLICITADA (NUCLEAR).`, userId);
     
-    // 1. Cancel Reconnects
     if (reconnectTimeouts.has(userId)) {
         clearTimeout(reconnectTimeouts.get(userId));
         reconnectTimeouts.delete(userId);
     }
 
-    // 2. Kill Socket
     const sock = sessions.get(userId);
     if (sock) {
         try { sock.end(undefined); } catch (e) {}
         sessions.delete(userId);
     }
     
-    // 3. Clear Memory State
-    isConnecting.set(userId, false);
+    isConnecting.set(userId, false); 
     reconnectAttempts.delete(userId);
     qrCache.delete(userId);
     codeCache.delete(userId);
+    connectionStateMap.delete(userId); // Explicitly clear status state
     
-    // Nuke retry cache
     const keys = Array.from(retryMap.keys());
     keys.forEach(k => {
         if(k.startsWith(userId)) retryMap.delete(k);
     });
 
-    // 4. Clear Persistence (Mongo + Redis)
     await clearBindedSession(userId);
     await db.updateUserSettings(userId, { isActive: false });
     
-    socketService.emitToUser(userId, SocketEvents.SESSION_STATUS_UPDATE, { status: ConnectionStatus.DISCONNECTED });
+    updateStatus(userId, ConnectionStatus.DISCONNECTED);
 }
 
 // GRACEFUL SHUTDOWN HELPER
@@ -464,13 +453,11 @@ export async function closeAllSessions() {
     for (const [userId, sock] of sessions) {
         try {
             sock.end(undefined);
-            logService.debug(`[WA-MANAGER] Sesión cerrada: ${userId}`);
         } catch (e) {
             console.error(`Error cerrando sesión ${userId}`, e);
         }
     }
     sessions.clear();
-    // Clear all timeouts
     for (const t of reconnectTimeouts.values()) clearTimeout(t);
     reconnectTimeouts.clear();
 }
@@ -498,8 +485,6 @@ export async function sendMessage(senderId: string, jid: string, text: string, i
             throw new Error("Socket cerrado");
         }
 
-        // --- HUMANIZATION LAYER: TYPING SIMULATION ---
-        // Only trigger typing simulation for text messages to mimic real behavior
         if (!imageUrl) {
             const delay = calculateTypingDelay(text);
             await currentSock.sendPresenceUpdate('composing', canonicalJid);
@@ -518,7 +503,7 @@ export async function sendMessage(senderId: string, jid: string, text: string, i
                     return await currentSock.sendMessage(canonicalJid, { text });
                 }
             })(),
-            new Promise((_, reject) => setTimeout(() => reject(new Error("TIMEOUT_SEND")), 15000)) // Increased timeout to account for typing
+            new Promise((_, reject) => setTimeout(() => reject(new Error("TIMEOUT_SEND")), 15000)) 
         ]);
     };
 
@@ -590,7 +575,6 @@ export async function processAiResponseForJid(userId: string, jid: string, force
 
     if (aiResult?.responseText) {
         try {
-            // Typing simulation is now handled inside sendMessage
             const sent = await sendMessage(userId, jid, aiResult.responseText);
             
             if (sent?.key.id) {
@@ -621,7 +605,6 @@ export async function processAiResponseForJid(userId: string, jid: string, force
             updates.suggestedReplies = aiResult.suggestedReplies;
         }
 
-        // Updated to use the service which emits the socket event
         await conversationService.updateConversation(userId, { ...freshConvo, ...updates });
     }
 }

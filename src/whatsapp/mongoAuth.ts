@@ -1,4 +1,3 @@
-
 import { proto, AuthenticationCreds, initAuthCreds, BufferJSON } from '@whiskeysockets/baileys';
 import mongoose, { Schema, Model } from 'mongoose';
 import { redis } from '../redis.js'; 
@@ -23,7 +22,7 @@ const SESSION_TTL = 60 * 60 * 24 * 7;
 // L1 Memory Buffer: Stores pending writes before they go to Mongo.
 // Key: Mongo _id, Value: Serialized Data string or null (for deletion)
 const writeBuffer = new Map<string, string | null>();
-let flushInterval: NodeJS.Timeout | null = null;
+let flushInterval: ReturnType<typeof setInterval> | null = null;
 const FLUSH_INTERVAL_MS = 10000; // Flush to Mongo every 10 seconds
 
 /**

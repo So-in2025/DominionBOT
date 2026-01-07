@@ -1,4 +1,3 @@
-
 /**
  * DOMINION BOT - Configuración de Infraestructura (FRONTEND-ONLY)
  * ESTRICTO: La variable de entorno de Vercel es la ÚNICA fuente de verdad.
@@ -14,19 +13,18 @@ interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
 
-export const STORAGE_KEY_BACKEND = 'dominion_backend_url';
+export const STORAGE_KEY_BACKEND = 'saas_backend_override';
 
 /**
  * URL del Backend Resuelta:
- * Prioridad 0: Override Manual (LocalStorage) - Para recuperar acceso si la URL cambia.
  * Prioridad 1: Variable de Entorno VITE_BACKEND_URL.
  * Fallback: Localhost (solo para desarrollo local si no hay variable).
  */
 const getBackendUrl = (): string => {
-    // 0. Check LocalStorage Override (Browser only)
+    // 0. Local Storage Override (Critical for NetworkConfigModal)
     if (typeof window !== 'undefined') {
-        const manualUrl = localStorage.getItem(STORAGE_KEY_BACKEND);
-        if (manualUrl) return manualUrl;
+        const localOverride = localStorage.getItem(STORAGE_KEY_BACKEND);
+        if (localOverride) return localOverride.replace(/\/$/, '');
     }
 
     // 1. Variable de Entorno (Vercel / Producción / .env)
