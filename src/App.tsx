@@ -1,6 +1,6 @@
 
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { Conversation, BotSettings, Message, View, ConnectionStatus, User, LeadStatus, PromptArchetype, Testimonial, SystemSettings } from './types';
+import { Conversation, BotSettings, Message, View, ConnectionStatus, User, LeadStatus, PromptArchetype, Testimonial, SystemSettings, SocketEvents } from './types';
 import Header from './components/Header';
 import ConversationList from './components/ConversationList';
 import ChatWindow from './components/ChatWindow';
@@ -25,6 +25,7 @@ import NetworkConfigModal from './components/NetworkConfigModal';
 import { BACKEND_URL, API_HEADERS, getAuthHeaders } from './config';
 import { audioService } from './services/audioService';
 import { openSupportWhatsApp } from './utils/textUtils';
+import { socketClient } from './services/socketClient'; // NEW: Import Socket Client
 
 // --- DUAL LOOP SIMULATION SCRIPTS ---
 
@@ -268,24 +269,18 @@ export function App() {
   
   // Tunnel Heartbeat State
   const [tunnelLatency, setTunnelLatency] = useState<number | null>(null);
-  const [failureCount, setFailureCount] = useState(0); // Track failed heartbeats
-  const [showNetworkConfig, setShowNetworkConfig] = useState(false); // Modal state
-
-  const statusPollingIntervalRef = useRef<number | null>(null);
-  const convoPollingIntervalRef = useRef<number | null>(null);
-  const heartbeatIntervalRef = useRef<number | null>(null);
-  
-  // DELTA POLLING REF
-  const lastPollCursor = useRef<string | null>(null);
+  const [failureCount, setFailureCount] = useState(0); 
+  const [showNetworkConfig, setShowNetworkConfig] = useState(false); 
 
   const [visibleMessages, setVisibleMessages] = useState<any[]>([]);
+  const [isSimulating, setIsSimulating] = useState(false);
   const [isSimTyping, setIsSimTyping] = useState(false);
-  const [simulationLoopIndex, setSimulationLoopIndex] = useState(0); // For dual loop
+  const [simulationLoopIndex, setSimulationLoopIndex] = useState(0); 
   const simScrollRef = useRef<HTMLDivElement>(null);
 
-  const [isMobileView, setIsMobileView] = useState(window.innerWidth < 768); // Detect mobile view
+  const [isMobileView, setIsMobileView] = useState(window.innerWidth < 768); 
 
-  // ORPHAN CHECK: If selectedConversationId is not in conversations, reset it
+  // ORPHAN CHECK
   useEffect(() => {
       if (selectedConversationId && !conversations.some(c => c.id === selectedConversationId)) {
           setSelectedConversationId(null);
@@ -293,7 +288,7 @@ export function App() {
   }, [conversations, selectedConversationId]);
 
   useEffect(() => {
-    const handleResize = () => setIsMobileView(window.innerWidth < 1024); // Changed to 1024 to match lg breakpoint
+    const handleResize = () => setIsMobileView(window.innerWidth < 1024); 
     window.addEventListener('resize', handleResize);
     handleResize();
     return () => window.removeEventListener('resize', handleResize);
@@ -313,15 +308,9 @@ export function App() {
                 const contentType = res.headers.get("content-type");
                 if (contentType && contentType.indexOf("application/json") !== -1) {
                     setSystemSettings(await res.json());
-                } else {
-                    console.error("No se pudo obtener la configuración: la respuesta no es JSON.", await res.text());
                 }
-            } else {
-                console.error(`Fallo al obtener la configuración del sistema: Status ${res.status}`);
             }
-        } catch (e) {
-            console.error("No se pudo obtener la configuración del sistema para la página de destino", e);
-        }
+        } catch (e) {}
     };
     fetchSystemSettings();
   }, []);
@@ -339,25 +328,23 @@ export function App() {
   const handleLogout = () => {
       localStorage.removeItem('saas_token');
       localStorage.removeItem('saas_role');
-      sessionStorage.removeItem('saas_token'); // Clear session storage token too
+      sessionStorage.removeItem('saas_token'); 
       sessionStorage.removeItem('trial_ended_alert_played');
+      
+      socketClient.disconnect(); // Disconnect socket
+
       setToken(null);
       setUserRole(null);
       setCurrentUser(null);
       setShowLanding(false);
       setCurrentView(View.CHATS);
       setAuditTarget(null);
-      if (statusPollingIntervalRef.current) clearInterval(statusPollingIntervalRef.current);
-      if (convoPollingIntervalRef.current) clearInterval(convoPollingIntervalRef.current);
-      if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current);
       setBackendError(null); 
-      lastPollCursor.current = null; // Reset delta cursor
   };
 
   useEffect(() => {
       const initAudioAndPlayIntro = () => {
           audioService.initContext();
-          // Check localStorage first for persistent login, then sessionStorage for session-only login
           const isLoggedIn = localStorage.getItem('saas_token') || sessionStorage.getItem('saas_token');
           const isLanding = !isLoggedIn;
           if (isLanding && !sessionStorage.getItem('landing_intro_played')) {
@@ -369,116 +356,80 @@ export function App() {
       return () => document.removeEventListener('click', initAudioAndPlayIntro, true);
   }, []);
 
-  // Defined via useCallback for reuse
-  // DELTA POLLING IMPLEMENTATION
-  const fetchConversations = useCallback(async () => {
+  // HYDRATION: Initial Fetch
+  const hydrateConversations = useCallback(async () => {
     if (!token) return;
     try {
-        // FIX: FORCE FULL SYNC IF LOCAL LIST IS EMPTY
-        // This acts as a self-healing mechanism if the user deletes all chats
-        // and the delta logic gets stuck.
-        const isDelta = !!lastPollCursor.current && conversations.length > 0;
-        
-        const endpoint = isDelta 
-            ? `${BACKEND_URL}/api/conversations?since=${lastPollCursor.current}`
-            : `${BACKEND_URL}/api/conversations`;
-
-        const res = await fetch(endpoint, { headers: getAuthHeaders(token) });
+        const res = await fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) });
         if (res.ok) {
             const incomingConversations: Conversation[] = await res.json();
-            
-            // If delta request returned data, merge it.
-            // If initial load or forced full sync, it will be the full list.
-            if (incomingConversations.length > 0 || !isDelta) {
-                setConversations(prev => {
-                    // If !isDelta, we are replacing the state with the full fetch
-                    if (!isDelta) return incomingConversations.sort((a, b) => 
-                        new Date(b.lastActivity || 0).getTime() - new Date(a.lastActivity || 0).getTime()
-                    );
-
-                    // Create a map from current state for efficient merging
-                    const map = new Map<string, Conversation>();
-                    prev.forEach(c => map.set(c.id, c));
-                    
-                    for (const incoming of incomingConversations) {
-                        const existing = map.get(incoming.id);
-                        if (!existing) {
-                            // New conversation
-                            map.set(incoming.id, incoming);
-                        } else {
-                            // Merge updates
-                            map.set(incoming.id, {
-                                ...incoming,
-                                messages: incoming.messages 
-                            });
-                        }
-                    }
-                    
-                    // Convert back to array and sort
-                    return Array.from(map.values()).sort((a, b) => 
-                        new Date(b.lastActivity || 0).getTime() - new Date(a.lastActivity || 0).getTime()
-                    );
-                });
-            }
-            
-            // Update cursor to a safe time (server time ideally, but local time - buffer works for simple polling)
-            // Buffer of 5 seconds to overlap potential write latency
-            lastPollCursor.current = new Date(Date.now() - 5000).toISOString();
+            setConversations(incomingConversations.sort((a, b) => 
+                new Date(b.lastActivity || 0).getTime() - new Date(a.lastActivity || 0).getTime()
+            ));
         }
+        
+        // Initial Status Fetch
+        const statusRes = await fetch(`${BACKEND_URL}/api/status`, { headers: getAuthHeaders(token) });
+        if(statusRes.ok) {
+             const statusData = await statusRes.json();
+             setConnectionStatus(statusData.status);
+             setQrCode(statusData.qr || null);
+             setPairingCode(statusData.pairingCode || null);
+        }
+
     } catch (e) {}
-  }, [token, conversations.length]); // Added dependency on length to trigger healing
+  }, [token]);
 
-  // AUTO-REFRESH HISTORY UPON CONNECTION
-  useEffect(() => {
-      if (connectionStatus === ConnectionStatus.CONNECTED) {
-          lastPollCursor.current = null; // Force full refresh
-          fetchConversations();
-          // showToast('Sincronizando historial...', 'info');
-      }
-  }, [connectionStatus, fetchConversations]);
-
-  // Pollings
+  // SOCKET.IO INTEGRATION (REAL-TIME CORE)
   useEffect(() => {
     if (!token || userRole === 'super_admin') return;
-    const fetchStatus = async () => {
-        try {
-            const res = await fetch(`${BACKEND_URL}/api/status`, { headers: getAuthHeaders(token) });
-            if (res.ok) {
-                const statusData = await res.json();
-                setConnectionStatus(statusData.status);
-                setQrCode(statusData.qr || null);
-                setPairingCode(statusData.pairingCode || null);
-            }
-        } catch (e) {}
-    };
-    
-    fetchStatus();
-    fetchConversations(); // Initial load
-    
-    statusPollingIntervalRef.current = window.setInterval(fetchStatus, 15000);
-    // Increased frequency for better responsiveness: 2000ms
-    convoPollingIntervalRef.current = window.setInterval(fetchConversations, 2000);
-    
-    return () => {
-        if (statusPollingIntervalRef.current) clearInterval(statusPollingIntervalRef.current);
-        if (convoPollingIntervalRef.current) clearInterval(convoPollingIntervalRef.current);
-    };
-  }, [token, userRole, fetchConversations]);
 
-  // TUNNEL HEARTBEAT & AUTO-RECOVERY TRIGGER
+    // 1. Initial Hydration
+    hydrateConversations();
+
+    // 2. Connect Socket
+    socketClient.connect(token);
+
+    // 3. Listeners
+    socketClient.on(SocketEvents.SESSION_STATUS_UPDATE, (data: any) => {
+        setConnectionStatus(data.status);
+        if (data.qr) setQrCode(data.qr);
+        if (data.pairingCode) setPairingCode(data.pairingCode);
+    });
+
+    socketClient.on(SocketEvents.CONVERSATION_UPDATE, (updatedConversation: Conversation) => {
+        setConversations(prev => {
+            const exists = prev.some(c => c.id === updatedConversation.id);
+            let newList;
+            if (exists) {
+                newList = prev.map(c => c.id === updatedConversation.id ? updatedConversation : c);
+            } else {
+                newList = [updatedConversation, ...prev];
+            }
+            // Sort by activity
+            return newList.sort((a, b) => 
+                new Date(b.lastActivity || 0).getTime() - new Date(a.lastActivity || 0).getTime()
+            );
+        });
+    });
+
+    return () => {
+        socketClient.off(SocketEvents.SESSION_STATUS_UPDATE);
+        socketClient.off(SocketEvents.CONVERSATION_UPDATE);
+        socketClient.disconnect();
+    };
+  }, [token, userRole, hydrateConversations]);
+
+  // TUNNEL HEARTBEAT
   useEffect(() => {
-      // Polling for tunnel health (Smart Link)
-      // We start this even if not logged in, to detect general connectivity, 
-      // but usually only care if we expect the backend to be there.
       const checkHeartbeat = async () => {
           const start = Date.now();
           try {
-              // We use a simple fetch to health. If it fails, network error.
               const res = await fetch(`${BACKEND_URL}/api/health`, { method: 'GET' });
               const end = Date.now();
               if (res.ok) {
                   setTunnelLatency(end - start);
-                  setFailureCount(0); // Reset failures on success
+                  setFailureCount(0);
               } else {
                   setTunnelLatency(null);
                   setFailureCount(prev => prev + 1);
@@ -489,38 +440,30 @@ export function App() {
           }
       };
       
+      const hbInterval = setInterval(checkHeartbeat, 5000);
       checkHeartbeat();
-      heartbeatIntervalRef.current = window.setInterval(checkHeartbeat, 5000); // Check every 5s
       
-      return () => {
-          if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current);
-      }
+      return () => clearInterval(hbInterval);
   }, []);
 
   // Show Modal if failures accumulate
   useEffect(() => {
-      // DISABLED: Automatic modal removed to prevent confusion.
-      setShowNetworkConfig(false);
+      if (failureCount >= 3 && token) {
+          setShowNetworkConfig(true);
+      } else if (failureCount === 0) {
+          setShowNetworkConfig(false);
+      }
   }, [failureCount, token]);
 
-  // TTS for Connection Status
   const prevConnectionStatus = usePrevious(connectionStatus);
   useEffect(() => {
       if (prevConnectionStatus !== undefined && prevConnectionStatus !== connectionStatus) {
           switch (connectionStatus) {
-              case ConnectionStatus.GENERATING_QR:
-                  audioService.play('connection_establishing');
-                  break;
-              case ConnectionStatus.AWAITING_SCAN:
-                  audioService.play('connection_pending');
-                  break;
-              case ConnectionStatus.CONNECTED:
-                  audioService.play('connection_success');
-                  break;
+              case ConnectionStatus.GENERATING_QR: audioService.play('connection_establishing'); break;
+              case ConnectionStatus.AWAITING_SCAN: audioService.play('connection_pending'); break;
+              case ConnectionStatus.CONNECTED: audioService.play('connection_success'); break;
               case ConnectionStatus.DISCONNECTED:
-                  if (prevConnectionStatus === ConnectionStatus.CONNECTED) {
-                      audioService.play('connection_disconnected');
-                  }
+                  if (prevConnectionStatus === ConnectionStatus.CONNECTED) audioService.play('connection_disconnected');
                   break;
           }
       }
@@ -532,7 +475,6 @@ export function App() {
     const loadInitialUserData = async () => {
         setIsLoadingSettings(true);
         try {
-            // FIX: Ensure networkProfile and isNetworkEnabled are fetched with user settings
             const [userRes, sRes] = await Promise.all([
                 fetch(`${BACKEND_URL}/api/user/me`, { headers: getAuthHeaders(token) }),
                 fetch(`${BACKEND_URL}/api/settings`, { headers: getAuthHeaders(token) })
@@ -547,7 +489,7 @@ export function App() {
     loadInitialUserData();
   }, [token]);
 
-  // DUAL LOOP SIMULATION LOGIC
+  // DUAL LOOP SIMULATION
   useEffect(() => {
     if (token) return; 
     
@@ -557,7 +499,6 @@ export function App() {
 
     const runStep = () => {
         if (currentIndex >= currentScript.length) {
-            // End of current script, switch to the next one after a delay
             timeoutId = setTimeout(() => { 
                 setVisibleMessages([]); 
                 setSimulationLoopIndex(prev => (prev + 1) % SIMULATION_SCRIPTS.length);
@@ -576,11 +517,9 @@ export function App() {
         }, step.delayBefore);
     };
 
-    // Start the simulation for the current script
     runStep();
-
     return () => clearTimeout(timeoutId);
-  }, [token, simulationLoopIndex]); // Re-run when loop index changes
+  }, [token, simulationLoopIndex]);
 
   useEffect(() => {
       if (simScrollRef.current) simScrollRef.current.scrollTop = simScrollRef.current.scrollHeight;
@@ -589,12 +528,12 @@ export function App() {
   const handleLoginSuccess = (t: string, r: string, rememberMe: boolean) => {
       if (rememberMe) {
           localStorage.setItem('saas_token', t);
-          sessionStorage.removeItem('saas_token'); // Clear session storage if remember me is active
+          sessionStorage.removeItem('saas_token'); 
       } else {
           sessionStorage.setItem('saas_token', t);
-          localStorage.removeItem('saas_token'); // Clear local storage if remember me is not active
+          localStorage.removeItem('saas_token'); 
       }
-      localStorage.setItem('saas_role', r); // Role is always persistent
+      localStorage.setItem('saas_role', r); 
       setToken(t);
       setUserRole(r);
       setShowLanding(false);
@@ -603,7 +542,6 @@ export function App() {
       audioService.play('login_welcome');
   };
 
-  // FIX 3: Memoize selectedConversation to ensure reactivity with polling updates
   const selectedConversation = useMemo(
       () => conversations.find(c => c.id === selectedConversationId) || null,
       [conversations, selectedConversationId]
@@ -611,7 +549,6 @@ export function App() {
 
   const isFunctionalityDisabled = currentUser?.plan_status === 'expired' || (currentUser?.plan_status === 'trial' && new Date(Date.now()) > new Date(currentUser.billing_end_date));
 
-  // --- RENDER ---
   const isAppView = !!token && !showLanding;
   
   const handleSendMessageOptimistic = async (text: string) => {
@@ -626,7 +563,6 @@ export function App() {
           timestamp: new Date().toISOString()
       };
 
-      // 1. Optimistic Add
       setConversations(prev => prev.map(c => 
           c.id === selectedConversationId 
           ? { ...c, messages: [...c.messages, ownerMessage], lastActivity: new Date().toISOString() } 
@@ -634,37 +570,29 @@ export function App() {
       ).sort((a, b) => new Date(b.lastActivity || 0).getTime() - new Date(a.lastActivity || 0).getTime()));
 
       try {
-          // 2. Real Send
           const res = await fetch(`${BACKEND_URL}/api/send`, { 
               method: 'POST', 
               headers: getAuthHeaders(token), 
               body: JSON.stringify({ to: selectedConversationId, text }) 
           });
 
-          if (!res.ok) {
-              throw new Error('Server rejected');
-          }
-          // On success, backend polling will eventually sync real ID
+          if (!res.ok) throw new Error('Server rejected');
       } catch (e) {
-          // 3. Rollback on Failure
           showToast('Error: No se pudo enviar a WhatsApp.', 'error');
           setConversations(prev => prev.map(c => 
               c.id === selectedConversationId 
-              ? { ...c, messages: c.messages.filter(m => m.id !== tempId) } // Remove the ghost
+              ? { ...c, messages: c.messages.filter(m => m.id !== tempId) }
               : c
           ));
       }
   };
 
-  // NEW: HANDLE INSTANT DELETE
   const handleDeleteConversation = (id: string) => {
       setConversations(prev => prev.filter(c => c.id !== id));
       if (selectedConversationId === id) {
           setSelectedConversationId(null);
       }
       showToast('Conversación eliminada.', 'success');
-      // Trigger refresh to ensure backend sync
-      lastPollCursor.current = null;
   };
 
   const handleToggleBot = async (id: string) => {
@@ -673,7 +601,6 @@ export function App() {
 
       const newStatus = !convo.isBotActive;
 
-      // Optimistic Update
       setConversations(prev => prev.map(c => 
           c.id === id ? { ...c, isBotActive: newStatus } : c
       ));
@@ -686,19 +613,16 @@ export function App() {
           });
       } catch (e) {
           showToast('Error al cambiar estado del bot', 'error');
-          // Revert optimistic update
           setConversations(prev => prev.map(c => 
               c.id === id ? { ...c, isBotActive: !newStatus } : c
           ));
       }
   };
 
-  // NUEVO: Handler para toggle de Guardia Autónoma
   const handleToggleAutonomous = async () => {
     if (!settings || !token) return;
     const newStatus = !settings.isAutonomousClosing;
     
-    // Optimistic Update
     const updatedSettings = { ...settings, isAutonomousClosing: newStatus };
     setSettings(updatedSettings);
 
@@ -711,19 +635,16 @@ export function App() {
         showToast(`Modo Guardia ${newStatus ? 'Activado' : 'Desactivado'}`, 'info');
         audioService.play('action_success');
     } catch (e) {
-        setSettings(settings); // Revert
+        setSettings(settings); 
         showToast('Error al sincronizar modo guardia.', 'error');
     }
   };
 
   const renderClientView = () => {
-      // PRIORITY 1: Audit Mode (Override default dashboard and Super Admin check)
-      // This ensures that when an admin clicks "Audit", they actually see the audit view.
       if (currentView === View.AUDIT_MODE && auditTarget) {
           return <AuditView user={auditTarget} onClose={() => setCurrentView(View.ADMIN_GLOBAL)} onUpdate={(user) => setAuditTarget(user)} showToast={showToast} />;
       }
 
-      // PRIORITY 2: Admin Dashboard (Default if no specific view override and user is admin)
       if (userRole === 'super_admin') {
           return <AdminDashboard token={token!} backendUrl={BACKEND_URL} onAudit={(u) => { setAuditTarget(u); setCurrentView(View.AUDIT_MODE); }} showToast={showToast} onLogout={handleLogout} />;
       }
@@ -735,12 +656,11 @@ export function App() {
           } catch(e) {}
       };
 
-      // Map View
       switch(currentView) {
         case View.DASHBOARD: return <AgencyDashboard token={token!} backendUrl={BACKEND_URL} settings={settings!} onUpdateSettings={handleUpdateSettings} currentUser={currentUser} showToast={showToast} />;
         case View.CAMPAIGNS: return <CampaignsPanel token={token!} backendUrl={BACKEND_URL} showToast={showToast} settings={settings} />;
         case View.RADAR: return <RadarPanel token={token!} backendUrl={BACKEND_URL} showToast={showToast} />;
-        case View.NETWORK: return <NetworkPanel token={token!} backendUrl={BACKEND_URL} currentUser={currentUser} settings={settings} onUpdateSettings={handleUpdateSettings} showToast={showToast} />; {/* NEW: Render NetworkPanel */}
+        case View.NETWORK: return <NetworkPanel token={token!} backendUrl={BACKEND_URL} currentUser={currentUser} settings={settings} onUpdateSettings={handleUpdateSettings} showToast={showToast} />;
         case View.SETTINGS: return <SettingsPanel token={token!} settings={settings} isLoading={isLoadingSettings} onUpdateSettings={isFunctionalityDisabled ? ()=>{} : handleUpdateSettings} onOpenLegal={setLegalModalType} showToast={showToast} />;
         case View.CONNECTION: return <ConnectionPanel user={currentUser} status={connectionStatus} qrCode={qrCode} pairingCode={pairingCode} onConnect={async (ph) => { await fetch(`${BACKEND_URL}/api/connect`, { method: 'POST', headers: getAuthHeaders(token!), body: JSON.stringify({ phoneNumber: ph }) }); }} onDisconnect={async () => { await fetch(`${BACKEND_URL}/api/disconnect`, { headers: getAuthHeaders(token!) }); setConnectionStatus(ConnectionStatus.DISCONNECTED); }} onWipe={async () => { setConnectionStatus(ConnectionStatus.RESETTING); await new Promise(r => setTimeout(r, 1500)); await fetch(`${BACKEND_URL}/api/disconnect`, { headers: getAuthHeaders(token!) }); setConnectionStatus(ConnectionStatus.DISCONNECTED); }} showToast={showToast} />;
         case View.BLACKLIST: return <BlacklistPanel settings={settings} conversations={conversations} onUpdateSettings={handleUpdateSettings} />;
@@ -756,7 +676,7 @@ export function App() {
                             onRequestHistory={() => Promise.resolve()} 
                             isRequestingHistory={false} 
                             connectionStatus={connectionStatus}
-                            onDeleteConversation={handleDeleteConversation} // Pass deletion handler
+                            onDeleteConversation={handleDeleteConversation} 
                         />
                     </div>
                     <div className={`${!selectedConversationId ? 'hidden md:flex' : 'flex'} flex-1 h-full`}>
@@ -764,7 +684,7 @@ export function App() {
                             conversation={selectedConversation} 
                             onSendMessage={handleSendMessageOptimistic} 
                             onToggleBot={handleToggleBot} 
-                            isTyping={false} // Removed zombie state, passed hardcoded false
+                            isTyping={false} 
                             isBotGloballyActive={isBotGloballyActive} 
                             isMobile={isMobileView} 
                             onBack={() => setSelectedConversationId(null)} 
@@ -781,21 +701,18 @@ export function App() {
 
   return (
     <div className={`flex flex-col bg-brand-black text-white font-sans ${isAppView ? 'h-screen overflow-hidden' : 'min-h-screen'} max-w-[100vw]`}>
-      {/* SCANNING BAR ANIMATION FOR ALIVE FEEL */}
       {isAppView && (
           <div className="h-0.5 w-full bg-brand-gold/20 overflow-hidden relative flex-shrink-0 z-[100]">
               <div className="absolute top-0 left-0 h-full w-1/3 bg-brand-gold/50 blur-[4px] animate-slide-in-right"></div>
           </div>
       )}
 
-      {/* Network Configuration Modal - Triggered on connection loss */}
       <NetworkConfigModal isOpen={showNetworkConfig} onClose={() => setShowNetworkConfig(false)} />
 
       <Toast toast={toast} onClose={() => setToast(null)} />
       <AuthModal isOpen={authModal.isOpen} initialMode={authModal.mode} onClose={() => setAuthModal({ ...authModal, isOpen: false })} onSuccess={handleLoginSuccess} onOpenLegal={setLegalModalType} />
       <LegalModal type={legalModalType} onClose={() => setLegalModalType(null)} />
       
-      {/* STICKY TOP CONTAINER: Header + Banner */}
       <div className="flex-none z-50 relative flex flex-col">
           <Header 
               isLoggedIn={!!token} 
@@ -807,13 +724,12 @@ export function App() {
               onToggleBot={() => setIsBotGloballyActive(!isBotGloballyActive)} 
               isAutonomousClosing={settings?.isAutonomousClosing || false}
               onToggleAutonomous={handleToggleAutonomous}
-              // FIX: Corrected property name from isNetworkGlobalEnabled to isNetworkGlobalFeatureEnabled to match SystemSettings type.
-              isNetworkGlobalEnabled={systemSettings?.isNetworkGlobalFeatureEnabled || false} // NEW: Pass global feature flag
+              isNetworkGlobalEnabled={systemSettings?.isNetworkGlobalFeatureEnabled || false} 
               currentView={currentView} 
               onNavigate={handleNavigate} 
               connectionStatus={connectionStatus}
-              isMobile={isMobileView} // Pass isMobileView prop
-              tunnelLatency={tunnelLatency} // NEW: Pass tunnel health metric
+              isMobile={isMobileView} 
+              tunnelLatency={tunnelLatency} 
           />
           {isAppView && <PlanStatusBanner user={currentUser} />}
       </div>

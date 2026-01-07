@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { BotSettings, DashboardMetrics, User } from '../types.js';
 import { getAuthHeaders } from '../config';
@@ -156,6 +155,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
     }
     setApiKeyStatus('VERIFYING');
     try {
+        // This endpoint doesn't exist yet, but we define the frontend interaction
         const res = await fetch(`${backendUrl}/api/ai/verify-key`, {
             method: 'POST',
             headers: getAuthHeaders(token)
@@ -166,7 +166,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
             showToast('Conexión Exitosa: API Key verificada y operativa.', 'success');
         } else {
             const data = await res.json();
-            throw new Error(data.message);
+            throw new Error(data.message || 'Clave inválida o sin permisos.');
         }
     } catch (error: any) {
         setApiKeyStatus('INVALID');
@@ -189,7 +189,8 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
         if(res.ok) {
             setMetrics(await res.json());
         } else {
-            setError("Error de autenticación o servidor inalcanzable.");
+            const data = await res.json();
+            setError(data.message || "Error de autenticación o servidor inalcanzable.");
         }
       } catch(e: any) { 
           setError("Fallo de conexión con el nodo central.");
@@ -208,6 +209,19 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
       </div>
   );
 
+  if (error) return (
+      <div className="flex-1 flex flex-col items-center justify-center bg-brand-black text-center p-8">
+          <div className="w-20 h-20 bg-red-900/20 rounded-full flex items-center justify-center mb-6 border border-red-500/30">
+              <svg className="w-10 h-10 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+          </div>
+          <h2 className="text-xl font-black text-white uppercase tracking-widest mb-2">Error de Telemetría</h2>
+          <p className="text-gray-400 text-xs mb-8 max-w-md">{error}</p>
+          <button onClick={fetchData} className="px-8 py-3 bg-brand-gold text-black rounded-xl font-black text-xs uppercase tracking-widest hover:scale-105 transition-all">
+              Reintentar Conexión
+          </button>
+      </div>
+  );
+  
   if (!metrics) return null;
 
   const statusInfo = {
@@ -246,7 +260,6 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
                 isRisk={isRisk}
                 icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>} 
                 trend={!isRisk ? "+14% Sem" : undefined}
-                // Updated Tooltip for clarity
                 tooltip="Proyección de ingresos REAL basada en tu 'Valor Promedio por Lead' (Configurable en Ajustes) multiplicado por tus Leads Calientes actuales."
             />
             <KpiCard 

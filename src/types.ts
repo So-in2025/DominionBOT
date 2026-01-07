@@ -1,4 +1,5 @@
 
+
 export interface SimulationLab {
     experiments: SimulationRun[];
     aggregatedScore: number;
@@ -41,6 +42,21 @@ export enum ConnectionStatus {
   AWAITING_SCAN = 'Esperando escaneo',
   CONNECTED = 'Conectado',
   RESETTING = 'Reseteando',
+}
+
+// --- SOCKET EVENTS ---
+export enum SocketEvents {
+    CONNECT = 'connect',
+    DISCONNECT = 'disconnect',
+    
+    // Server -> Client
+    SESSION_STATUS_UPDATE = 'session:status', // ConnectionStatus updates
+    CONVERSATION_UPDATE = 'conversation:update', // New messages, status changes
+    RADAR_SIGNAL = 'radar:signal', // New Radar opportunity
+    CAMPAIGN_UPDATE = 'campaign:update', // Campaign progress
+    
+    // Client -> Server
+    JOIN_ROOM = 'room:join', // Handshake with userId
 }
 
 export enum PromptArchetype {
@@ -177,9 +193,17 @@ export interface RadarCalibration {
 export interface RadarSettings {
     isEnabled: boolean;
     monitoredGroups: string[];
-    keywordsInclude: string[];
-    keywordsExclude: string[];
-    calibration?: RadarCalibration; // NEW
+    keywordsInclude: string[]; // Positive Triggers (e.g. "busco")
+    keywordsExclude: string[]; // Negative Filters (e.g. "vendo")
+    calibration?: RadarCalibration;
+    // STEALTH PROTOCOL
+    sleepWindow?: {
+        enabled: boolean;
+        startHour: number; // 0-23 (e.g., 3 AM)
+        endHour: number;   // 0-23 (e.g., 7 AM)
+    };
+    cooldownBetweenScans?: number; // Minimum seconds between AI calls
+    webhookUrl?: string; // NEW: CRM Integration
 }
 
 export interface GroupMarketMemory {
@@ -345,7 +369,8 @@ export interface Conversation {
   // FIX: Changed to string to match database schema
   escalatedAt?: string;
   suggestedReplies?: string[];
-  isTestBotConversation?: boolean; 
+  isTestBotConversation?: boolean;
+  isNameEdited?: boolean; // NEW: Flag to protect manual renaming
 }
 
 // --- NEW MODULAR ARCHITECTURE TYPES ---
@@ -442,7 +467,7 @@ export interface User {
 }
 
 export interface LogEntry {
-  _id: string;
+  _id?: string;
   // FIX: Changed to string to match database schema
   timestamp: string;
   level: LogLevel;

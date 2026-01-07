@@ -9,12 +9,15 @@ interface SalesContextSidebarProps {
   onUpdateConversation?: (id: string, updates: Partial<Conversation>) => void;
 }
 
+type Tab = 'CONTEXT' | 'NEURAL_LOG';
+
 const SalesContextSidebar: React.FC<SalesContextSidebarProps> = ({ 
   conversation, 
   onUpdateTags, 
   onAddNote,
   onUpdateConversation 
 }) => {
+  const [activeTab, setActiveTab] = useState<Tab>('CONTEXT');
   const [newTag, setNewTag] = useState('');
   const [newNote, setNewNote] = useState('');
 
@@ -33,8 +36,6 @@ const SalesContextSidebar: React.FC<SalesContextSidebarProps> = ({
   const handleAddNote = (e: React.FormEvent) => {
     e.preventDefault();
     if (newNote.trim()) {
-      // FIX: Simplified to only call onAddNote, removing redundant logic and preventing double updates.
-      // The parent component is now responsible for creating the InternalNote object.
       onAddNote(newNote.trim());
       setNewNote('');
     }
@@ -50,85 +51,120 @@ const SalesContextSidebar: React.FC<SalesContextSidebarProps> = ({
       }
   };
 
+  const aiLogs = conversation.internalNotes?.filter(n => n.author === 'AI').reverse() || [];
+
   return (
     <aside className="w-72 bg-brand-surface border-l border-white/10 flex flex-col h-full animate-fade-in shadow-2xl">
-      <div className="p-4 border-b border-white/10 bg-black/20">
-        <div className="flex justify-between items-center">
-            <div>
-                <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-brand-gold">Contexto de Venta</h3>
-                <p className="text-[9px] text-gray-500 mt-0.5 font-bold">OPERACIONES</p>
-            </div>
+      {/* HEADER TABS */}
+      <div className="p-1 m-2 bg-black/40 border border-white/10 rounded-xl flex">
+          <button 
+            onClick={() => setActiveTab('CONTEXT')}
+            className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${activeTab === 'CONTEXT' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}
+          >
+            Contexto
+          </button>
+          <button 
+            onClick={() => setActiveTab('NEURAL_LOG')}
+            className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${activeTab === 'NEURAL_LOG' ? 'bg-brand-gold text-black shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}
+          >
+            Bitácora IA
+          </button>
+      </div>
+
+      {activeTab === 'CONTEXT' ? (
+          <div className="flex-1 overflow-y-auto p-4 space-y-8 custom-scrollbar">
             
-            <button 
-                onClick={markAsPersonal}
-                className={`px-2 py-1 rounded text-[8px] font-black uppercase border transition-all ${conversation.status === LeadStatus.PERSONAL ? 'bg-blue-500/20 border-blue-500 text-blue-400' : 'bg-white/5 border-white/10 text-gray-500 hover:text-white hover:border-blue-500/50'}`}
-            >
-                {conversation.status === LeadStatus.PERSONAL ? 'CONTACTO PERSONAL' : 'MARCAR PERSONAL'}
-            </button>
-        </div>
-      </div>
-
-      <div className="flex-1 overflow-y-auto p-4 space-y-8 custom-scrollbar">
-        
-        <section>
-          <div className="flex justify-between items-center mb-4">
-            <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-400">Señales / Etiquetas</h4>
-          </div>
-          
-          <div className="flex flex-wrap gap-2 mb-4">
-            {conversation.tags?.map(tag => (
-              <span key={tag} className="flex items-center gap-1.5 px-2 py-1 rounded bg-brand-gold/10 border border-brand-gold/30 text-brand-gold text-[9px] font-black uppercase tracking-tighter">
-                {tag}
-                <button onClick={() => removeTag(tag)} className="opacity-40 hover:opacity-100">✕</button>
-              </span>
-            ))}
-          </div>
-
-          <form onSubmit={handleAddTag} className="relative">
-            <input 
-              type="text" value={newTag} onChange={(e) => setNewTag(e.target.value)}
-              placeholder="Añadir etiqueta..."
-              className="w-full bg-black/50 border border-white/5 rounded-lg py-2 px-3 text-[10px] text-white focus:border-brand-gold outline-none"
-            />
-          </form>
-        </section>
-
-        <section className="flex-1 flex flex-col">
-          <div className="flex justify-between items-center mb-4">
-            <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-400">Notas Internas</h4>
-          </div>
-
-          <div className="space-y-4 mb-6">
-            {conversation.internalNotes?.slice().reverse().map(note => (
-              <div key={note.id} className={`p-3 border rounded-xl space-y-2 ${note.author === 'AI' ? 'bg-brand-gold/5 border-brand-gold/20' : 'bg-white/5 border-white/5'}`}>
-                <div className="flex justify-between items-center">
-                   <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded ${note.author === 'AI' ? 'bg-brand-gold text-black' : 'bg-blue-500 text-white'}`}>
-                    {note.author}
-                   </span>
-                   <span className="text-[8px] text-gray-600 font-mono">
-                    {new Date(note.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                   </span>
+            <div className="flex justify-between items-center bg-black/20 p-3 rounded-xl border border-white/5">
+                <div>
+                    <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-brand-gold">Operaciones</h3>
                 </div>
-                <p className="text-[10px] text-gray-300 leading-relaxed font-medium whitespace-pre-line">{note.note}</p>
-              </div>
-            ))}
-          </div>
+                <button 
+                    onClick={markAsPersonal}
+                    className={`px-2 py-1 rounded text-[8px] font-black uppercase border transition-all ${conversation.status === LeadStatus.PERSONAL ? 'bg-blue-500/20 border-blue-500 text-blue-400' : 'bg-white/5 border-white/10 text-gray-500 hover:text-white hover:border-blue-500/50'}`}
+                >
+                    {conversation.status === LeadStatus.PERSONAL ? 'CONTACTO PERSONAL' : 'MARCAR PERSONAL'}
+                </button>
+            </div>
 
-          <form onSubmit={handleAddNote} className="sticky bottom-0 bg-brand-surface pt-2">
-            <textarea 
-              value={newNote} onChange={(e) => setNewNote(e.target.value)}
-              placeholder="Nota de seguimiento..."
-              className="w-full bg-black/50 border border-white/5 rounded-xl p-3 text-[10px] text-white focus:border-brand-gold outline-none h-24 resize-none"
-            />
-            <button 
-              type="submit" disabled={!newNote.trim()}
-              className="w-full mt-2 py-2 bg-white/10 text-gray-400 text-[10px] font-black uppercase tracking-widest rounded-lg hover:bg-brand-gold hover:text-black transition-all"
-            >
-              Guardar Nota
-            </button>
-          </form>
-        </section>
-      </div>
+            <section>
+              <div className="flex justify-between items-center mb-4">
+                <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-400">Señales / Etiquetas</h4>
+              </div>
+              
+              <div className="flex flex-wrap gap-2 mb-4">
+                {conversation.tags?.map(tag => (
+                  <span key={tag} className="flex items-center gap-1.5 px-2 py-1 rounded bg-brand-gold/10 border border-brand-gold/30 text-brand-gold text-[9px] font-black uppercase tracking-tighter">
+                    {tag}
+                    <button onClick={() => removeTag(tag)} className="opacity-40 hover:opacity-100">✕</button>
+                  </span>
+                ))}
+              </div>
+
+              <form onSubmit={handleAddTag} className="relative">
+                <input 
+                  type="text" value={newTag} onChange={(e) => setNewTag(e.target.value)}
+                  placeholder="Añadir etiqueta..."
+                  className="w-full bg-black/50 border border-white/5 rounded-lg py-2 px-3 text-[10px] text-white focus:border-brand-gold outline-none"
+                />
+              </form>
+            </section>
+
+            <section className="flex-1 flex flex-col">
+              <div className="flex justify-between items-center mb-4">
+                <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-400">Notas Humanas</h4>
+              </div>
+
+              <div className="space-y-4 mb-6">
+                {conversation.internalNotes?.filter(n => n.author !== 'AI').slice().reverse().map(note => (
+                  <div key={note.id} className="p-3 border rounded-xl space-y-2 bg-white/5 border-white/5">
+                    <div className="flex justify-between items-center">
+                       <span className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded bg-blue-500 text-white">
+                        {note.author}
+                       </span>
+                       <span className="text-[8px] text-gray-600 font-mono">
+                        {new Date(note.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                       </span>
+                    </div>
+                    <p className="text-[10px] text-gray-300 leading-relaxed font-medium whitespace-pre-line">{note.note}</p>
+                  </div>
+                ))}
+              </div>
+
+              <form onSubmit={handleAddNote} className="sticky bottom-0 bg-brand-surface pt-2">
+                <textarea 
+                  value={newNote} onChange={(e) => setNewNote(e.target.value)}
+                  placeholder="Nota de seguimiento..."
+                  className="w-full bg-black/50 border border-white/5 rounded-xl p-3 text-[10px] text-white focus:border-brand-gold outline-none h-24 resize-none"
+                />
+                <button 
+                  type="submit" disabled={!newNote.trim()}
+                  className="w-full mt-2 py-2 bg-white/10 text-gray-400 text-[10px] font-black uppercase tracking-widest rounded-lg hover:bg-brand-gold hover:text-black transition-all"
+                >
+                  Guardar Nota
+                </button>
+              </form>
+            </section>
+          </div>
+      ) : (
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar bg-[#0a0a0a]">
+              <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-2">Razonamiento Cognitivo</h4>
+              {aiLogs.length === 0 ? (
+                  <p className="text-center text-[10px] text-gray-600 italic py-10">Sin registros de inferencia recientes.</p>
+              ) : (
+                  aiLogs.map(note => (
+                      <div key={note.id} className="p-3 border border-brand-gold/20 bg-brand-gold/5 rounded-xl space-y-2 relative group hover:border-brand-gold/40 transition-colors">
+                          <div className="flex justify-between items-start">
+                              <span className="text-[8px] font-mono text-brand-gold opacity-70">
+                                  {new Date(note.timestamp).toLocaleString()}
+                              </span>
+                              <div className="w-1.5 h-1.5 rounded-full bg-brand-gold animate-pulse"></div>
+                          </div>
+                          <p className="text-[10px] text-gray-300 leading-relaxed font-mono whitespace-pre-wrap">{note.note}</p>
+                      </div>
+                  ))
+              )}
+          </div>
+      )}
     </aside>
   );
 };

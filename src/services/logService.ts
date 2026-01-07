@@ -1,5 +1,4 @@
 
-
 import { db } from '../database.js';
 import { LogLevel } from '../types.js';
 import { LOG_LEVEL } from '../env.js';
@@ -61,8 +60,12 @@ class LogService {
         }
 
         // Persist to database (excluding debug logs)
+        // CRITICAL FIX: Only attempt DB write if connection is READY.
+        // This prevents "MongoServerSelectionError" loops during network outages.
         if (level !== 'DEBUG') {
-            db.createLog(logEntry).catch(e => console.error("Failed to persist log:", e));
+            if (db.isReady()) {
+                db.createLog(logEntry).catch(e => console.error("Failed to persist log (DB Write Error):", e.message));
+            }
         }
     }
 }

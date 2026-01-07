@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { RadarSignal, RadarSettings, WhatsAppGroup, BotSettings } from '../types';
+import { RadarSignal, RadarSettings, WhatsAppGroup, BotSettings, SocketEvents } from '../types';
 import { getAuthHeaders } from '../config';
 import { audioService } from '../services/audioService';
+import { socketClient } from '../services/socketClient'; // NEW: Import Socket Client
 
 interface RadarPanelProps {
     token: string;
@@ -32,6 +33,10 @@ const RadarPanel: React.FC<RadarPanelProps> = ({ token, backendUrl, showToast })
     });
     const [isEnhancing, setIsEnhancing] = useState(false);
     
+    // FILTERS LOCAL STATE
+    const [newIncludeKeyword, setNewIncludeKeyword] = useState('');
+    const [newExcludeKeyword, setNewExcludeKeyword] = useState('');
+
     const prevSignalsLength = useRef(0);
     const terminalRef = useRef<HTMLDivElement>(null);
 
@@ -48,12 +53,33 @@ const RadarPanel: React.FC<RadarPanelProps> = ({ token, backendUrl, showToast })
         if (view === 'CONFIG' && groups.length === 0) fetchConfigData();
     }, [view]);
 
+    // SOCKET LISTENER FOR REAL-TIME SIGNALS
+    useEffect(() => {
+        const handleNewSignal = (newSignal: RadarSignal) => {
+            if (newSignal.status !== 'DISMISSED') {
+                setSignals(prev => [newSignal, ...prev]);
+                if ((newSignal.strategicScore || newSignal.analysis.score) >= 80) {
+                    audioService.play('radar_ping'); 
+                    showToast(`¡Radar! Oportunidad Crítica (${newSignal.strategicScore}%)`, 'info');
+                }
+            }
+        };
+
+        if (view === 'LIVE') {
+            socketClient.on(SocketEvents.RADAR_SIGNAL, handleNewSignal);
+        }
+
+        return () => {
+            socketClient.off(SocketEvents.RADAR_SIGNAL, handleNewSignal);
+        };
+    }, [view]);
+
     useEffect(() => {
         if (view !== 'LIVE') return;
+        // Keep trace polling for logs, as they are less critical/high-volume
         const interval = setInterval(() => {
-            fetchSignals(false);
             fetchTraces();
-        }, 10000); 
+        }, 5000); 
         return () => clearInterval(interval);
     }, [view]);
 
@@ -76,14 +102,6 @@ const RadarPanel: React.FC<RadarPanelProps> = ({ token, backendUrl, showToast })
             const res = await fetch(`${backendUrl}${endpoint}`, { headers: getAuthHeaders(token) });
             if (res.ok) {
                 const data: RadarSignal[] = await res.json();
-                if (!history && data.length > prevSignalsLength.current) {
-                    const latest = data[0];
-                    if (latest && (latest.strategicScore || latest.analysis.score) >= 80) {
-                        audioService.play('radar_ping'); 
-                        // FIX: Added 'info' as the second argument to showToast and used template literal for string interpolation.
-                        showToast(`¡Radar! Oportunidad Crítica (${latest.strategicScore}%)`, 'info');
-                    }
-                }
                 setSignals(data);
                 prevSignalsLength.current = data.length;
             }
@@ -130,6 +148,35 @@ const RadarPanel: React.FC<RadarPanelProps> = ({ token, backendUrl, showToast })
         else showToast('Radar en reposo.', 'info');
     };
 
+    // Keyword Management
+    const addIncludeKeyword = () => {
+        if (!settings || !newIncludeKeyword.trim()) return;
+        if (!settings.keywordsInclude.includes(newIncludeKeyword.trim())) {
+            const newSettings = { ...settings, keywordsInclude: [...settings.keywordsInclude, newIncludeKeyword.trim()] };
+            setSettings(newSettings);
+            setNewIncludeKeyword('');
+        }
+    };
+    const removeIncludeKeyword = (k: string) => {
+        if (!settings) return;
+        const newSettings = { ...settings, keywordsInclude: settings.keywordsInclude.filter(word => word !== k) };
+        setSettings(newSettings);
+    };
+
+    const addExcludeKeyword = () => {
+        if (!settings || !newExcludeKeyword.trim()) return;
+        if (!settings.keywordsExclude.includes(newExcludeKeyword.trim())) {
+            const newSettings = { ...settings, keywordsExclude: [...settings.keywordsExclude, newExcludeKeyword.trim()] };
+            setSettings(newSettings);
+            setNewExcludeKeyword('');
+        }
+    };
+    const removeExcludeKeyword = (k: string) => {
+        if (!settings) return;
+        const newSettings = { ...settings, keywordsExclude: settings.keywordsExclude.filter(word => word !== k) };
+        setSettings(newSettings);
+    };
+
     const dismissSignal = async (id: string) => {
         try {
             await fetch(`${backendUrl}/api/radar/signals/${id}/dismiss`, {
@@ -170,7 +217,7 @@ const RadarPanel: React.FC<RadarPanelProps> = ({ token, backendUrl, showToast })
             });
             if (res.ok) {
                 showToast('Señal de prueba inyectada.', 'success');
-                setTimeout(() => fetchSignals(false), 1000);
+                // No need to manually fetch, socket will catch the simulated signal
             } else {
                 showToast('Error simulando señal.', 'error');
             }
@@ -398,6 +445,83 @@ const RadarPanel: React.FC<RadarPanelProps> = ({ token, backendUrl, showToast })
                             <h3 className="text-xl font-black text-white uppercase tracking-widest">Configuración de Sensores</h3>
                             <button onClick={handleToggleRadar} className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${settings?.isEnabled ? 'bg-green-500 text-black' : 'bg-red-500/20 text-red-500'}`}>{settings?.isEnabled ? 'ACTIVO' : 'INACTIVO'}</button>
                         </div>
+                        
+                        {/* STEALTH PROTOCOL CONFIG */}
+                        <div className="bg-blue-900/10 border border-blue-500/20 rounded-2xl p-6">
+                            <h4 className="text-sm font-black text-blue-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                                Protocolo Stealth (Anti-Ban)
+                            </h4>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {/* SLEEP MODE */}
+                                <div>
+                                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Ciclo de Sueño (Hora Servidor)</label>
+                                    <div className="flex gap-2 items-center bg-black/40 p-2 rounded-xl border border-white/10">
+                                        <input type="number" min="0" max="23" value={settings?.sleepWindow?.startHour || 0} onChange={(e) => setSettings(prev => prev ? {...prev, sleepWindow: {...prev.sleepWindow!, startHour: parseInt(e.target.value)}} : null)} className="w-12 bg-transparent text-center text-white font-bold outline-none border-b border-white/20" />
+                                        <span className="text-gray-500 text-xs">a</span>
+                                        <input type="number" min="0" max="23" value={settings?.sleepWindow?.endHour || 0} onChange={(e) => setSettings(prev => prev ? {...prev, sleepWindow: {...prev.sleepWindow!, endHour: parseInt(e.target.value)}} : null)} className="w-12 bg-transparent text-center text-white font-bold outline-none border-b border-white/20" />
+                                        <span className="text-gray-500 text-xs ml-2">Hrs</span>
+                                        <button 
+                                            onClick={() => setSettings(prev => prev ? {...prev, sleepWindow: {...prev.sleepWindow!, enabled: !prev.sleepWindow!.enabled}} : null)}
+                                            className={`ml-auto px-3 py-1 rounded-lg text-[9px] font-bold uppercase transition-all ${settings?.sleepWindow?.enabled ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}
+                                        >
+                                            {settings?.sleepWindow?.enabled ? 'ON' : 'OFF'}
+                                        </button>
+                                    </div>
+                                    <p className="text-[9px] text-gray-500 mt-2 italic">El radar se apagará en este horario para simular descanso humano.</p>
+                                </div>
+
+                                {/* FILTERS */}
+                                <div>
+                                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Filtros de Seguridad (Pre-IA)</label>
+                                    
+                                    <div className="flex flex-col gap-3">
+                                        <div className="flex items-center gap-2">
+                                            <input type="text" value={newIncludeKeyword} onChange={e => setNewIncludeKeyword(e.target.value)} placeholder="Trigger (+): busco, precio" className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none" />
+                                            <button onClick={addIncludeKeyword} className="bg-green-600/20 text-green-400 px-3 py-2 rounded-lg text-xs font-bold">+</button>
+                                        </div>
+                                        <div className="flex flex-wrap gap-1">
+                                            {settings?.keywordsInclude?.map(k => (
+                                                <span key={k} onClick={() => removeIncludeKeyword(k)} className="px-2 py-0.5 bg-green-900/30 text-green-400 text-[9px] rounded cursor-pointer hover:bg-red-900/30 hover:text-red-400">{k}</span>
+                                            ))}
+                                        </div>
+
+                                        <div className="flex items-center gap-2 mt-2">
+                                            <input type="text" value={newExcludeKeyword} onChange={e => setNewExcludeKeyword(e.target.value)} placeholder="Ignorar (-): vendo, oferta" className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none" />
+                                            <button onClick={addExcludeKeyword} className="bg-red-600/20 text-red-400 px-3 py-2 rounded-lg text-xs font-bold">+</button>
+                                        </div>
+                                        <div className="flex flex-wrap gap-1">
+                                            {settings?.keywordsExclude?.map(k => (
+                                                <span key={k} onClick={() => removeExcludeKeyword(k)} className="px-2 py-0.5 bg-red-900/30 text-red-400 text-[9px] rounded cursor-pointer hover:bg-white/10">{k}</span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* CRM WEBHOOK INTEGRATION */}
+                        <div className="bg-purple-900/10 border border-purple-500/20 rounded-2xl p-6">
+                            <h4 className="text-sm font-black text-purple-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                                <span className="text-lg">🔌</span>
+                                Integración CRM (Webhook)
+                            </h4>
+                            <div className="flex gap-4 items-center">
+                                <div className="flex-1">
+                                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Endpoint URL (Zapier / Make / HubSpot)</label>
+                                    <input 
+                                        type="text" 
+                                        value={settings?.webhookUrl || ''} 
+                                        onChange={(e) => setSettings(prev => prev ? {...prev, webhookUrl: e.target.value} : null)} 
+                                        placeholder="https://hooks.zapier.com/hooks/catch/..."
+                                        className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white text-xs font-mono focus:border-purple-500 outline-none transition-all placeholder-gray-700"
+                                    />
+                                    <p className="text-[9px] text-gray-500 mt-2 italic">Se enviará un POST JSON con los datos del Lead cada vez que el Radar detecte una oportunidad válida.</p>
+                                </div>
+                            </div>
+                        </div>
+
                         <div className="bg-black/30 border border-brand-gold/20 rounded-2xl p-6 flex justify-between items-center">
                             <div>
                                 <h4 className="text-[10px] font-black text-brand-gold uppercase tracking-widest mb-1">Calibración Actual</h4>
@@ -407,7 +531,7 @@ const RadarPanel: React.FC<RadarPanelProps> = ({ token, backendUrl, showToast })
                         </div>
                         <div>
                             <label className="block text-[10px] font-black text-brand-gold uppercase tracking-widest mb-4">Grupos Monitoreados</label>
-                            <div className="bg-black/50 border border-white/10 rounded-xl p-4 max-h-[400px] overflow-y-auto custom-scrollbar space-y-2">
+                            <div className="bg-black/50 border border-white/10 rounded-xl p-4 max-h-[300px] overflow-y-auto custom-scrollbar space-y-2">
                                 {groups.map(g => (
                                     <div key={g.id} onClick={() => settings && setSettings({...settings, monitoredGroups: settings.monitoredGroups.includes(g.id) ? settings.monitoredGroups.filter(id => id !== g.id) : [...settings.monitoredGroups, g.id]})} className={`p-3 rounded-lg border cursor-pointer transition-all flex justify-between items-center ${settings?.monitoredGroups.includes(g.id) ? 'bg-brand-gold/20 border-brand-gold text-white' : 'bg-white/5 border-transparent text-gray-400 hover:bg-white/10'}`}>
                                         <span className="text-xs font-bold truncate pr-2">{g.subject}</span>
@@ -415,7 +539,7 @@ const RadarPanel: React.FC<RadarPanelProps> = ({ token, backendUrl, showToast })
                                     </div>
                                 ))}
                             </div>
-                            <button onClick={() => saveSettings()} className="w-full mt-6 py-4 bg-brand-gold text-black rounded-xl font-black text-xs uppercase tracking-[0.2em]">Guardar Configuración</button>
+                            <button onClick={() => saveSettings()} className="w-full mt-6 py-4 bg-brand-gold text-black rounded-xl font-black text-xs uppercase tracking-[0.2em] shadow-lg shadow-brand-gold/20 hover:scale-105 transition-all">Guardar Configuración</button>
                         </div>
                     </div>
                 )}

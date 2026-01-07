@@ -41,14 +41,14 @@ const getEnvUrl = (): { url: string; source: string } => {
     // 'import.meta.env.DEV' es una variable booleana que Vite establece en true cuando corres 'npm run dev'.
     // FIX: Cast import.meta to `any` to access the `env` property, as the TypeScript compiler is not picking up the interface augmentation.
     if ((import.meta as any).env.DEV) {
-        // En desarrollo local, apuntamos al túnel activo para simular producción real y evitar problemas de CORS/Mixed Content
-        return { url: "https://dependence-both-adapters-certificate.trycloudflare.com", source: 'Cloudflare Tunnel (Dev)' };
+        // En desarrollo local, apuntamos a tu máquina local por defecto
+        return { url: "http://localhost:3001", source: 'Localhost (Dev)' };
     }
     
     // 4. RED DE SEGURIDAD (FALLBACK DE PRODUCCIÓN)
     // Si el build de producción se ejecuta sin la variable VITE_BACKEND_URL, usará esta URL.
-    const HARDCODED_BACKEND_URL = "https://dependence-both-adapters-certificate.trycloudflare.com";
-    return { url: HARDCODED_BACKEND_URL, source: 'Hardcoded Production Fallback' };
+    const HARDCODED_BACKEND_URL = "http://localhost:3001";
+    return { url: HARDCODED_BACKEND_URL, source: 'Hardcoded Fallback' };
 };
 
 const resolvedConfig = getEnvUrl();
@@ -62,7 +62,7 @@ export const BACKEND_URL: string | undefined = resolvedConfig.url.replace(/\/$/,
 // HEADERS OBLIGATORIOS PARA EVITAR BLOQUEOS DE NGROK Y CORS
 export const API_HEADERS = {
     'Content-Type': 'application/json',
-    'ngrok-skip-browser-warning': 'true', // BYPASS NGROK WARNING PAGE
+    'ngrok-skip-browser-warning': 'true', // BYPASS NGROK WARNING PAGE (Legacy Support)
     'Accept': 'application/json'
 };
 

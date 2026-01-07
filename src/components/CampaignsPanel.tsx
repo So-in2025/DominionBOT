@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { Campaign, WhatsAppGroup, BotSettings } from '../types';
 import { getAuthHeaders } from '../config';
@@ -46,32 +45,27 @@ export const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUr
         if (!startDate || !scheduledTime) return null;
         
         const [h, m] = scheduledTime.split(':').map(Number);
-        // Create a local date object representing start criteria
-        const baseDate = new Date(startDate);
-        baseDate.setHours(h, m, 0, 0); // Local time setup
+        const baseDate = new Date(`${startDate}T${scheduledTime}:00`);
         
         const now = new Date();
         
-        // Clone for calculation
         let checkDate = new Date(baseDate);
         if (checkDate < now) {
-            // If the combined StartDate+Time is in the past, move checkDate to "Now" to start searching forward
             checkDate = new Date();
             checkDate.setHours(h, m, 0, 0);
             if (checkDate < now) {
-                checkDate.setDate(checkDate.getDate() + 1); // Move to tomorrow if time passed today
+                checkDate.setDate(checkDate.getDate() + 1); 
             }
         }
 
         let foundDate: Date | null = null;
 
         if (scheduleType === 'ONCE') {
-            foundDate = baseDate > now ? baseDate : null; // Only valid if future
+            foundDate = baseDate > now ? baseDate : null;
         } else if (scheduleType === 'DAILY') {
             foundDate = checkDate;
         } else if (scheduleType === 'WEEKLY') {
             if (selectedDays.length === 0) return null;
-            // Search next 14 days
             for(let i=0; i<14; i++) {
                 if (selectedDays.includes(checkDate.getDay()) && checkDate > now) {
                     foundDate = new Date(checkDate);
@@ -142,8 +136,7 @@ export const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUr
         setImage(campaign.imageUrl || null);
         
         if (campaign.schedule.startDate) {
-            // FIX: Cast to any/string to handle string from backend.
-            setStartDate((campaign.schedule.startDate as any as string).split('T')[0]);
+            setStartDate((campaign.schedule.startDate as string).split('T')[0]);
         }
         setScheduledTime(campaign.schedule.time || '09:00');
         setSelectedDays(campaign.schedule.daysOfWeek || []);
@@ -350,6 +343,28 @@ export const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUr
         } catch(e) {}
     };
 
+    const purgeAllCampaigns = async () => {
+        if (!confirm("⚠️ ¿PURGAR TODAS LAS CAMPAÑAS?\n\nEsta acción eliminará todas las campañas creadas. Úsalo si tienes errores de carga o corrupción de datos.")) return;
+        setLoading(true);
+        try {
+            const res = await fetch(`${backendUrl}/api/campaigns/all`, {
+                method: 'DELETE',
+                headers: getAuthHeaders(token)
+            });
+            if (res.ok) {
+                const data = await res.json();
+                showToast(data.message, 'success');
+                setCampaigns([]);
+            } else {
+                showToast('Error al purgar campañas.', 'error');
+            }
+        } catch (e) {
+            showToast('Error de conexión.', 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     return (
         <div className="flex-1 bg-brand-black p-6 md:p-10 overflow-y-auto custom-scrollbar font-sans animate-fade-in">
             <div className="max-w-6xl mx-auto space-y-8 pb-32">
@@ -360,6 +375,9 @@ export const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUr
                     </div>
                     {view === 'LIST' && (
                         <div className="flex gap-2">
+                             <button onClick={purgeAllCampaigns} className="px-4 py-3 bg-red-900/10 text-red-500 border border-red-500/20 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all mr-2" title="Eliminar todas las campañas (Reparación)">
+                                Purgar Todo
+                            </button>
                             <button onClick={fetchCampaigns} className={`w-10 h-10 flex items-center justify-center bg-white/5 text-gray-400 rounded-xl hover:text-white hover:bg-white/10 transition-all border border-white/5 ${loading ? 'animate-spin' : ''}`}>
                                 ↻
                             </button>
@@ -573,8 +591,12 @@ export const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUr
                                 <p className="text-gray-500 text-xs uppercase tracking-widest font-bold">Sin campañas activas.</p>
                             </div>
                         )}
-                        {campaigns.map(c => (
-                             <div key={c.id} className="bg-brand-surface border border-white/5 rounded-2xl p-6 flex flex-col justify-between group hover:-translate-y-1 transition-transform">
+                        {campaigns.map(c => {
+                            const total = c.groups.length;
+                            const sent = c.stats.totalSent || 0;
+                            const progress = total > 0 ? (sent / total) * 100 : 0;
+                            return (
+                             <div key={c.id} className="bg-brand-surface border border-white/5 rounded-2xl p-6 flex flex-col justify-between group hover:-translate-y-1 transition-transform shadow-lg">
                                 <div>
                                     <div className="flex justify-between items-start mb-4">
                                         <h4 className="text-sm font-black text-white uppercase tracking-wider group-hover:text-brand-gold transition-colors">{c.name}</h4>
@@ -582,6 +604,7 @@ export const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUr
                                             <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase border ${
                                                 c.status === 'ACTIVE' ? 'bg-green-500/10 text-green-400 border-green-500/20' :
                                                 c.status === 'PAUSED' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' :
+                                                c.status === 'COMPLETED' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
                                                 'bg-gray-500/10 text-gray-400 border-gray-500/20'
                                             }`}>
                                                 {c.status}
@@ -589,20 +612,29 @@ export const CampaignsPanel: React.FC<CampaignsPanelProps> = ({ token, backendUr
                                         </div>
                                     </div>
                                     <p className="text-xs text-gray-400 line-clamp-2 mb-4">{c.message}</p>
-                                    <div className="text-[9px] font-mono text-gray-500 space-y-2">
+                                    
+                                    <div className="space-y-3">
+                                        <div className="w-full bg-black/50 rounded-full h-2 border border-white/5">
+                                            <div className="bg-brand-gold h-full rounded-full" style={{width: `${progress}%`}}></div>
+                                        </div>
+                                        <div className="flex justify-between text-[9px] font-mono text-gray-500">
+                                            <span>{sent} / {total} enviados</span>
+                                            <span className="text-red-500">{c.stats.totalFailed || 0} fallidos</span>
+                                        </div>
+                                    </div>
+
+                                    <div className="text-[9px] font-mono text-gray-500 space-y-2 mt-4">
                                         <p><strong className="text-gray-400">Próximo:</strong> {c.stats.nextRunAt ? new Date(c.stats.nextRunAt).toLocaleString() : 'N/A'}</p>
-                                        <p><strong className="text-gray-400">Grupos:</strong> {c.groups.length}</p>
-                                        <p><strong className="text-gray-400">Envíos:</strong> {c.stats.totalSent || 0}</p>
                                     </div>
                                 </div>
                                 <div className="mt-6 pt-4 border-t border-white/5 flex gap-2">
-                                    <button onClick={() => executeNow(c)} className="px-3 py-1.5 bg-brand-gold/10 text-brand-gold border border-brand-gold/20 rounded-lg text-[9px] font-bold uppercase hover:bg-brand-gold hover:text-black transition-all">Ejecutar Ahora</button>
+                                    <button onClick={() => executeNow(c)} className="p-2 bg-brand-gold/10 text-brand-gold border border-brand-gold/20 rounded-lg hover:bg-brand-gold hover:text-black transition-all" title="Ejecutar Ahora">⚡</button>
                                     <button onClick={() => handleEditClick(c)} className="px-3 py-1.5 bg-white/5 text-gray-400 border border-white/10 rounded-lg text-[9px] font-bold uppercase hover:text-white transition-all">Editar</button>
                                     <button onClick={() => toggleStatus(c)} className="px-3 py-1.5 bg-white/5 text-gray-400 border border-white/10 rounded-lg text-[9px] font-bold uppercase hover:text-white transition-all">{c.status === 'ACTIVE' ? 'Pausar' : 'Reanudar'}</button>
                                     <button onClick={() => deleteCampaign(c.id)} className="px-2 py-1.5 bg-red-900/10 text-red-500 border border-red-900/20 rounded-lg text-[9px] font-bold uppercase hover:bg-red-500 hover:text-white transition-all ml-auto">✕</button>
                                 </div>
                             </div>
-                        ))}
+                        )})}
                     </div>
                 )}
             </div>

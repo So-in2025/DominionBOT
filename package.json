@@ -48,6 +48,12 @@
     "react-dom": "^18.2.0",
     "typescript": "^5.4.5",
     "uuid": "^9.0.1",
-    "https-proxy-agent": "^7.0.4"
+    "https-proxy-agent": "^7.0.4",
+    "ioredis": "^5.4.1",
+    "bullmq": "^5.7.8",
+    "socket.io": "^4.7.5",
+    "socket.io-client": "^4.7.5",
+    "@bull-board/express": "^6.0.0",
+    "@bull-board/api": "^6.0.0"
   }
 }

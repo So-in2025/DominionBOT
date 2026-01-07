@@ -28,9 +28,11 @@ const TEST_SCRIPT = [
 export const handleGetDashboardMetrics = async (req: AuthenticatedRequest, res: any) => {
     try {
         const clients = await db.getAllClients();
+        const settings = await db.getSystemSettings();
         
-        const proPrice = 29; 
-        const starterPrice = 0; 
+        // Use real configured prices for accurate MRR calculation
+        const proPrice = settings.planSniperPriceUSD || 39; 
+        const starterPrice = settings.planStandardPriceUSD || 19; 
 
         const mrr = clients.reduce((acc, client) => {
             if (client.plan_status === 'active') {

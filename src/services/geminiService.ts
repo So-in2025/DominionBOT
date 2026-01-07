@@ -2,6 +2,7 @@
 import { GoogleGenAI, Modality } from "@google/genai";
 import { db } from '../database.js';
 import { logService } from './logService.js';
+import { redis } from '../redis.js'; // IMPORT REDIS
 
 const MODEL_PRIORITY = [
     "gemini-2.0-flash-exp",
@@ -11,13 +12,14 @@ const MODEL_PRIORITY = [
     "gemini-3-pro-preview"
 ];
 
-// Priority list specifically for Text-to-Speech
+// DEDICATED MODEL FOR RADAR BATCHING (High Reasoning, separate quota)
+const RADAR_MODEL = "gemini-3-pro-preview";
+
 const TTS_MODEL_PRIORITY = [
     "gemini-2.5-flash-preview-tts"
-    // Future TTS models can be added here
 ];
 
-const MODEL_COOLDOWN_MS = 60 * 60 * 1000; // 60 Minutes
+const MODEL_COOLDOWN_SECONDS = 60 * 60; // 60 Minutes
 
 interface GenerateContentParams {
     apiKey: string;
@@ -28,8 +30,7 @@ interface GenerateContentParams {
 }
 
 /**
- * Genera contenido utilizando la Matriz de Derivación Secuencial de 5 modelos.
- * Incluye lógica de lista negra (cooldown) para modelos que fallan.
+ * STANDARD FALLBACK GENERATION (For Chatbot & Fast Responses)
  */
 export const generateContentWithFallback = async ({
     apiKey,
@@ -42,10 +43,10 @@ export const generateContentWithFallback = async ({
     const ai = new GoogleGenAI({ apiKey });
 
     for (const modelName of MODEL_PRIORITY) {
-        // 1. CHEQUEO DE LISTA NEGRA ANTES DE INTENTAR
-        const cooldownUntil = await db.getModelCooldown(modelName);
-        if (cooldownUntil && Date.now() < cooldownUntil) {
-            // logService.debug(`[GEMINI-SERVICE] Modelo ${modelName} en cooldown. Saltando.`, undefined, undefined);
+        // 1. CHEQUEO DE LISTA NEGRA EN REDIS (Ultra rápido)
+        const isCooldown = await redis.get(`model:cooldown:${modelName}`);
+        if (isCooldown) {
+            // logService.debug(`[GEMINI-REDIS] Modelo ${modelName} en cooldown. Saltando.`);
             continue;
         }
 
@@ -69,40 +70,80 @@ export const generateContentWithFallback = async ({
         } catch (err: any) {
             const errorMessage = err.message || '';
             
-            // 2. MANEJO DE RATE LIMIT (429) O CUOTA AGOTADA
+            // 2. MANEJO DE RATE LIMIT (429) -> Bloqueo Redis por 1h
             if (errorMessage.includes('429') || errorMessage.includes('RESOURCE_EXHAUSTED')) {
-                logService.warn(`[GEMINI-SERVICE] ⚠️ RATE LIMIT (429) con ${modelName}. Bloqueando por 60m y saltando motor (0ms delay).`, undefined, undefined);
+                logService.warn(`[GEMINI-SERVICE] ⚠️ RATE LIMIT (429) con ${modelName}. Bloqueando en Redis por 60m.`, undefined, undefined);
                 
-                // CRÍTICO: Guardar en DB que este modelo está muerto por 1 hora.
-                // Así la próxima petición (loop 2) ni siquiera entra al 'try'.
-                await db.setModelCooldown(modelName, Date.now() + MODEL_COOLDOWN_MS);
+                // SET key, Value '1', EXpire 3600s
+                await redis.set(`model:cooldown:${modelName}`, '1', 'EX', MODEL_COOLDOWN_SECONDS);
                 
                 continue; 
             }
 
-            // 3. MANEJO DE OTROS ERRORES (500, Overloaded, etc)
-            logService.warn(`[GEMINI-FAILOVER] Fallo técnico con ${modelName}. Mensaje: ${errorMessage}. Pasando al siguiente modelo.`, undefined, undefined);
-            // También bloqueamos modelos con fallos técnicos para evitar latencia
-            await db.setModelCooldown(modelName, Date.now() + (5 * 60 * 1000)); // 5 min cooldown para errores técnicos
+            // 3. FALLO TÉCNICO -> Bloqueo corto (5 min)
+            logService.warn(`[GEMINI-FAILOVER] Fallo técnico con ${modelName}. Mensaje: ${errorMessage}. Pasando al siguiente.`, undefined, undefined);
+            await redis.set(`model:cooldown:${modelName}`, '1', 'EX', 300);
         }
     }
 
-    // Si todos los modelos fallaron (o están en cooldown)
     logService.error('[GEMINI-SERVICE] CRITICAL: Todos los modelos de la matriz de derivación fallaron o están agotados.', new Error('All models failed'), undefined, undefined);
     throw new Error("Todos los modelos de IA fallaron. Por favor, intente más tarde.");
 };
 
 /**
- * Genera Audio (TTS) utilizando la matriz de modelos soportados.
- * Aplica la misma lógica de resiliencia que para texto.
+ * EXCLUSIVE HIGH-REASONING BATCH GENERATION (Radar 4.5)
+ * Uses Gemini 3 Pro exclusively for deep analysis of multiple signals.
+ * Does NOT fallback to Flash models to maintain analysis quality.
  */
+export const generateHighReasoningBatch = async ({
+    apiKey,
+    prompt,
+    systemInstruction,
+    responseSchema
+}: GenerateContentParams) => {
+    const ai = new GoogleGenAI({ apiKey });
+    
+    // Check specific cooldown for the Pro model
+    const isCooldown = await redis.get(`model:cooldown:${RADAR_MODEL}`);
+    if (isCooldown) {
+        throw new Error(`Modelo Radar (${RADAR_MODEL}) en enfriamiento por límites de cuota.`);
+    }
+
+    try {
+        const config: any = {
+            // High reasoning needs higher budget if using thinkingConfig, 
+            // but for 3-pro-preview standard, we just use standard generation
+            // unless we want to enable thinking. For batching, standard is usually fine.
+            responseMimeType: "application/json",
+            responseSchema: responseSchema
+        };
+        
+        if (systemInstruction) config.systemInstruction = systemInstruction;
+
+        const response = await ai.models.generateContent({
+            model: RADAR_MODEL,
+            contents: [{ parts: [{ text: prompt }] }],
+            config,
+        });
+
+        return response;
+
+    } catch (err: any) {
+        const errorMessage = err.message || '';
+        if (errorMessage.includes('429') || errorMessage.includes('RESOURCE_EXHAUSTED')) {
+            logService.warn(`[RADAR-BATCH] ⚠️ Cuota agotada para ${RADAR_MODEL}. Pausando Radar por 1 hora.`, undefined, undefined);
+            await redis.set(`model:cooldown:${RADAR_MODEL}`, '1', 'EX', MODEL_COOLDOWN_SECONDS);
+        }
+        throw err;
+    }
+};
+
 export const generateAudioWithFallback = async (apiKey: string, text: string, voiceName: string = 'Kore') => {
     const ai = new GoogleGenAI({ apiKey });
 
     for (const modelName of TTS_MODEL_PRIORITY) {
-        // 1. CHEQUEO DE LISTA NEGRA
-        const cooldownUntil = await db.getModelCooldown(modelName);
-        if (cooldownUntil && Date.now() < cooldownUntil) {
+        const isCooldown = await redis.get(`model:cooldown:${modelName}`);
+        if (isCooldown) {
             continue;
         }
 
@@ -126,13 +167,13 @@ export const generateAudioWithFallback = async (apiKey: string, text: string, vo
             const errorMessage = err.message || '';
             
             if (errorMessage.includes('429') || errorMessage.includes('RESOURCE_EXHAUSTED')) {
-                logService.warn(`[GEMINI-TTS] ⚠️ RATE LIMIT (429) con ${modelName}. Bloqueando modelo.`, undefined, undefined);
-                await db.setModelCooldown(modelName, Date.now() + MODEL_COOLDOWN_MS);
+                logService.warn(`[GEMINI-TTS] ⚠️ RATE LIMIT (429) con ${modelName}. Bloqueando en Redis.`, undefined, undefined);
+                await redis.set(`model:cooldown:${modelName}`, '1', 'EX', MODEL_COOLDOWN_SECONDS);
                 continue;
             }
 
-            logService.warn(`[GEMINI-TTS-FAILOVER] Fallo técnico con ${modelName}. Pasando al siguiente.`, undefined, undefined);
-            await db.setModelCooldown(modelName, Date.now() + (5 * 60 * 1000));
+            logService.warn(`[GEMINI-TTS-FAILOVER] Fallo técnico con ${modelName}.`, undefined, undefined);
+            await redis.set(`model:cooldown:${modelName}`, '1', 'EX', 300);
         }
     }
 

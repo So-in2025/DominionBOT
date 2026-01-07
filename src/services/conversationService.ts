@@ -1,10 +1,11 @@
 
-import { Conversation, LeadStatus, Message } from '../types.js';
+import { Conversation, LeadStatus, Message, SocketEvents } from '../types.js';
 import { db, sanitizeKey } from '../database.js';
 import { logService } from './logService.js';
 import { ELITE_BOT_JID } from '../whatsapp/client.js'; 
 import { createHash } from 'crypto';
 import { normalizeJid } from '../utils/jidUtils.js';
+import { socketService } from './socketService.js';
 
 class ConversationService {
   
@@ -21,6 +22,16 @@ class ConversationService {
         const lastActive = c.lastActivity ? new Date(c.lastActivity).getTime() : 0;
         return lastActive > sinceTime;
     });
+  }
+
+  /**
+   * Centralized method to save and broadcast updates.
+   * This replaces direct calls to db.saveUserConversation when we want Real-Time updates.
+   */
+  async updateConversation(userId: string, conversation: Conversation) {
+      await db.saveUserConversation(userId, conversation);
+      // 🔥 REAL-TIME EMISSION
+      socketService.emitToUser(userId, SocketEvents.CONVERSATION_UPDATE, conversation);
   }
 
   /**
@@ -70,9 +81,8 @@ class ConversationService {
           } else {
               // AGGRESSIVE NAME UPDATE:
               // Si item.name existe y es diferente al actual, actualizamos.
-              // Esto corrige el problema de "Número arriba, número abajo".
-              // Respetamos 'Simulador Neural' para no romper el test bot.
-              if (item.name && conversation.leadName !== item.name && !isEliteBotJid) {
+              // PROTECCIÓN: Solo si NO ha sido editado manualmente.
+              if (item.name && conversation.leadName !== item.name && !isEliteBotJid && !conversation.isNameEdited) {
                   conversation.leadName = item.name;
                   updates[safeJid] = conversation;
                   hasUpdates = true;
@@ -112,13 +122,14 @@ class ConversationService {
     const effectiveLastActivity = new Date().toISOString();
 
     if (!conversation) {
-      // BLOQUE 2: SEGURIDAD SECUNDARIA
-      // Si el mensaje es del dueño y no existe chat, abortar.
-      if (message.sender === 'owner') {
+      // BLOQUE 2: SEGURIDAD SECUNDARIA (LIMPIEZA DE LISTA)
+      // Si el mensaje es del dueño (desde el móvil) y no existe chat previo, abortar.
+      // Esto evita que tus chats personales con nuevos contactos aparezcan en la app.
+      if (message.sender === 'owner' && !isHistoryImport) {
           return; 
       }
-      const leadIdentifier = canonicalJid.split('@')[0];
       
+      const leadIdentifier = canonicalJid.split('@')[0];
       const initialBotState = isEliteBotJid ? true : (isHistoryImport ? false : true);
 
       conversation = {
@@ -146,7 +157,8 @@ class ConversationService {
 
         // AGGRESSIVE NAME UPDATE ON NEW MESSAGE
         // Si llega un leadName nuevo (PushName) y es distinto al actual, actualizamos.
-        if (leadName && leadName !== conversation.leadName && !isEliteBotJid) {
+        // PROTECCIÓN: Solo si NO ha sido editado manualmente por el vendedor.
+        if (leadName && leadName !== conversation.leadName && !isEliteBotJid && !conversation.isNameEdited) {
              conversation.leadName = leadName;
         }
     }
@@ -188,7 +200,8 @@ class ConversationService {
         conversation.status = LeadStatus.WARM;
     }
     
-    await db.saveUserConversation(userId, conversation);
+    // Use the new method to emit update
+    await this.updateConversation(userId, conversation);
   }
 }
 

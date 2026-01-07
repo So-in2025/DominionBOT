@@ -46,6 +46,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const [isTogglingBot, setIsTogglingBot] = useState(false);
   const [isForcingAi, setIsForcingAi] = useState(false);
   const [isSharingSignal, setIsSharingSignal] = useState(false); 
+  
+  // NAME EDITING STATE
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editedName, setEditedName] = useState('');
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -54,7 +58,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   // Recommended Fix: Reset sidebar state on conversation switch (Desktop only to avoid mobile layout shifts)
   useEffect(() => {
       if (!isMobile) setShowSidebar(true);
+      // Reset editing state on switch
+      setIsEditingName(false);
   }, [conversation?.id, isMobile]);
+
+  useEffect(() => {
+      if (conversation) setEditedName(conversation.leadName);
+  }, [conversation?.leadName]);
 
   // FIX 1: Optimized scroll dependency to avoid jitter on poll
   useEffect(scrollToBottom, [
@@ -146,6 +156,37 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       }
   };
 
+  const saveEditedName = async () => {
+      if (!conversation || !onUpdateConversation) return;
+      if (!editedName.trim()) {
+          setIsEditingName(false);
+          setEditedName(conversation.leadName);
+          return;
+      }
+      
+      // Update local and backend
+      // Set isNameEdited to true to protect this name from future auto-updates
+      onUpdateConversation(conversation.id, { 
+          leadName: editedName.trim(),
+          isNameEdited: true 
+      });
+      
+      try {
+          const token = localStorage.getItem('saas_token');
+          await fetch(`${BACKEND_URL}/api/conversation/update`, {
+              method: 'POST',
+              headers: getAuthHeaders(token),
+              body: JSON.stringify({ 
+                  id: conversation.id, 
+                  updates: { leadName: editedName.trim(), isNameEdited: true } 
+              })
+          });
+      } catch (e) {
+          console.error("Error updating name", e);
+      }
+      setIsEditingName(false);
+  };
+
   if (!conversation) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center bg-brand-black text-gray-600">
@@ -199,25 +240,42 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
 
         {/* HEADER */}
         <header className="relative z-10 px-4 py-3 md:px-6 border-b border-white/10 bg-brand-surface/90 backdrop-blur-md flex justify-between items-center shadow-lg">
-          <div className="flex items-center gap-3 md:gap-4">
+          <div className="flex items-center gap-3 md:gap-4 flex-1 min-w-0">
               {isMobile && (
                   <button onClick={onBack} className="p-2 -ml-2 text-gray-400 hover:text-white transition-colors">
                       <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
                   </button>
               )}
               
-              <div className="relative">
+              <div className="relative flex-shrink-0">
                   <div className="w-10 h-10 md:w-11 md:h-11 rounded-full bg-gradient-to-br from-gray-700 to-black border border-white/10 flex items-center justify-center font-bold text-white shadow-inner overflow-hidden">
                       {displayTitle.charAt(0).toUpperCase()}
                   </div>
                   <div className={`absolute bottom-0 right-0 w-3 h-3 border-2 border-brand-surface rounded-full ${isBlacklisted ? 'bg-red-500' : 'bg-green-500'}`}></div>
               </div>
 
-              <div>
-                <h2 className="text-sm md:text-base font-bold text-white leading-tight flex items-center gap-2">
-                    {displayTitle}
-                    {isBlacklisted && <span className="text-[9px] bg-red-500 text-white px-1.5 py-0.5 rounded uppercase font-black tracking-wider">Bloqueado</span>}
-                </h2>
+              <div className="flex-1 min-w-0">
+                {isEditingName ? (
+                    <div className="flex items-center gap-2">
+                        <input 
+                            autoFocus
+                            type="text" 
+                            value={editedName}
+                            onChange={(e) => setEditedName(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && saveEditedName()}
+                            className="bg-black/50 border border-brand-gold/50 text-white text-sm font-bold rounded px-2 py-1 outline-none w-full max-w-[200px]"
+                        />
+                        <button onClick={saveEditedName} className="text-green-400 hover:text-green-300"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg></button>
+                        <button onClick={() => { setIsEditingName(false); setEditedName(conversation.leadName); }} className="text-red-400 hover:text-red-300"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+                    </div>
+                ) : (
+                    <h2 className="text-sm md:text-base font-bold text-white leading-tight flex items-center gap-2 group/name cursor-pointer" onClick={() => setIsEditingName(true)} title="Clic para editar alias">
+                        <span className="truncate">{displayTitle}</span>
+                        <svg className="w-3 h-3 text-gray-600 opacity-0 group-hover/name:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                        {isBlacklisted && <span className="text-[9px] bg-red-500 text-white px-1.5 py-0.5 rounded uppercase font-black tracking-wider flex-shrink-0">Bloqueado</span>}
+                    </h2>
+                )}
+                
                 <div className="flex flex-col">
                     <p className="text-[10px] text-gray-500 font-mono mt-0.5 tracking-wider">{displaySubtitle}</p>
                     <p className={`text-[9px] font-black uppercase tracking-widest mt-0.5 ${botStatus.color}`}>

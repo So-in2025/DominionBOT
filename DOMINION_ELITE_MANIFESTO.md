@@ -1,5 +1,4 @@
-
-# 🦅 CÓDICE DOMINION v3.1.3 [ADN DEL PROYECTO]
+# 🦅 CÓDICE DOMINION v3.3.0 [ADN DEL PROYECTO]
 
 > "En la era de la saturación digital, la velocidad es la moneda y la inteligencia es el arma. Dominion no es un bot; es la herramienta para no perder ventas en WhatsApp."
 
@@ -212,7 +211,7 @@ La oferta comercial de Dominion está directamente ligada a la potencia del **De
 Para recompensar a los primeros usuarios y construir una base de clientes leal, se establece una política de "Precio Fundadores".
 
 - **Definición:** Todo usuario que se suscriba durante la etapa de lanzamiento del producto es marcado como `is_founder`.
-- **Beneficio Principal:** El usuario fundador mantiene el precio de su plan **de forma indefinida**, siempre y cuando su suscripción permanezca activa e ininterrumpida.
+- **Beneficio Principal:** El usuario fundador mantiene el precio de su plan **de forma indefinida**, siempre yuantas su suscripción permanezca activa e ininterrumpida.
 - **Condición de Pérdida:** Si el usuario cancela su suscripción o esta vence por falta de pago, pierde irrevocablemente el beneficio de "Precio Fundadores". Cualquier reactivación futura se realizará al precio de lista vigente en ese momento.
 - **Objetivo:** Incentivar la adopción temprana, reducir la tasa de cancelación (churn) y preparar el terreno para futuras actualizaciones de precios sin afectar a la base de usuarios original.
 
@@ -220,57 +219,53 @@ Para recompensar a los primeros usuarios y construir una base de clientes leal, 
 
 ## 🏗️ ARQUITECTURA Y FLUJO DE DATOS
 
-### 1. Diagrama de Arquitectura de Alto Nivel
+### 1. Diagrama de Arquitectura de Alto Nivel (HYDRA HYBRID)
 ```
-            +----------------+      +------------------+      +-------------------+
-            | Cliente (React)|<---->|  Backend (Node)  |<---->|   MongoDB Atlas   |
-            +----------------+      +------------------+      +-------------------+
-                  ^       |                    |                        ^
-                  |       | (API RESTful)      | (Baileys WS)           | (Auth State/Seeds)
-                  |       |                    v                        |
-                  |       +-----------+----------------+      +-------------------+
-                  |                   |  Motor WhatsApp  |      | Google Gemini API |
-                  |                   +----------------+      +-------------------+
-                  |                           ^                         ^
-                  |                           | (Protocolo Web)         | (API RESTful)
-                  |                           v                         |
-            +----------------+      +------------------+      +-------------------+
-            |  Usuario Final |<---->|  WhatsApp Web    |<-----|  (Procesamiento IA) |
-            +----------------+      +------------------+      +-------------------+
+            [CLIENTE: NAVEGADOR] <---- (HTTPS / Smart Link) ----> [CLOUDFLARE ZERO TRUST]
+                    |                                                     |
+                    v                                                     v
+             [VERCEL CLOUD]                                       [REDIS: IRON MEMORY]
+                                                                          ^
+                                                                          | (Queue)
+                                                                          v
+            [WHATSAPP WEB] <-------- (Baileys) ---------> [WORKER: HYDRA CAMPAIGN ENGINE]
+                    ^
+                    | (Persistencia L2)
+                    v
+             [MONGODB ATLAS] <---- (L3 Buffer) ----> [BACKEND: LOCAL / CLOUDFLARE]
 ```
 
 ### 2. Desglose de Componentes
 1.  **Frontend (Cliente):**
     - **Stack:** React con Vite, TypeScript, Tailwind CSS.
     - **Función:** Proporciona la interfaz de usuario (Dashboard) para que el cliente gestione su nodo. Se comunica con el Backend a través de una API RESTful.
-    - **Despliegue:** Vercel (Front) / Ngrok Tunnel (Hybrid).
-    - **Service Discovery:** `ngrokService` para autodetectar URLs públicas.
-3.  **Backend (Servidor):**
+    - **Despliegue:** Vercel (Cloud).
+    - **Conectividad:** **Smart Link Protocol**. El frontend detecta dinámicamente si debe conectarse a un servidor local o Tunnel.
+2.  **Backend (Servidor):**
     - **Stack:** Node.js con Express, TypeScript.
-    - **Función:** Es el núcleo de la aplicación. Gestiona la lógica de negocio, la autenticación (JWT), las peticiones de la API, y orquesta la comunicación entre el Motor de WhatsApp, la Base de Datos y el Core de IA.
-    - **Despliegue:** Local con Ngrok (Híbrido) o Cloud (Render).
-    - **Service Discovery:** `ngrokService` para autodetectar URLs públicas.
-    - **Arquitectura:** Monolito Optimizado (Unified Core). Se prioriza la simplicidad operativa sobre la micro-segmentación para la fase actual.
-3.  **Motor de WhatsApp:**
-    - **Librería:** `@whiskeysockets/baileys`.
-    - **Función:** Emula una sesión de WhatsApp Web, manteniendo una conexión WebSocket persistente con los servidores de WhatsApp. Se encarga de recibir y enviar mensajes en nombre del usuario. Cada cliente tiene su propia sesión aislada.
+    - **Función:** Es el núcleo de la aplicación. Orquesta la comunicación.
+    - **Despliegue:** **Híbrido**. El código es agnóstico del entorno. Puede correr en un servidor local expuesto vía **Cloudflare Tunnel** (recomendado para producción estable y evitar problemas de IP dinámica) o en servicios de nube tradicionales.
+    - **Service Discovery:** `ngrokService` ha sido deprecado en favor de túneles estáticos (Cloudflare).
+    - **Arquitectura:** **Hydra Core**. Un sistema modular donde las tareas pesadas (Campañas, Radar) se delegan a colas de trabajo.
+3.  **Iron Memory (Redis):**
+    - **Función:** Capa de persistencia caliente (L2).
+    - **Persistencia de Sesión:** **ESCRITURA SINCRÓNICA**. Las credenciales de WhatsApp se escriben en Redis en el mismo ciclo de evento que se reciben.
+    - **Uso:** Gestión de colas (BullMQ), bloqueos distribuidos (Locks), caché de sesiones y limitación de tasa.
 4.  **Base de Datos:**
     - **Servicio:** MongoDB Atlas.
-    - **Función:** Almacena toda la información persistente:
-        - **Credenciales de Sesión (Baileys):** Permite reanudar sesiones de WhatsApp sin necesidad de escanear el QR constantemente.
-        - **Datos de Usuario:** Perfiles, planes, configuraciones (`BotSettings`).
-        - **Conversaciones:** Historial de mensajes, estado de leads, notas internas.
-        - **Database Seeding:** Testimonios iniciales y datos de arranque inyectados desde el servidor para persistencia real.
-5.  **Core de IA:**
-    - **Servicio:** Google Gemini API (`@google/genai`).
-    - **Función:** Recibe el historial de una conversación y las directivas del "Cerebro Neural" desde el Backend. Procesa el texto y devuelve una respuesta estructurada en JSON con el texto a enviar, el nuevo estado del lead, tags, etc.
+    - **Función:** Persistencia de largo plazo (L3).
+    - **Diamond Storage:** Sistema de escritura diferida (Write-Behind) para volcar los datos de Redis a disco.
+5.  **Motor de WhatsApp:**
+    - **Librería:** `@whiskeysockets/baileys`.
+    - **Función:** Emulación de sesión de WhatsApp Web.
+6.  **Core de IA:**
+    - **Servicio:** Google Gemini API.
+    - **Estrategia:** Matriz de derivación con modelos Flash y Pro.
 
-### 3. Estado y Memoria (In-Memory Strategy)
-Para garantizar la máxima velocidad de respuesta en "High Frequency Trading" (conversaciones rápidas), el sistema mantiene deliberadamente ciertos estados críticos en memoria RAM (Volatile Memory):
-- **Blacklists & Cooldowns:** Listas de bloqueo temporal de modelos de IA.
-- **Campaign Locks:** Semáforos para evitar duplicación de campañas.
-- **QR Cache:** Imágenes QR temporales.
-**Nota Técnica:** Esta decisión arquitectónica maximiza el throughput en arquitecturas de nodo único (Single-Tenant o Small-Cluster), pero requiere una estrategia de "Graceful Shutdown" para no perder estado en reinicios.
+### 3. Estado y Memoria (Iron Memory Strategy)
+El sistema ha evolucionado de "In-Memory" (RAM pura) a "Iron Memory" (Redis).
+- **Persistencia L2 (Caliente):** Redis mantiene el estado "vivo" de la sesión. Si el servidor Node crashea, al reiniciar recupera la sesión de Redis instantáneamente.
+- **Fast Lane (Radar):** Los mensajes de alta urgencia saltan el buffer de espera.
 
 ### 4. Flujo de Datos Típico (Mensaje Entrante)
 1.  **Recepción:** El Usuario Final envía un mensaje a través de WhatsApp.
@@ -294,17 +289,14 @@ Para garantizar la máxima velocidad de respuesta en "High Frequency Trading" (c
 ### 1. Stack Tecnológico Principal
 | Área              | Tecnología Principal         | Descripción                                                              |
 | ----------------- | ---------------------------- | ------------------------------------------------------------------------ |
-| **Frontend**      | React (con Vite) & TypeScript| Para una UI moderna, rápida y tipada.                                    |
-| **Estilos**       | Tailwind CSS                 | Framework Utility-First para un diseño rápido y consistente.             |
-| **Backend**       | Node.js & Express            | Entorno de ejecución y framework para construir la API RESTful.            |
-| **Lenguaje (Back)** | TypeScript                 | Añade tipado estático a JavaScript para robustez.                        |
-| **Base de Datos**   | MongoDB (con Mongoose)     | Base de datos NoSQL flexible, ideal para los datos de sesión y chats.    |
-| **Motor WhatsApp**| `@whiskeysockets/baileys`    | Librería clave que emula WhatsApp Web para la conexión.                  |
-| **Inteligencia IA**| `@google/genai` (Gemini)     | SDK oficial para interactuar con los modelos de IA de Google.            |
-| **Autenticación** | JWT (jsonwebtoken)           | Estándar para crear tokens de acceso seguros entre cliente y servidor.   |
-| **Despliegue (BE)** | Ngrok / Render               | Híbrido: Local con túnel público o Nube.                                 |
-| **Despliegue (FE)** | Vercel                       | Plataforma optimizada para el despliegue de aplicaciones frontend.       |
-| **Sincronización**  | Polling + Smart Link         | Estrategia robusta de actualización y reconexión automática.             |
+| **Frontend**      | React + Vite + Tailwind      | UI Reactiva de alto rendimiento.                                         |
+| **Backend**       | Node.js + Express            | API RESTful.                                                             |
+| **Memoria**       | **Redis (IOredis)**          | "Iron Memory". Gestión de estado, locks y colas.                         |
+| **Colas**         | **BullMQ**                   | "Hydra Engine". Procesamiento asíncrono de campañas.                     |
+| **Base de Datos** | MongoDB (Mongoose)           | Persistencia documental (L3).                                            |
+| **Motor WA**      | @whiskeysockets/baileys      | Emulación de cliente WhatsApp.                                           |
+| **IA**            | Google Gemini (GenAI SDK)    | Motor cognitivo (Flash & Pro models).                                    |
+| **Túnel**         | **Cloudflare Zero Trust**    | Infraestructura de red empresarial (Reemplaza Ngrok).                    |
 
 ### 2. Estructura de Archivos del Proyecto (`/src`)
 ```
@@ -325,7 +317,6 @@ Para garantizar la máxima velocidad de respuesta en "High Frequency Trading" (c
 ├── services/           # Lógica de negocio y comunicación con APIs externas
 │   ├── aiService.ts      # Lógica de construcción de prompts y llamada a Gemini
 │   ├── radarService.ts   # Motor de detección de oportunidades grupales (Radar 3.0)
-│   ├── ngrokService.ts   # [NUEVO] Servicio de autodeteción de túneles
 │   ├── audioService.ts   # (Frontend) Gestión de reproducción de audio y TTS
 │   ├── conversationService.ts # Orquesta la lógica de las conversaciones
 │   ├── logService.ts     # Sistema centralizado de logging
@@ -333,6 +324,10 @@ Para garantizar la máxima velocidad de respuesta en "High Frequency Trading" (c
 │   ├── depthEngine.ts    # Motor de cálculo de profundidad cognitiva
 │   ├── capabilityResolver.ts # Resolución de capacidades por usuario
 │   └── ttsService.ts     # (Backend) Generación de audio con Text-to-Speech
+├── workers/            # [NUEVO] Procesadores de colas en segundo plano
+│   └── campaignWorker.ts # Worker de BullMQ para campañas masivas
+├── infrastructure/     # [NUEVO] Configuración de infraestructura base
+│   └── queues.ts         # Definición de colas BullMQ
 ├── utils/              # Funciones de ayuda reutilizables
 ├── whatsapp/           # Lógica de conexión con WhatsApp (Baileys)
 │   ├── client.ts       # Orquesta la conexión, recepción y envío de mensajes
@@ -342,6 +337,7 @@ Para garantizar la máxima velocidad de respuesta en "High Frequency Trading" (c
 ├── database.ts         # Conexión con MongoDB y modelos de datos (Mongoose)
 ├── env.ts              # Carga y exporta variables de entorno
 ├── server.ts           # Punto de entrada del servidor Express
+├── redis.ts            # [NUEVO] Cliente Redis Singleton
 └── types.ts            # Definiciones de tipos y enumeraciones de TypeScript
 ```
 
@@ -465,14 +461,21 @@ Proporcionar feedback auditivo para acciones de UI/UX y reforzar la identidad de
 - **Gobernanza Avanzada:** Kill Switch y Watchdog de hardware.
 - **Optimistic UI Core:** Sincronización instantánea y eliminación de estados zombies.
 
-### 🚧 v3.2 (Hardening Phase - Próximo)
-- **Migración de Estado Volátil:** Mover `processingCampaignIds` y `modelCooldowns` de memoria RAM a una capa persistente rápida (Redis/Mongo TTL) para escalar horizontalmente.
-- **Optimización de Carga Frontend:** Implementar polling adaptativo para reducir la carga en MongoDB cuando hay inactividad.
-- **Refuerzo de Baileys:** Implementar estrategia de "Session Restoration" avanzada para minimizar desconexiones inesperadas.
+### ✅ v3.2 (Hydra Core - COMPLETADO)
+- **Iron Memory:** Implementación de Redis para gestión de estado crítico.
+- **Hydra Queues:** Migración del motor de campañas a BullMQ para robustez y reintentos.
+- **Diamond Storage:** Blindaje de sesiones de WhatsApp contra corrupción de datos.
+- **Smart Link v2:** Adaptación para Cloudflare Tunnels.
 
-### 🌌 Visión a Largo Plazo
-- **Integración Multi-Canal:** Expandir el motor a Instagram DMs, Telegram, etc.
-- **Inteligencia de Negocio Autónoma:** Permitir que la IA analice las métricas y sugiera mejoras en la configuración del "Cerebro Neural" basadas en el análisis de métricas.
+### ✅ v3.3 (Intelligence Surge - COMPLETADO)
+- **Radar 4.5:** Inferencia por lotes usando Gemini 3 Pro.
+- **Stealth Protocol:** Filtrado en cascada y horarios de sueño para el Radar.
+- **Fast Lane:** Procesamiento inmediato de señales de alta urgencia.
+
+### 🚧 v4.0 (Quantum Leap - Próximo)
+- **Neural Voice:** Respuestas de audio generadas en tiempo real con clonación de voz.
+- **Multi-Agent Swarm:** Orquestación de múltiples bots especializados (Soporte, Ventas, Admin) en un mismo número.
+- **Dockerization:** Empaquetado del backend para despliegue en un clic (Railway/AWS).
 
 ---
 
@@ -545,13 +548,13 @@ El frontend ya no es ciego. Implementa un sistema de monitoreo activo (`App.tsx`
     - **Verde (<300ms):** Óptimo.
     - **Amarillo (<1000ms):** Lag detectado (posible congestión).
     - **Rojo (>1000ms o Error):** Falla de conexión.
-- **Lógica de Fallo:** Si el heartbeat falla 3 veces consecutivas, el sistema asume que la URL del túnel (Ngrok) ha cambiado o caído.
+- **Lógica de Fallo:** Si el heartbeat falla 3 veces consecutivas, el sistema asume que la URL del túnel ha cambiado o caído.
 
 ### 2. Protocolo Smart Link (Autorecuperación)
 Para combatir la volatilidad de las URLs públicas en entornos híbridos/locales:
-- **Backend Autoconsciente:** El servicio `ngrokService.ts` consulta la API local de Ngrok para descubrir su propia URL pública al inicio.
+- **Backend Autoconsciente:** El sistema detecta su entorno de ejecución (Local + Cloudflare).
 - **Frontend Dinámico:** Si se detecta una desconexión sostenida, la UI despliega automáticamente el **Modal de Enlace Satelital**.
-- **Recuperación sin Código:** El usuario puede ingresar la nueva URL (visible en la consola del servidor) directamente en la interfaz. Esta se guarda en `localStorage` y el sistema se reconecta instantáneamente sin necesidad de un redeploy.
+- **Recuperación sin Código:** El usuario puede ingresar la nueva URL directamente en la interfaz. Esta se guarda en `localStorage` y el sistema se reconecta instantáneamente sin necesidad de un redeploy.
 
 ### 3. Watchdog de Hardware
 El `campaignService.ts` implementa un monitor de "Lag de Event Loop".
@@ -577,3 +580,63 @@ Para evitar bucles de latencia infinita intentando consultar modelos caídos o a
 - **Mecanismo:** Si un modelo falla (Error 5xx/429), el sistema lo ingresa automáticamente en una **Lista Negra en Memoria**.
 - **Penalización:** El modelo bloqueado es ignorado por el enrutador durante **60 minutos**.
 - **Resultado:** El sistema aprende qué "neuronas" están dañadas y las evita instantáneamente, redirigiendo el tráfico a nodos sanos sin que el usuario perciba el error.
+
+---
+
+## 🏗️ ADDENDUM v3.1.5: INGENIERÍA DE RESILIENCIA (ANTI-FRAGILIDAD)
+
+### 1. Cola de Reconexión Secuencial (Anti-Estampida)
+Solución al problema de "Thundering Herd" durante reinicios masivos.
+- **Problema:** Al reiniciar el servidor, conectar 100 sesiones de WhatsApp simultáneamente satura la CPU y provoca baneos de IP.
+- **Mecanismo:** Se implementa una **Cola FIFO con Backpressure** (via Redis).
+- **Lógica:** Los clientes desconectados entran en una fila `connectionQueue`. Un procesador consume la fila uno a uno, aplicando un *delay táctico* (2-5 segundos aleatorios) entre cada intento de conexión.
+- **Resultado:** La carga del servidor se mantiene plana y estable, evitando picos de consumo.
+
+### 2. Capa Anti-Corrupción (Self-Healing de Datos)
+Protección contra archivos de sesión dañados por cortes abruptos ("Hard Shutdown").
+- **Detección:** Si el parseo del JSON de sesión falla al iniciar (`SyntaxError` por archivo truncado), el sistema lo identifica como corrupto.
+- **Acción:** En lugar de detener el servidor (Crash Loop), el sistema **amputa** (elimina) el registro corrupto de MongoDB automáticamente y permite que el cliente regenere una sesión limpia (QR nuevo).
+
+---
+
+## 💎 ADDENDUM v3.2: DIAMOND STORAGE & HYDRA (ARQUITECTURA BLINDADA)
+
+### 1. Diamond Storage (Persistencia L3)
+Solución definitiva a la corrupción de sesiones de WhatsApp (`SyntaxError: JSON input`).
+- **Arquitectura Write-Behind:** En lugar de escribir en disco/Mongo en cada evento de WhatsApp (miles por minuto), el sistema utiliza un buffer jerárquico.
+    1.  **L1 (RAM Buffer):** Escritura instantánea.
+    2.  **L2 (Redis):** Persistencia volátil rápida para sobrevivir a reinicios.
+    3.  **L3 (Mongo Bulk):** Un "Flush Loop" escribe cambios en bloque cada 10 segundos.
+- **Resultado:** Reducción del 90% de I/O en base de datos y eliminación total de archivos corruptos por cortes de energía.
+
+### 2. Hydra Queues (BullMQ)
+El motor de campañas ha migrado de un `setInterval` en memoria a una cola distribuida robusta.
+- **Backpressure:** Si el sistema está saturado, los trabajos se encolan en Redis en lugar de explotar la RAM.
+- **Prioridad:** Las ejecuciones forzadas (Rayo ⚡) tienen prioridad sobre las programadas.
+- **Retries Exponenciales:** Si una campaña falla por red, se reintenta inteligentemente sin intervención humana.
+
+---
+
+## 🧠 ADDENDUM v3.3: RADAR 4.5 & PROTOCOLO STEALTH
+
+### 1. Filtrado en Cascada (The Two-Face Protocol)
+Para mitigar el riesgo de detección por "comportamiento sobrehumano" al leer 50 grupos simultáneamente.
+- **Capa 0 (Sleep Mode):** El radar se apaga biológicamente (ej: 3 AM - 7 AM).
+- **Capa 1 (Hard Filter):** RegEx en memoria descarta inmediatamente mensajes de "VENDO", "OFERTA", etc. sin tocar la IA.
+- **Capa 2 (Neural Batching):** Solo lo que pasa el filtro 1 llega a la IA.
+
+### 2. Inferencia por Lotes (Neural Batching)
+Cambio de paradigma: De "1 Mensaje = 1 Request" a "Buffer de Análisis".
+- **Mecanismo:** Los mensajes candidatos se acumulan en Redis (`radar:buffer`).
+- **Trigger:** Cuando se juntan 5 mensajes o pasan 60 segundos, se envían juntos a la IA.
+- **Ventaja Cognitiva:** Al ver 5 mensajes a la vez, la IA puede realizar **Scoring Relativo** (comparar cuál es mejor) en lugar de juzgar en el vacío.
+
+### 3. Fast Lane (Carril Rápido)
+Solución a la latencia en leads calientes.
+- **Mecanismo:** Si el mensaje contiene palabras clave críticas ("precio", "comprar", "info", "urgente"), el sistema **omite el buffer de espera** y dispara el análisis del lote inmediatamente.
+- **Objetivo:** Latencia cercana a cero para oportunidades de alta conversión.
+
+### 4. Segregación de Modelos (Gemini 3 Pro)
+El Radar ahora utiliza exclusivamente `gemini-3-pro-preview` en un carril dedicado.
+- **Por qué:** El análisis de intención requiere razonamiento profundo, no velocidad.
+- **Aislamiento:** Esto evita que el Radar consuma la cuota de tasa (Rate Limit) del Chatbot de atención al cliente (que usa modelos Flash).
