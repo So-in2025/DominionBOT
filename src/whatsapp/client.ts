@@ -46,7 +46,11 @@ const msgRetryCounterCache = {
 };
 
 // Logger setup - Silent to avoid console spam in production
-const logger = pino({ level: 'silent' }); 
+// Solo errores criticos
+const logger = pino({ 
+    level: 'error', 
+    timestamp: () => `,"time":"${new Date().toISOString()}"`
+}); 
 
 export const ELITE_BOT_JID = '5491112345678@s.whatsapp.net';
 export const ELITE_BOT_NAME = 'Simulador Neural';
@@ -55,7 +59,6 @@ export const DOMINION_NETWORK_JID = '5491110000000@s.whatsapp.net';
 // --- HELPERS ---
 const updateStatus = (userId: string, status: ConnectionStatus) => {
     connectionStateMap.set(userId, status);
-    // Emit to socket immediately for UI responsiveness
     socketService.emitToUser(userId, SocketEvents.SESSION_STATUS_UPDATE, { status });
 };
 
@@ -96,14 +99,11 @@ export function getSessionStatus(userId: string): { status: ConnectionStatus, qr
     const qr = qrCache.get(userId);
     const code = codeCache.get(userId);
 
-    // Prioritize QR/Code presence if we are in waiting state
     if (currentStatus === ConnectionStatus.AWAITING_SCAN || currentStatus === ConnectionStatus.GENERATING_QR) {
         if (code) return { status: ConnectionStatus.AWAITING_SCAN, pairingCode: code };
         if (qr) return { status: ConnectionStatus.AWAITING_SCAN, qr };
     }
 
-    // Use the explicit state map instead of inferring from 'sock.user'
-    // This prevents "False Connected" states when credentials exist but socket is closed.
     return { status: currentStatus };
 }
 
@@ -112,50 +112,38 @@ export function getSocket(userId: string): WASocket | undefined {
 }
 
 // ----------------------------------------------------------------------
-// CORE CONNECTION LOGIC (v4.0 - ANTI-FRAGILE)
+// CORE CONNECTION LOGIC (v5.0 - STRONG CONSISTENCY)
 // ----------------------------------------------------------------------
 export async function connectToWhatsApp(userId: string, phoneNumber?: string, isManual: boolean = false) {
-    // CRITICAL: Clear any pending reconnection timer to avoid race conditions
     if (reconnectTimeouts.has(userId)) {
         clearTimeout(reconnectTimeouts.get(userId));
         reconnectTimeouts.delete(userId);
     }
 
     if (isConnecting.get(userId)) {
-        logService.warn(`[WA] ⚠️ Intento de conexión duplicado ignorado. Lock activo.`, userId);
         return;
     }
     
-    // Safety: If automatic, ensure session exists
     if (!isManual) {
         const hasSession = await hasValidSession(userId);
-        if (!hasSession) {
-            return;
-        }
+        if (!hasSession) return;
     }
 
     try {
         isConnecting.set(userId, true);
-        // Set initial state to GENERATING_QR (or Connecting) to indicate activity
         updateStatus(userId, ConnectionStatus.GENERATING_QR);
         
-        logService.info(`[WA] 🚀 [STEP 1/4] Iniciando secuencia de arranque para ${phoneNumber || 'QR Mode'}`, userId);
+        logService.info(`[WA] 🚀 [BOOT] Iniciando secuencia para ${phoneNumber || 'Session'}`, userId);
         
-        // Reset QR/Code caches on new attempt
         if (isManual) {
             qrCache.delete(userId);
             codeCache.delete(userId);
             reconnectAttempts.set(userId, 0); 
         }
 
-        logService.info(`[WA] [STEP 2/4] Cargando estado de autenticación (MongoDB/Redis)...`, userId);
         const { state, saveCreds } = await useMongoDBAuthState(userId);
-        
-        logService.info(`[WA] [STEP 2.5/4] Obteniendo versión de Baileys...`, userId);
         const { version } = await fetchLatestBaileysVersion();
         const user = await db.getUser(userId);
-
-        logService.info(`[WA] [STEP 3/4] Construyendo Socket...`, userId);
 
         const sock = makeWASocket({
             version,
@@ -169,8 +157,6 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
             agent: user?.settings?.proxyUrl ? new HttpsProxyAgent(user.settings.proxyUrl) as any : undefined,
             generateHighQualityLinkPreview: true,
             shouldIgnoreJid: jid => jid?.endsWith('@broadcast') || jid?.endsWith('@newsletter'),
-            
-            // --- STABILITY SETTINGS ---
             syncFullHistory: false, 
             markOnlineOnConnect: false, 
             connectTimeoutMs: 60000, 
@@ -183,45 +169,43 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
 
         sessions.set(userId, sock);
 
+        // --- ERROR LISTENER ---
+        sock.ws.on('error', (err: any) => {
+            const errStr = err?.message || JSON.stringify(err);
+            // Bad MAC errors should now be rare with synchronous Redis.
+            // If they happen, we log it, but we let Baileys internal retry handle it first.
+            if (errStr.includes('Bad MAC')) {
+                logService.error(`[WA-CRITICAL] 🚨 DETECTADO BAD MAC (Posible desincronización puntual).`, err, userId);
+            }
+        });
+
         sock.ev.on('creds.update', saveCreds);
 
-        logService.info(`[WA] [STEP 4/4] Escuchando eventos de conexión...`, userId);
-
         if (phoneNumber && !sock.authState.creds.registered) {
-            logService.info(`[WA] 🔢 Solicitando código de emparejamiento para ${phoneNumber}...`, userId);
-            
             setTimeout(async () => {
                 try {
                     const currentSock = sessions.get(userId);
-                    if (!currentSock) {
-                         logService.warn(`[WA] Socket muerto antes de pedir código.`, userId);
-                         return;
-                    }
+                    if (!currentSock) return;
                     
                     if (!currentSock.authState.creds.me && !codeCache.get(userId)) {
-                        logService.info(`[WA] ⏳ Ejecutando requestPairingCode...`, userId);
                         const code = await currentSock.requestPairingCode(phoneNumber);
                         codeCache.set(userId, code);
-                        logService.info(`[WA] ✅ CÓDIGO RECIBIDO: ${code}`, userId);
+                        logService.info(`[WA] ✅ CÓDIGO: ${code}`, userId);
                         updateStatus(userId, ConnectionStatus.AWAITING_SCAN);
                         socketService.emitToUser(userId, SocketEvents.SESSION_STATUS_UPDATE, { status: ConnectionStatus.AWAITING_SCAN, pairingCode: code });
                     }
                 } catch (e: any) {
-                    logService.error(`[WA] ❌ Error solicitando código: ${e.message}`, e, userId);
-                    updateStatus(userId, ConnectionStatus.DISCONNECTED);
+                    logService.error(`[WA] Error pidiendo código`, e, userId);
                     isConnecting.set(userId, false); 
                 }
-            }, 6000); 
+            }, 5000); 
         }
 
         sock.ev.on('connection.update', async (update) => {
             const { connection, lastDisconnect, qr } = update;
             const pairingCode = (update as any).pairingCode;
 
-            if (connection) logService.info(`[WA] 🔄 Estado de conexión: ${connection}`, userId);
-
             if (qr) {
-                logService.info(`[WA] 📸 QR GENERADO. Enviando a cliente...`, userId);
                 const qrDataUrl = await QRCode.toDataURL(qr);
                 qrCache.set(userId, qrDataUrl);
                 updateStatus(userId, ConnectionStatus.AWAITING_SCAN);
@@ -237,51 +221,33 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
             if (connection === 'close') {
                 isConnecting.set(userId, false);
                 sessions.delete(userId);
-                updateStatus(userId, ConnectionStatus.DISCONNECTED);
                 
                 const disconnectError = lastDisconnect?.error as Boom | any;
                 const statusCode = disconnectError?.output?.statusCode;
                 
                 logService.warn(`[WA] 🔌 Conexión cerrada. Código: ${statusCode}`, userId);
 
-                // --- NUCLEAR ERROR HANDLING ---
-                
-                // 1. LOGOUT / BAD SESSION (Radioactive)
                 if (statusCode === DisconnectReason.loggedOut || statusCode === DisconnectReason.badSession) {
-                    logService.error(`[WA] ☢️ SESIÓN CORRUPTA O CERRADA (${statusCode}). EJECUTANDO PURGA.`, null, userId);
-                    await clearBindedSession(userId);
-                    await db.updateUserSettings(userId, { isActive: false });
-                    qrCache.delete(userId);
-                    codeCache.delete(userId);
-                    reconnectAttempts.delete(userId);
-                    // State already updated to DISCONNECTED above
+                    logService.info(`[WA] Sesión cerrada o inválida. Limpiando.`, userId);
+                    await purgeSession(userId);
                     return; 
                 }
 
-                // 2. CONNECTION REPLACED 
-                if (statusCode === DisconnectReason.connectionReplaced) {
-                    logService.warn(`[WA] ⚠️ Conexión reemplazada.`, userId);
-                    return; 
-                }
-
-                // 3. RESTART REQUIRED 
                 if (statusCode === DisconnectReason.restartRequired) {
-                    logService.info(`[WA] Reinicio solicitado.`, userId);
-                    updateStatus(userId, ConnectionStatus.RESETTING);
                     connectToWhatsApp(userId, phoneNumber); 
                     return;
                 }
 
-                // 4. CONNECTION LOST / TIMED OUT
+                // Standard Reconnect Strategy
+                // With sync-redis, restarts are safe.
                 const attempts = reconnectAttempts.get(userId) || 0;
-                const delay = Math.min(Math.pow(2, attempts) * 1000, 60000);
+                const isStreamError = statusCode === 515; // "Stream Closed" is common/harmless
+                const delay = isStreamError ? 2000 : Math.min(Math.pow(2, attempts) * 1000, 60000);
                 
-                logService.warn(`[WA] Desconectado (${statusCode}). Reintento #${attempts + 1} en ${delay}ms...`, userId);
+                // Don't show "Disconnected" UI for short hiccups (<= 3s)
+                if (delay > 3000) updateStatus(userId, ConnectionStatus.DISCONNECTED); 
                 
                 reconnectAttempts.set(userId, attempts + 1);
-                qrCache.delete(userId);
-                codeCache.delete(userId);
-
                 const timeoutId = setTimeout(() => connectToWhatsApp(userId, phoneNumber), delay);
                 reconnectTimeouts.set(userId, timeoutId);
 
@@ -289,13 +255,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
                 isConnecting.set(userId, false);
                 reconnectAttempts.delete(userId); 
                 
-                if (reconnectTimeouts.has(userId)) {
-                    clearTimeout(reconnectTimeouts.get(userId));
-                    reconnectTimeouts.delete(userId);
-                }
-
-                // *** CRITICAL: THIS IS THE ONLY PLACE WE SET 'CONNECTED' ***
-                logService.info(`[WA] ✅ CONEXIÓN ESTABLECIDA EXITOSAMENTE.`, userId);
+                logService.info(`[WA] ✅ CONECTADO Y OPERATIVO.`, userId);
                 updateStatus(userId, ConnectionStatus.CONNECTED);
                 
                 qrCache.delete(userId);
@@ -309,78 +269,68 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
             }
         });
 
-        // Message Handling
         sock.ev.on('messages.upsert', async ({ messages, type }) => {
             if (type !== 'notify' && type !== 'append') return;
 
             for (const msg of messages) {
-                if (msg.key.remoteJid === 'status@broadcast') continue;
+                try {
+                    if (msg.key.remoteJid === 'status@broadcast') continue;
 
-                const rawJid = msg.key.remoteJid;
-                const canonicalJid = normalizeJid(rawJid);
-                if (!canonicalJid || canonicalJid.endsWith('@newsletter')) continue;
+                    const rawJid = msg.key.remoteJid;
+                    const canonicalJid = normalizeJid(rawJid);
+                    if (!canonicalJid || canonicalJid.endsWith('@newsletter')) continue;
 
-                if (user?.settings?.ignoredJids?.some(blocked => canonicalJid.includes(blocked))) {
-                    continue; 
-                }
+                    const userConfig = await db.getUser(userId);
+                    if (userConfig?.settings?.ignoredJids?.some(blocked => canonicalJid.includes(blocked))) continue; 
 
-                const msgTime = (typeof msg.messageTimestamp === 'number' 
-                    ? msg.messageTimestamp 
-                    : (msg.messageTimestamp as any)?.low) || Math.floor(Date.now() / 1000);
-                
-                const now = Math.floor(Date.now() / 1000);
-                const ageInSeconds = now - msgTime;
-                
-                if (ageInSeconds > 86400) continue; 
+                    const msgTime = (typeof msg.messageTimestamp === 'number' ? msg.messageTimestamp : (msg.messageTimestamp as any)?.low) || Math.floor(Date.now() / 1000);
+                    const now = Math.floor(Date.now() / 1000);
+                    
+                    if ((now - msgTime) > 300) continue; 
 
-                if (!msg.message) continue;
-                if (isJidGroup(canonicalJid)) continue; 
+                    if (!msg.message) continue;
+                    if (isJidGroup(canonicalJid)) continue; 
 
-                const messageText = extractMessageContent(msg);
-                if (!messageText) continue;
+                    const messageText = extractMessageContent(msg);
+                    if (!messageText) continue;
 
-                const isMe = msg.key.fromMe;
-                
-                const userMessage: Message = {
-                    id: msg.key.id || Date.now().toString(),
-                    text: messageText,
-                    sender: isMe ? 'owner' : 'user',
-                    timestamp: new Date(msgTime * 1000).toISOString()
-                };
+                    const isMe = msg.key.fromMe;
+                    
+                    const userMessage: Message = {
+                        id: msg.key.id || Date.now().toString(),
+                        text: messageText,
+                        sender: isMe ? 'owner' : 'user',
+                        timestamp: new Date(msgTime * 1000).toISOString()
+                    };
 
-                const contactName = msg.pushName;
-                
-                await conversationService.addMessage(userId, canonicalJid, userMessage, contactName);
+                    await conversationService.addMessage(userId, canonicalJid, userMessage, msg.pushName);
 
-                if (!isMe) {
-                    if (ageInSeconds > 300) continue; 
-                    logService.info(`[INBOX] 📩 ${canonicalJid}: ${messageText.substring(0, 30)}...`, userId);
-                    await processAiResponseForJid(userId, canonicalJid);
+                    if (!isMe) {
+                        logService.info(`[INBOX] 📩 Nuevo mensaje de ${canonicalJid}`, userId);
+                        await processAiResponseForJid(userId, canonicalJid);
+                    }
+                } catch (err: any) {
+                    console.error("Error processing message:", err.message);
                 }
             }
         });
 
     } catch (error) {
-        logService.error(`[WA] ❌ ERROR FATAL en inicialización de cliente`, error, userId);
+        logService.error(`[WA] Error fatal iniciando cliente`, error, userId);
         isConnecting.set(userId, false);
         updateStatus(userId, ConnectionStatus.DISCONNECTED);
     }
 }
 
 export async function disconnectWhatsApp(userId: string) {
-    logService.info(`[WA] Solicitud de desconexión manual.`, userId);
-    
     if (reconnectTimeouts.has(userId)) {
         clearTimeout(reconnectTimeouts.get(userId));
         reconnectTimeouts.delete(userId);
-        logService.debug(`[WA] Reintento pendiente cancelado para ${userId}`);
     }
 
     const sock = sessions.get(userId);
     if (sock) {
-        try {
-            sock.end(undefined);
-        } catch (e) {}
+        try { sock.end(undefined); } catch (e) {}
         sessions.delete(userId);
     }
     isConnecting.set(userId, false);
@@ -392,37 +342,19 @@ export async function disconnectWhatsApp(userId: string) {
 }
 
 export async function softResetConnection(userId: string) {
-    logService.warn(`[WA] Soft Reset solicitado para usuario`, userId);
-    
-    if (reconnectTimeouts.has(userId)) {
-        clearTimeout(reconnectTimeouts.get(userId));
-        reconnectTimeouts.delete(userId);
-    }
-
-    const sock = sessions.get(userId);
-    if (sock) {
-        try { sock.end(undefined); } catch (e) {}
-        sessions.delete(userId);
-    }
-    isConnecting.set(userId, false);
-    reconnectAttempts.delete(userId);
-    qrCache.delete(userId);
-    codeCache.delete(userId);
-    msgRetryCounterCache.flushAll();
-    
-    updateStatus(userId, ConnectionStatus.RESETTING);
-    // Force connect with manual flag
-    await connectToWhatsApp(userId, undefined, true);
+    await disconnectWhatsApp(userId);
+    setTimeout(() => connectToWhatsApp(userId, undefined, true), 1000);
 }
 
 // HARD PURGE
 export async function purgeSession(userId: string) {
-    logService.warn(`[WA] ☢️ PURGA DE SESIÓN SOLICITADA (NUCLEAR).`, userId);
+    logService.warn(`[WA] ☢️ EJECUTANDO PURGA NUCLEAR DE SESIÓN.`, userId);
     
     if (reconnectTimeouts.has(userId)) {
         clearTimeout(reconnectTimeouts.get(userId));
         reconnectTimeouts.delete(userId);
     }
+    reconnectAttempts.delete(userId);
 
     const sock = sessions.get(userId);
     if (sock) {
@@ -431,10 +363,9 @@ export async function purgeSession(userId: string) {
     }
     
     isConnecting.set(userId, false); 
-    reconnectAttempts.delete(userId);
     qrCache.delete(userId);
     codeCache.delete(userId);
-    connectionStateMap.delete(userId); // Explicitly clear status state
+    connectionStateMap.delete(userId); 
     
     const keys = Array.from(retryMap.keys());
     keys.forEach(k => {
@@ -445,97 +376,26 @@ export async function purgeSession(userId: string) {
     await db.updateUserSettings(userId, { isActive: false });
     
     updateStatus(userId, ConnectionStatus.DISCONNECTED);
+    socketService.emitToUser(userId, SocketEvents.SESSION_STATUS_UPDATE, { status: ConnectionStatus.DISCONNECTED });
 }
 
-// GRACEFUL SHUTDOWN HELPER
-export async function closeAllSessions() {
-    logService.info('[WA-MANAGER] Cerrando todas las sesiones para apagado seguro...');
-    for (const [userId, sock] of sessions) {
-        try {
-            sock.end(undefined);
-        } catch (e) {
-            console.error(`Error cerrando sesión ${userId}`, e);
-        }
-    }
-    sessions.clear();
-    for (const t of reconnectTimeouts.values()) clearTimeout(t);
-    reconnectTimeouts.clear();
-}
-
-/**
- * Calculates a human-like typing delay based on message length.
- * Approx 300 CPM (Chars Per Minute) + Jitter.
- */
-function calculateTypingDelay(text: string): number {
-    const minDelay = 2000;
-    const charDelay = (text.length * 60 * 1000) / 400; // 400 CPM speed
-    const jitter = Math.random() * 1500;
-    return Math.min(Math.max(minDelay, charDelay + jitter), 12000); // Cap at 12s
-}
-
-// --- SELF-HEALING SEND PROTOCOL (WITH ANTI-BAN TYPING) ---
 export async function sendMessage(senderId: string, jid: string, text: string, imageUrl?: string) {
     let sock = sessions.get(senderId);
     const canonicalJid = normalizeJid(jid);
     if (!canonicalJid) throw new Error("JID inválido");
 
-    const attemptSend = async (currentSock: WASocket) => {
-        // @ts-ignore
-        if (!currentSock || !currentSock.ws || !currentSock.ws.isOpen) {
-            throw new Error("Socket cerrado");
-        }
+    if (!sock) throw new Error("Socket no disponible");
 
-        if (!imageUrl) {
-            const delay = calculateTypingDelay(text);
-            await currentSock.sendPresenceUpdate('composing', canonicalJid);
-            await new Promise(resolve => setTimeout(resolve, delay));
-            await currentSock.sendPresenceUpdate('paused', canonicalJid);
-        }
-
-        return await Promise.race([
-            (async () => {
-                if (imageUrl) {
-                    const buffer = imageUrl.startsWith('http') 
-                        ? { url: imageUrl } 
-                        : Buffer.from(imageUrl.replace(/^data:image\/\w+;base64,/, ""), 'base64');
-                    return await currentSock.sendMessage(canonicalJid, { image: buffer as any, caption: text });
-                } else {
-                    return await currentSock.sendMessage(canonicalJid, { text });
-                }
-            })(),
-            new Promise((_, reject) => setTimeout(() => reject(new Error("TIMEOUT_SEND")), 15000)) 
-        ]);
-    };
-
-    try {
-        const result = await attemptSend(sock!);
-        return result as any;
-
-    } catch (e: any) {
-        if (e.message !== 'TIMEOUT_SEND') {
-            console.error(`[SEND-FAIL] Intento 1 fallido para ${canonicalJid}:`, e.message);
-        }
-
-        if (e.message === 'TIMEOUT_SEND' || e.message === 'Socket cerrado' || e.message.includes('Stream Ended') || e.message.includes('enc-')) {
-            logService.warn(`[SELF-HEALING] 🚑 Recuperando conexión para envío...`, senderId);
-            await softResetConnection(senderId);
-            await new Promise(r => setTimeout(r, 3000));
-            
-            const newSock = sessions.get(senderId);
-            if (!newSock) throw new Error("No se pudo restablecer la conexión.");
-
-            logService.info(`[SELF-HEALING] 🔄 Reintentando envío...`, senderId);
-            
-            try {
-                const retryResult = await attemptSend(newSock);
-                logService.info(`[SELF-HEALING] ✅ Mensaje entregado.`, senderId);
-                return retryResult as any;
-            } catch (retryError: any) {
-                logService.error(`[SELF-HEALING] 💀 Fallo total.`, retryError, senderId);
-                throw new Error("Error persistente de conexión.");
-            }
-        }
-        throw e; 
+    if (!imageUrl) {
+        await sock.sendPresenceUpdate('composing', canonicalJid);
+        await new Promise(resolve => setTimeout(resolve, 1000)); 
+        await sock.sendPresenceUpdate('paused', canonicalJid);
+        return await sock.sendMessage(canonicalJid, { text });
+    } else {
+        const buffer = imageUrl.startsWith('http') 
+            ? { url: imageUrl } 
+            : Buffer.from(imageUrl.replace(/^data:image\/\w+;base64,/, ""), 'base64');
+        return await sock.sendMessage(canonicalJid, { image: buffer as any, caption: text });
     }
 }
 
@@ -576,7 +436,6 @@ export async function processAiResponseForJid(userId: string, jid: string, force
     if (aiResult?.responseText) {
         try {
             const sent = await sendMessage(userId, jid, aiResult.responseText);
-            
             if (sent?.key.id) {
                 await conversationService.addMessage(userId, jid, {
                     id: sent.key.id,
@@ -586,7 +445,7 @@ export async function processAiResponseForJid(userId: string, jid: string, force
                 });
             }
         } catch (e) {
-            logService.error(`[AI] Error enviando respuesta a ${jid}`, e, userId);
+            logService.error(`[AI] Fallo enviando respuesta`, e, userId);
         }
     }
 

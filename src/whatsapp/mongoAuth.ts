@@ -1,4 +1,5 @@
-import { proto, AuthenticationCreds, initAuthCreds, BufferJSON } from '@whiskeysockets/baileys';
+
+import { proto, AuthenticationCreds, initAuthCreds, BufferJSON, SignalDataTypeMap } from '@whiskeysockets/baileys';
 import mongoose, { Schema, Model } from 'mongoose';
 import { redis } from '../redis.js'; 
 import { logService } from '../services/logService.js';
@@ -18,85 +19,15 @@ const SessionModel = (mongoose.models.BaileysSession || mongoose.model('BaileysS
 // TTL for Redis Session Keys (7 days - refreshes on usage)
 const SESSION_TTL = 60 * 60 * 24 * 7; 
 
-// --- DIAMOND STORAGE CONFIG ---
-// L1 Memory Buffer: Stores pending writes before they go to Mongo.
-// Key: Mongo _id, Value: Serialized Data string or null (for deletion)
-const writeBuffer = new Map<string, string | null>();
-let flushInterval: ReturnType<typeof setInterval> | null = null;
-const FLUSH_INTERVAL_MS = 10000; // Flush to Mongo every 10 seconds
-
-/**
- * START THE HEARTBEAT
- * Initiates the background flushing process.
- */
-const startPersistenceLoop = () => {
-    if (flushInterval) return;
-    
-    flushInterval = setInterval(async () => {
-        await flushAuthBuffer();
-    }, FLUSH_INTERVAL_MS);
-    
-    console.log('[DIAMOND-STORAGE] 💎 Motor de persistencia diferida iniciado.');
-};
-
-/**
- * FORCE FLUSH (CRITICAL)
- * Called on shutdown to ensure no data loss.
- */
-export const flushAuthBuffer = async () => {
-    if (writeBuffer.size === 0) return;
-
-    const entries = Array.from(writeBuffer.entries());
-    writeBuffer.clear(); // Clear immediately to allow new writes
-
-    const bulkOps: any[] = [];
-
-    for (const [_id, data] of entries) {
-        if (data === null) {
-            // Delete operation
-            bulkOps.push({ deleteOne: { filter: { _id } } });
-        } else {
-            // Upsert operation
-            bulkOps.push({ 
-                updateOne: { 
-                    filter: { _id }, 
-                    update: { $set: { data } }, 
-                    upsert: true 
-                } 
-            });
-        }
-    }
-
-    if (bulkOps.length > 0) {
-        try {
-            await SessionModel.bulkWrite(bulkOps, { ordered: false });
-            // logService.debug(`[DIAMOND-STORAGE] 💾 Persistidos ${bulkOps.length} registros a MongoDB.`);
-        } catch (error) {
-            console.error('[DIAMOND-STORAGE] ❌ Error crítico en BulkWrite:', error);
-            // On failure, re-add to buffer (retry strategy)
-            // Note: This is a simple retry. In prod, careful with memory leaks.
-            // For now, we accept the risk or log it. Redis still has the data.
-        }
-    }
-};
-
 /**
  * Purgado completo de sesión.
- * Limpia L1 (Buffer), L2 (Redis) y L3 (MongoDB).
  */
 export const clearBindedSession = async (userId: string) => {
     try {
         const pattern = `auth:${userId}:*`;
         const mongoPrefix = `${userId}_`;
-
-        // 1. Purge L1 (Buffer)
-        for (const key of writeBuffer.keys()) {
-            if (key.startsWith(mongoPrefix)) {
-                writeBuffer.delete(key);
-            }
-        }
         
-        // 2. Purge L2 (Redis)
+        // 1. Purge Redis (L2)
         const keys = await redis.keys(pattern);
         if (keys.length > 0) {
             const pipeline = redis.pipeline();
@@ -104,10 +35,10 @@ export const clearBindedSession = async (userId: string) => {
             await pipeline.exec();
         }
 
-        // 3. Purge L3 (Mongo)
+        // 2. Purge Mongo (L3)
         await SessionModel.deleteMany({ _id: { $regex: `^${userId}_` } });
         
-        logService.info(`[DIAMOND-AUTH] 💎 Sesión purgada completamente para ${userId}.`);
+        logService.info(`[AUTH] 🧹 Sesión limpiada completamente para ${userId}.`);
         return true;
     } catch (e) {
         console.error(`[AUTH-ERROR] Error al limpiar:`, e);
@@ -116,15 +47,14 @@ export const clearBindedSession = async (userId: string) => {
 };
 
 /**
- * Verifica validez de sesión (Redis First).
+ * Verifica validez de sesión.
  */
 export const hasValidSession = async (userId: string): Promise<boolean> => {
     try {
-        // 1. Check L2 (Redis)
         const redisExists = await redis.exists(`auth:${userId}:creds`);
         if (redisExists) return true;
-
-        // 2. Check L3 (Mongo)
+        
+        // Fallback check Mongo
         const count = await SessionModel.countDocuments({ _id: `${userId}_creds` });
         return count > 0;
     } catch (e) {
@@ -134,9 +64,6 @@ export const hasValidSession = async (userId: string): Promise<boolean> => {
 
 export const useMongoDBAuthState = async (userId: string) => {
     
-    // Ensure persistence loop is running
-    startPersistenceLoop();
-
     const getRedisKey = (category: string, id?: string) => {
         return `auth:${userId}:${category}${id ? `:${id}` : ''}`;
     };
@@ -145,6 +72,9 @@ export const useMongoDBAuthState = async (userId: string) => {
         return `${userId}_${category}${id ? `_${id}` : ''}`;
     };
 
+    // --- ZERO LATENCY WRITE STRATEGY (Write-Through) ---
+    // Clave del éxito: Escribimos en Redis y ESPERAMOS (await) la confirmación.
+    // Esto garantiza que Baileys no avance hasta que la llave esté segura en la memoria persistente.
     const writeData = async (data: any, category: string, id?: string) => {
         const redisKey = getRedisKey(category, id);
         const mongoId = getMongoId(category, id);
@@ -152,16 +82,24 @@ export const useMongoDBAuthState = async (userId: string) => {
         try {
             const serialized = JSON.stringify(data, BufferJSON.replacer);
 
-            // 1. WRITE TO L2 (REDIS) - Critical & Instant
-            // We await this to ensure the session logic can immediately read it back if needed
+            // 1. CRITICAL: Synchronous Write to Redis.
+            // Si Redis falla, lanzamos error para detener el proceso y no corromper el estado lógico.
             await redis.set(redisKey, serialized, 'EX', SESSION_TTL);
 
-            // 2. WRITE TO L1 (BUFFER) - Deferred Persistence
-            // We do NOT await Mongo here. We just queue it.
-            writeBuffer.set(mongoId, serialized);
+            // 2. BACKGROUND: Backup to MongoDB.
+            // "Fire and Forget". Si Mongo es lento, no frenamos el chat. Redis es la verdad.
+            SessionModel.updateOne(
+                { _id: mongoId },
+                { $set: { data: serialized } },
+                { upsert: true }
+            ).catch(err => {
+                // Solo logueamos advertencia, no rompemos el flujo si Mongo tiene lag.
+                // console.warn(`[AUTH-WARN] Fallo backup Mongo para ${mongoId}`, err.message);
+            });
 
         } catch (err) {
-            console.error(`[AUTH-CRITICAL] Failed to serialize/write data for ${userId}.`, err);
+            console.error(`[AUTH-CRITICAL] ❌ Fallo escritura Redis para ${userId}.`, err);
+            throw err; // Detener Baileys para proteger la integridad criptográfica
         }
     };
 
@@ -170,41 +108,24 @@ export const useMongoDBAuthState = async (userId: string) => {
         const mongoId = getMongoId(category, id);
 
         try {
-            // 1. TRY L1 (Buffer) - Most recent uncommitted change
-            if (writeBuffer.has(mongoId)) {
-                const bufferData = writeBuffer.get(mongoId);
-                if (bufferData) {
-                    return JSON.parse(bufferData, BufferJSON.reviver);
-                } else {
-                    return null; // Known deletion
-                }
-            }
-
-            // 2. TRY L2 (Redis) - Speed Layer
+            // 1. Try Redis (Fastest & Most Up-to-date)
             const redisData = await redis.get(redisKey);
             if (redisData) {
                 return JSON.parse(redisData, BufferJSON.reviver);
             }
 
-            // 3. TRY L3 (Mongo) - Cold Storage
+            // 2. Fallback Mongo (Cold Start / Redis Eviction)
             const doc = await SessionModel.findById(mongoId).lean() as IBaileysSession | null;
-            
             if (doc && doc.data) {
-                // Self-Heal: Hydrate Redis (L2)
+                // Self-Heal: Hydrate Redis immediately
                 await redis.set(redisKey, doc.data, 'EX', SESSION_TTL);
                 return JSON.parse(doc.data, BufferJSON.reviver);
             }
 
             return null;
-
         } catch (error) {
-            // ANTI-CORRUPTION LAYER
-            logService.error(`[DIAMOND-AUTH] ☢️ CORRUPCIÓN DETECTADA en ${mongoId}. Purgando clave.`, error, userId);
-            
-            // Nuke corrupt data to prevent infinite crash loops
-            await redis.del(redisKey);
-            await SessionModel.findByIdAndDelete(mongoId);
-            
+            // Si falla la lectura, devolvemos null para que Baileys regenere si es posible,
+            // o falle controladamente.
             return null;
         }
     };
@@ -212,17 +133,15 @@ export const useMongoDBAuthState = async (userId: string) => {
     const removeData = async (category: string, id?: string) => {
         const redisKey = getRedisKey(category, id);
         const mongoId = getMongoId(category, id);
-
         try {
-            // 1. Remove from L2
             await redis.del(redisKey);
-            // 2. Mark for deletion in L1
-            writeBuffer.set(mongoId, null);
+            SessionModel.deleteOne({ _id: mongoId }).exec().catch(() => {});
         } catch (error) {
-            // Silent fail
+            // Silent fail is acceptable for deletes
         }
     };
 
+    // Load initial creds
     const creds = await readData('creds') || initAuthCreds();
 
     return {
@@ -241,12 +160,14 @@ export const useMongoDBAuthState = async (userId: string) => {
                     return data;
                 },
                 set: async (data: any) => {
-                    // Baileys often sends multiple keys at once.
-                    // We can optimize this loop, but writeData handles L1 buffering so it's fast.
+                    // Procesamiento atómico de llaves
+                    // Usamos Promise.all para paralelizar escrituras a Redis pero esperar a todas.
                     const tasks: Promise<void>[] = [];
+                    
                     for (const category in data) {
                         for (const id in data[category]) {
                             const value = data[category][id];
+                            
                             if (value) {
                                 tasks.push(writeData(value, category, id));
                             } else {
@@ -254,10 +175,14 @@ export const useMongoDBAuthState = async (userId: string) => {
                             }
                         }
                     }
+                    // EL BLOQUEO: Esperamos que Redis confirme TODO antes de decirle a Baileys "OK"
                     await Promise.all(tasks);
                 }
             }
         },
-        saveCreds: () => writeData(creds, 'creds')
+        // Guardado de credenciales principales (Identity Key, etc)
+        saveCreds: async () => {
+            await writeData(creds, 'creds');
+        }
     };
 };
