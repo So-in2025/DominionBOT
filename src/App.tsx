@@ -21,7 +21,6 @@ import HowItWorksSection from './components/HowItWorksSection';
 import NeuralArchitectureSection from './components/NeuralArchitectureSection'; 
 import SecurityCanvas from './components/SecurityCanvas'; 
 import TestimonialsCarousel from './components/TestimonialsCarousel';
-import NetworkConfigModal from './components/NetworkConfigModal';
 import { BACKEND_URL, API_HEADERS, getAuthHeaders } from './config';
 import { audioService } from './services/audioService';
 import { openSupportWhatsApp } from './utils/textUtils';
@@ -269,8 +268,6 @@ export function App() {
   
   // Tunnel Heartbeat State
   const [tunnelLatency, setTunnelLatency] = useState<number | null>(null);
-  const [failureCount, setFailureCount] = useState(0); 
-  const [showNetworkConfig, setShowNetworkConfig] = useState(false); 
 
   const [visibleMessages, setVisibleMessages] = useState<any[]>([]);
   const [isSimulating, setIsSimulating] = useState(false);
@@ -377,7 +374,7 @@ export function App() {
              setPairingCode(statusData.pairingCode || null);
         }
 
-    } catch (e) {}
+    } catch (e) { console.error("Hydration Error", e); }
   }, [token]);
 
   // SOCKET.IO INTEGRATION (REAL-TIME CORE)
@@ -420,7 +417,7 @@ export function App() {
     };
   }, [token, userRole, hydrateConversations]);
 
-  // TUNNEL HEARTBEAT
+  // TUNNEL HEARTBEAT (Modified: Just checks latency, no failure counting/modal)
   useEffect(() => {
       const checkHeartbeat = async () => {
           const start = Date.now();
@@ -429,14 +426,11 @@ export function App() {
               const end = Date.now();
               if (res.ok) {
                   setTunnelLatency(end - start);
-                  setFailureCount(0);
               } else {
                   setTunnelLatency(null);
-                  setFailureCount(prev => prev + 1);
               }
           } catch (e) {
               setTunnelLatency(null);
-              setFailureCount(prev => prev + 1);
           }
       };
       
@@ -445,15 +439,6 @@ export function App() {
       
       return () => clearInterval(hbInterval);
   }, []);
-
-  // Show Modal if failures accumulate
-  useEffect(() => {
-      if (failureCount >= 3 && token) {
-          setShowNetworkConfig(true);
-      } else if (failureCount === 0) {
-          setShowNetworkConfig(false);
-      }
-  }, [failureCount, token]);
 
   const prevConnectionStatus = usePrevious(connectionStatus);
   useEffect(() => {
@@ -646,7 +631,7 @@ export function App() {
       }
 
       if (userRole === 'super_admin') {
-          return <AdminDashboard token={token!} backendUrl={BACKEND_URL} onAudit={(u) => { setAuditTarget(u); setCurrentView(View.AUDIT_MODE); }} showToast={showToast} onLogout={handleLogout} />;
+          return <AdminDashboard token={token!} backendUrl={BACKEND_URL!} onAudit={(u) => { setAuditTarget(u); setCurrentView(View.AUDIT_MODE); }} showToast={showToast} onLogout={handleLogout} />;
       }
       
       const handleUpdateSettings = async (newSettings: BotSettings) => {
@@ -657,10 +642,10 @@ export function App() {
       };
 
       switch(currentView) {
-        case View.DASHBOARD: return <AgencyDashboard token={token!} backendUrl={BACKEND_URL} settings={settings!} onUpdateSettings={handleUpdateSettings} currentUser={currentUser} showToast={showToast} />;
-        case View.CAMPAIGNS: return <CampaignsPanel token={token!} backendUrl={BACKEND_URL} showToast={showToast} settings={settings} />;
-        case View.RADAR: return <RadarPanel token={token!} backendUrl={BACKEND_URL} showToast={showToast} />;
-        case View.NETWORK: return <NetworkPanel token={token!} backendUrl={BACKEND_URL} currentUser={currentUser} settings={settings} onUpdateSettings={handleUpdateSettings} showToast={showToast} />;
+        case View.DASHBOARD: return <AgencyDashboard token={token!} backendUrl={BACKEND_URL!} settings={settings!} onUpdateSettings={handleUpdateSettings} currentUser={currentUser} showToast={showToast} />;
+        case View.CAMPAIGNS: return <CampaignsPanel token={token!} backendUrl={BACKEND_URL!} showToast={showToast} settings={settings} />;
+        case View.RADAR: return <RadarPanel token={token!} backendUrl={BACKEND_URL!} showToast={showToast} />;
+        case View.NETWORK: return <NetworkPanel token={token!} backendUrl={BACKEND_URL!} currentUser={currentUser} settings={settings} onUpdateSettings={handleUpdateSettings} showToast={showToast} />;
         case View.SETTINGS: return <SettingsPanel token={token!} settings={settings} isLoading={isLoadingSettings} onUpdateSettings={isFunctionalityDisabled ? ()=>{} : handleUpdateSettings} onOpenLegal={setLegalModalType} showToast={showToast} />;
         case View.CONNECTION: return <ConnectionPanel user={currentUser} status={connectionStatus} qrCode={qrCode} pairingCode={pairingCode} onConnect={async (ph) => { await fetch(`${BACKEND_URL}/api/connect`, { method: 'POST', headers: getAuthHeaders(token!), body: JSON.stringify({ phoneNumber: ph }) }); }} onDisconnect={async () => { await fetch(`${BACKEND_URL}/api/disconnect`, { headers: getAuthHeaders(token!) }); setConnectionStatus(ConnectionStatus.DISCONNECTED); }} onWipe={async () => { setConnectionStatus(ConnectionStatus.RESETTING); await new Promise(r => setTimeout(r, 1500)); await fetch(`${BACKEND_URL}/api/disconnect`, { headers: getAuthHeaders(token!) }); setConnectionStatus(ConnectionStatus.DISCONNECTED); }} showToast={showToast} />;
         case View.BLACKLIST: return <BlacklistPanel settings={settings} conversations={conversations} onUpdateSettings={handleUpdateSettings} />;
@@ -706,8 +691,6 @@ export function App() {
               <div className="absolute top-0 left-0 h-full w-1/3 bg-brand-gold/50 blur-[4px] animate-slide-in-right"></div>
           </div>
       )}
-
-      <NetworkConfigModal isOpen={showNetworkConfig} onClose={() => setShowNetworkConfig(false)} />
 
       <Toast toast={toast} onClose={() => setToast(null)} />
       <AuthModal isOpen={authModal.isOpen} initialMode={authModal.mode} onClose={() => setAuthModal({ ...authModal, isOpen: false })} onSuccess={handleLoginSuccess} onOpenLegal={setLegalModalType} />

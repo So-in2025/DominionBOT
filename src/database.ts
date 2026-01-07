@@ -91,9 +91,26 @@ class Database {
         }).lean() as unknown as Campaign[];
     }
     
-    // --- Other Methods (Stubs/Full) ---
+    // --- User Methods ---
     async getUser(id: string): Promise<User | null> { 
-        return UserModel.findOne({ id }).lean() as unknown as User | null; 
+        // Search by ID first
+        let user = await UserModel.findOne({ id }).lean() as unknown as User | null; 
+        if (!user) {
+            // Fallback: Try searching by username (phone number) if ID fails
+            // This handles cases where we pass a username string instead of UUID
+            user = await UserModel.findOne({ username: id }).lean() as unknown as User | null;
+        }
+        return user;
+    }
+
+    async getUserByUsername(username: string): Promise<User | null> {
+        return await UserModel.findOne({ username }).lean() as unknown as User | null;
+    }
+
+    async createUser(userData: any): Promise<User> {
+        const newUser = new UserModel(userData);
+        await newUser.save();
+        return newUser.toObject() as unknown as User;
     }
     
     async updateUser(id: string, data: any): Promise<User | null> { 
