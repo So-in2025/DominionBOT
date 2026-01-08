@@ -30,13 +30,13 @@ const { ExpressAdapter } = require('@bull-board/express');
 
 // --- GLOBAL ERROR HANDLERS (THE AIRBAGS) ---
 // Esto evita que el servidor crashee completamente si falla Redis o WhatsApp inesperadamente.
-process.on('uncaughtException', (err) => {
+(process as any).on('uncaughtException', (err: any) => {
     console.error('🚨 [CRITICAL] Uncaught Exception:', err);
     // No salimos del proceso, solo logueamos. El sistema debe intentar seguir vivo.
     logService.error('[SYSTEM] Uncaught Exception (Server kept alive)', err);
 });
 
-process.on('unhandledRejection', (reason, promise) => {
+(process as any).on('unhandledRejection', (reason: any, promise: any) => {
     console.error('🚨 [CRITICAL] Unhandled Rejection at:', promise, 'reason:', reason);
     // Captura errores de promesas no manejadas (común en desconexiones de base de datos/red)
     logService.error('[SYSTEM] Unhandled Rejection (Server kept alive)', reason as any);
@@ -482,11 +482,11 @@ const gracefulShutdown = async () => {
     // Give it a second to flush
     await new Promise(resolve => setTimeout(resolve, 1000));
     console.log('✅ [SERVER] Servidor detenido.');
-    process.exit(0);
+    (process as any).exit(0);
 };
 
-process.on('SIGTERM', gracefulShutdown);
-process.on('SIGINT', gracefulShutdown);
+(process as any).on('SIGTERM', gracefulShutdown);
+(process as any).on('SIGINT', gracefulShutdown);
 
 
 // Start server
@@ -540,3 +540,4 @@ httpServer.listen(Number(PORT), '0.0.0.0', async () => {
       }
   }
 });
+    

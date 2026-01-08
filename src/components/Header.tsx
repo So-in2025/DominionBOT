@@ -18,7 +18,6 @@ interface HeaderProps {
   connectionStatus: ConnectionStatus;
   isMobile: boolean; 
   tunnelLatency: number | null; 
-  onOpenNetworkConfig: () => void; // NEW PROP
 }
 
 const Header: React.FC<HeaderProps> = ({ 
@@ -36,8 +35,7 @@ const Header: React.FC<HeaderProps> = ({
     onNavigate, 
     connectionStatus,
     isMobile,
-    tunnelLatency,
-    onOpenNetworkConfig
+    tunnelLatency
 }) => {
   const isSuperAdmin = userRole === 'super_admin';
 
@@ -64,11 +62,15 @@ const Header: React.FC<HeaderProps> = ({
           tunnelText = `${tunnelLatency}ms`;
       } else if (tunnelLatency < 1000) {
           tunnelColor = 'bg-yellow-500';
-          tunnelText = `${tunnelLatency}ms (LAG)`;
+          tunnelText = `${tunnelLatency}ms`;
       } else {
           tunnelColor = 'bg-red-500';
-          tunnelText = `${tunnelLatency}ms (SLOW)`;
+          tunnelText = `${tunnelLatency}ms`;
       }
+  } else {
+      // Si tunnelLatency es null, asumimos offline o error
+      tunnelColor = 'bg-red-500';
+      tunnelText = 'OFFLINE';
   }
 
   const navBtnClass = (view: View) => `
@@ -78,7 +80,6 @@ const Header: React.FC<HeaderProps> = ({
         : 'text-gray-400 hover:text-white hover:bg-white/5'}
   `;
 
-  // --- NATIVE-STYLE BOTTOM NAVIGATION ITEMS ---
   const navItems = isSuperAdmin ? [
       { view: View.ADMIN_GLOBAL, label: 'Global', icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9V3m0 18a9 9 0 009-9m-9 9a9 9 0 00-9-9" /></svg> },
   ] : [
@@ -105,16 +106,17 @@ const Header: React.FC<HeaderProps> = ({
                     </h1>
                     <div className="flex items-center gap-2 mt-1">
                         <p className="text-[9px] md:text-[10px] text-gray-500 uppercase tracking-widest font-bold hidden sm:block">Infraestructura Comercial</p>
-                        {isLoggedIn && (
-                            <div 
-                                className="flex items-center gap-1 bg-white/5 px-1.5 py-0.5 rounded border border-white/5 cursor-pointer hover:bg-white/10 transition-colors" 
-                                title="Latencia del Túnel (Click para configurar)"
-                                onClick={onOpenNetworkConfig}
-                            >
-                                <div className={`w-1.5 h-1.5 rounded-full ${tunnelColor} ${tunnelLatency === null ? 'animate-pulse' : ''}`}></div>
-                                <span className="text-[8px] font-mono text-gray-400">{tunnelText}</span>
-                            </div>
-                        )}
+                        
+                        {/* PURE STATUS INDICATOR (Non-clickable, Visual Only) */}
+                        <div 
+                            className="flex items-center gap-1.5 bg-white/5 px-2 py-1 rounded border border-white/10" 
+                            title={`Latencia: ${tunnelLatency !== null ? tunnelLatency + 'ms' : 'Desconectado'}`}
+                        >
+                            <div className={`w-2 h-2 rounded-full ${tunnelColor} ${tunnelLatency === null ? 'animate-pulse' : ''}`}></div>
+                            <span className={`text-[8px] font-mono font-bold ${tunnelLatency === null ? 'text-red-400' : 'text-gray-400'}`}>
+                                {tunnelText}
+                            </span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -146,7 +148,6 @@ const Header: React.FC<HeaderProps> = ({
                 <div className="flex items-center gap-2 sm:gap-4">
                     {!isSuperAdmin && (
                         <div className="flex items-center gap-4">
-                            {/* GUARDIA AUTÓNOMA TOGGLE */}
                             <div className={`relative group/guardia flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all cursor-help ${isAutonomousClosing ? 'bg-indigo-900/40 border-indigo-500/50 shadow-[0_0_15px_rgba(99,102,241,0.3)]' : 'bg-black/50 border-white/10'}`}>
                                 <span className={`text-[8px] md:text-[9px] font-black uppercase tracking-widest hidden sm:inline ${isAutonomousClosing ? 'text-indigo-400' : 'text-gray-500'}`}>
                                     Guardia
@@ -158,17 +159,8 @@ const Header: React.FC<HeaderProps> = ({
                                 >
                                     <div className={`absolute top-0.5 w-2.5 h-2.5 md:w-3 md:h-3 bg-white rounded-full transition-all duration-300 ${isAutonomousClosing ? 'left-[14px] md:left-[18px]' : 'left-0.5'}`}></div>
                                 </button>
-                                
-                                <div className="absolute top-full right-0 mt-3 w-64 p-4 bg-[#0a0a0a] border border-indigo-500/30 rounded-xl shadow-2xl opacity-0 invisible group-hover/guardia:opacity-100 group-hover/guardia:visible transition-all duration-200 z-[200] pointer-events-none backdrop-blur-xl">
-                                    <div className="absolute -top-1 right-6 w-2 h-2 bg-[#0a0a0a] border-t border-l border-indigo-500/30 rotate-45"></div>
-                                    <p className="text-[10px] text-gray-300 leading-relaxed font-medium">
-                                        <strong className="text-indigo-400 block mb-1 uppercase tracking-widest text-xs">Modo Nocturno / Autónomo</strong>
-                                        Si activas esto, la IA <strong>NO te despertará</strong> cuando consiga un cliente. Cerrará la venta sola enviando el link de pago directamente.
-                                    </p>
-                                </div>
                             </div>
 
-                            {/* SISTEMA IA TOGGLE */}
                             <div className="flex items-center gap-2 bg-black/50 border border-white/10 px-2 sm:px-4 py-1.5 rounded-full">
                                 <div className={`w-1.5 h-1.5 rounded-full hidden sm:block ${isBotGloballyActive ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
                                 <span className="text-[8px] md:text-[9px] font-black text-gray-300 uppercase tracking-widest hidden sm:block">
@@ -205,7 +197,6 @@ const Header: React.FC<HeaderProps> = ({
       </div>
     </header>
 
-    {/* --- BOTTOM NAVIGATION FOR MOBILE --- */}
     {isLoggedIn && !isSuperAdmin && (
         <div className="fixed bottom-0 left-0 right-0 z-[150] bg-brand-surface/95 backdrop-blur-md border-t border-white/10 lg:hidden">
             <div className="flex justify-around items-center h-20">

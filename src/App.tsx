@@ -111,19 +111,14 @@ const LandingPage: React.FC<{
   showToast: (message: string, type: 'success' | 'error' | 'info') => void;
   isMobile: boolean;
   settings: SystemSettings | null;
-  onOpenNetworkConfig: () => void; // NEW PROP
-}> = ({ onAuth, onRegister, visibleMessages, isSimTyping, simScrollRef, onOpenLegal, isServerReady, isLoggedIn, token, showToast, isMobile, settings, onOpenNetworkConfig }) => {
+}> = ({ onAuth, onRegister, visibleMessages, isSimTyping, simScrollRef, onOpenLegal, isServerReady, isLoggedIn, token, showToast, isMobile, settings }) => {
     return (
         <div className="w-full min-h-screen bg-brand-black font-sans relative overflow-x-hidden">
             <div className="absolute inset-0 neural-grid opacity-40 z-0 pointer-events-none"></div>
             
-            <div className="relative z-20 flex flex-col items-center justify-center p-6 md:p-12 pt-24 pb-32">
+            <div className="relative z-20 flex flex-col items-center justify-center p-6 md:p-12 pt-16 pb-32">
                 <div className="max-w-7xl w-full grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-24 items-center">
                     <div className="space-y-10 text-center lg:text-left">
-                        <div onClick={onOpenNetworkConfig} className={`inline-flex items-center gap-3 px-4 py-1.5 border rounded-full text-[11px] font-black uppercase tracking-[0.3em] backdrop-blur-xl transition-all cursor-pointer hover:bg-white/5 ${isServerReady ? 'border-green-500/30 bg-green-500/10 text-green-400 shadow-[0_0_20px_rgba(34,197,94,0.2)]' : 'border-red-500/30 bg-red-500/10 text-red-400'}`}>
-                            <span className={`w-2 h-2 rounded-full ${isServerReady ? 'bg-green-500 animate-pulse' : 'bg-red-500 animate-pulse'}`}></span>
-                            {isServerReady ? 'SISTEMA ONLINE' : 'OFFLINE (CLICK PARA RECARGAR)'}
-                        </div>
                         
                         <h1 className="text-5xl md:text-8xl lg:text-[90px] font-black text-white leading-tight tracking-normal py-2">
                             Ventas en <br />
@@ -250,7 +245,6 @@ export const App = () => {
   
   const [isServerReady, setIsServerReady] = useState(false);
   const [tunnelLatency, setTunnelLatency] = useState<number | null>(null);
-  // ELIMINADO: const [isNetworkConfigOpen, setIsNetworkConfigOpen] = useState(false);
 
   // SIMULATOR STATE (Landing Page)
   const [simStep, setSimStep] = useState(0);
@@ -641,6 +635,22 @@ export const App = () => {
   if (!token) {
       return (
           <>
+            <Header 
+                isLoggedIn={false} // HEADER IS NOW VISIBLE ON LANDING
+                userRole={null}
+                onLoginClick={() => { setAuthMode('login'); setIsAuthModalOpen(true); }}
+                onRegisterClick={() => { setAuthMode('register'); setIsAuthModalOpen(true); }}
+                onLogoutClick={() => {}}
+                isBotGloballyActive={false}
+                onToggleBot={() => {}}
+                isAutonomousClosing={false}
+                onToggleAutonomous={() => {}}
+                currentView={View.CHATS}
+                onNavigate={() => {}}
+                connectionStatus={isServerReady ? ConnectionStatus.CONNECTED : ConnectionStatus.DISCONNECTED}
+                isMobile={isMobile}
+                tunnelLatency={tunnelLatency}
+            />
             <LandingPage 
                 onAuth={() => { setAuthMode('login'); setIsAuthModalOpen(true); }}
                 onRegister={() => { setAuthMode('register'); setIsAuthModalOpen(true); }}
@@ -654,7 +664,6 @@ export const App = () => {
                 showToast={showToast}
                 isMobile={isMobile}
                 settings={null} 
-                onOpenNetworkConfig={() => window.location.reload()}
             />
             <AuthModal 
                 isOpen={isAuthModalOpen} 
@@ -687,7 +696,6 @@ export const App = () => {
                   connectionStatus={ConnectionStatus.CONNECTED}
                   isMobile={isMobile}
                   tunnelLatency={tunnelLatency}
-                  onOpenNetworkConfig={() => window.location.reload()}
               />
               <AdminDashboard 
                   token={token} 
@@ -722,7 +730,6 @@ export const App = () => {
           connectionStatus={connectionStatus}
           isMobile={isMobile}
           tunnelLatency={tunnelLatency}
-          onOpenNetworkConfig={() => window.location.reload()}
       />
 
       <PlanStatusBanner user={currentUser} />
