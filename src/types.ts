@@ -336,13 +336,6 @@ export interface SimulationRun {
     evaluation: EvaluationResult;
 }
 
-export interface SimulationLab {
-    experiments: SimulationRun[];
-    aggregatedScore: number;
-    topFailurePatterns: Record<string, number>;
-    customScript?: string[]; // NEW: Auto-generated script specific to the user's business
-}
-
 export interface InternalNote {
   id: string;
   note: string;
@@ -552,4 +545,22 @@ export interface SystemSettings {
     planStandardDescription?: string;
     planSniperDescription?: string;
     planNeuroBoostDescription?: string;
+}
+
+// --- POS Integration Types ---
+export interface ProductVariant {
+    name: string;
+    price: number;
+}
+
+export interface Product {
+    id: string | number;
+    name: string;
+    price: number;
+    image?: string;
+    variants?: ProductVariant[];
+    // NEW FIELDS
+    category: string;
+    stock: number;
+    minStock?: number;
 }

@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Conversation, ConnectionStatus, LeadStatus } from '../types';
 import ConversationListItem from './ConversationListItem';
 
@@ -11,7 +11,8 @@ interface ConversationListProps {
   onRequestHistory: () => Promise<void>; 
   isRequestingHistory: boolean;
   connectionStatus: ConnectionStatus;
-  onDeleteConversation?: (id: string) => void; // Added prop for deletion callback
+  onDeleteConversation?: (id: string) => void; 
+  onRefresh?: () => void; 
 }
 
 const ConversationList: React.FC<ConversationListProps> = ({
@@ -20,10 +21,26 @@ const ConversationList: React.FC<ConversationListProps> = ({
   onSelectConversation,
   backendError,
   connectionStatus,
-  onDeleteConversation
+  onDeleteConversation,
+  onRefresh
 }) => {
   const [filter, setFilter] = useState<'ALL' | 'HOT' | 'WARM' | 'COLD'>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<string>('');
+
+  // Update timestamp whenever conversations change (implies a fetch or socket update)
+  useEffect(() => {
+      setLastUpdated(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+  }, [conversations]);
+
+  const handleManualRefresh = () => {
+      if (onRefresh) {
+          setIsRefreshing(true);
+          onRefresh();
+          setTimeout(() => setIsRefreshing(false), 1000);
+      }
+  };
 
   const filteredConversations = useMemo(() => {
     return conversations
@@ -53,31 +70,47 @@ const ConversationList: React.FC<ConversationListProps> = ({
     <div className="w-full md:w-80 lg:w-96 flex flex-col border-r border-white/10 bg-brand-surface h-full">
       {/* Search & Filter Header */}
       <div className="p-4 border-b border-white/10 space-y-4 bg-black/20">
-        <div className="relative">
-            <input
-                type="text"
-                placeholder="Buscar chats, etiquetas..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full bg-black/50 border border-white/10 rounded-xl py-2.5 pl-10 pr-4 text-xs text-white placeholder-gray-500 focus:border-brand-gold outline-none transition-all"
-            />
-            <svg className="absolute left-3 top-2.5 w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+        <div className="flex gap-2">
+            <div className="relative flex-1">
+                <input
+                    type="text"
+                    placeholder="Buscar chats, etiquetas..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full bg-black/50 border border-white/10 rounded-xl py-2.5 pl-10 pr-4 text-xs text-white placeholder-gray-500 focus:border-brand-gold outline-none transition-all"
+                />
+                <svg className="absolute left-3 top-2.5 w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+            </div>
+            <button 
+                onClick={handleManualRefresh}
+                className={`p-2.5 bg-white/5 border border-white/10 rounded-xl text-gray-400 hover:text-white hover:bg-white/10 transition-all ${isRefreshing ? 'animate-spin text-brand-gold border-brand-gold/30' : ''}`}
+                title="Actualizar Lista"
+            >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+            </button>
         </div>
 
-        <div className="flex gap-2 overflow-x-auto pb-1 custom-scrollbar no-scrollbar">
-            {['ALL', 'HOT', 'WARM', 'COLD'].map((f) => (
-                <button
-                    key={f}
-                    onClick={() => setFilter(f as any)}
-                    className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest whitespace-nowrap transition-all border ${
-                        filter === f 
-                        ? 'bg-brand-gold text-black border-brand-gold' 
-                        : 'bg-white/5 text-gray-500 border-transparent hover:text-white hover:border-white/10'
-                    }`}
-                >
-                    {f === 'ALL' ? 'Todos' : f === 'HOT' ? 'Caliente' : f === 'WARM' ? 'Tibio' : 'Frío'}
-                </button>
-            ))}
+        <div className="flex justify-between items-center">
+            <div className="flex gap-2 overflow-x-auto pb-1 custom-scrollbar no-scrollbar flex-1">
+                {['ALL', 'HOT', 'WARM', 'COLD'].map((f) => (
+                    <button
+                        key={f}
+                        onClick={() => setFilter(f as any)}
+                        className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest whitespace-nowrap transition-all border ${
+                            filter === f 
+                            ? 'bg-brand-gold text-black border-brand-gold' 
+                            : 'bg-white/5 text-gray-500 border-transparent hover:text-white hover:border-white/10'
+                        }`}
+                    >
+                        {f === 'ALL' ? 'Todos' : f === 'HOT' ? 'Caliente' : f === 'WARM' ? 'Tibio' : 'Frío'}
+                    </button>
+                ))}
+            </div>
+            {lastUpdated && (
+                <span className="text-[8px] text-gray-600 font-mono ml-2 whitespace-nowrap hidden sm:block" title="Última sincronización con el servidor">
+                    Sinc: {lastUpdated}
+                </span>
+            )}
         </div>
       </div>
 

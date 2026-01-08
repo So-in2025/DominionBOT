@@ -237,6 +237,18 @@ const ConnectionPanel: React.FC<ConnectionPanelProps> = ({ status, qrCode, pairi
                             <h3 className="text-2xl font-black text-white uppercase tracking-tighter">Nodo Sincronizado</h3>
                             <p className="text-gray-500 mt-2 text-xs font-medium">Todo listo. La IA ya puede operar sobre tu cuenta.</p>
                         </div>
+
+                        {/* PERSISTENCE INFO CARD */}
+                        <div className="bg-brand-gold/5 border border-brand-gold/20 p-4 rounded-xl text-left flex items-start gap-3">
+                            <span className="text-xl">☁️</span>
+                            <div>
+                                <h4 className="text-[10px] font-black text-brand-gold uppercase tracking-widest mb-1">Arquitectura Persistente</h4>
+                                <p className="text-[10px] text-gray-400 leading-relaxed">
+                                    Tu sesión vive en nuestros servidores en la nube. Puedes cerrar esta pestaña o apagar tu computadora; el bot seguirá respondiendo 24/7.
+                                    <br/><span className="opacity-60 text-[9px] mt-1 block font-mono">Status: WA Multi-Device Active</span>
+                                </p>
+                            </div>
+                        </div>
                         
                         <div className="pt-6 border-t border-white/5 space-y-4">
                             <button onClick={onDisconnect} className="w-full py-4 bg-white/5 text-gray-400 border border-white/10 font-black text-xs uppercase tracking-[0.2em] rounded-xl hover:bg-white/10 hover:text-white transition-all">

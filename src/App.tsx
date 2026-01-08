@@ -1,4 +1,5 @@
 
+
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Conversation, BotSettings, Message, View, ConnectionStatus, User, LeadStatus, PromptArchetype, Testimonial, SystemSettings, SocketEvents } from './types';
 import Header from './components/Header';
@@ -157,7 +158,7 @@ const LandingPage: React.FC<{
                                             <span className={`mt-3 text-[10px] font-black uppercase px-4 py-1.5 rounded-full border tracking-widest ${
                                                 msg.statusLabel.includes('CALIENTE') || msg.statusLabel.includes('CERRADA') 
                                                 ? 'text-red-400 border-red-500/30 bg-red-500/10 shadow-[0_0_15px_rgba(239,68,68,0.2)]' 
-                                                : (msg.statusLabel.includes('TIBIO') ? 'text-yellow-400 border-yellow-500/30 bg-yellow-500/10' : 'text-blue-400 border-blue-500/10 bg-blue-500/10')
+                                                : (msg.statusLabel.includes('TIBIO') ? 'text-yellow-400 border-yellow-500/30 bg-yellow-500/10') : 'text-blue-400 border-blue-500/10 bg-blue-500/10'
                                             }`}>{msg.statusLabel}</span>
                                         )}
                                     </div>
@@ -312,6 +313,66 @@ export const App = () => {
     return () => clearInterval(interval);
   }, []);
 
+  // Data Fetching
+  const fetchConversations = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) });
+      if (res.ok) {
+        const data = await res.json();
+        setConversations(data.sort((a: Conversation, b: Conversation) => 
+            new Date(b.lastActivity || 0).getTime() - new Date(a.lastActivity || 0).getTime()
+        ));
+      }
+    } catch (e) { console.error("Error fetching conversations", e); }
+  }, [token]);
+
+  const fetchSettings = useCallback(async () => {
+    if (!token) return;
+    setIsLoadingSettings(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/settings`, { headers: getAuthHeaders(token) });
+      if (res.ok) setSettings(await res.json());
+    } catch (e) { console.error(e); } 
+    finally { setIsLoadingSettings(false); }
+  }, [token]);
+
+  const fetchUser = useCallback(async () => {
+      if (!token) return;
+      try {
+          const res = await fetch(`${BACKEND_URL}/api/user/me`, { headers: getAuthHeaders(token) });
+          if (res.ok) setCurrentUser(await res.json());
+      } catch (e) { console.error(e); }
+  }, [token]);
+
+  const fetchConnectionStatus = useCallback(async () => {
+      if (!token) return;
+      try {
+          const res = await fetch(`${BACKEND_URL}/api/status`, { headers: getAuthHeaders(token) });
+          if (res.ok) {
+              const data = await res.json();
+              setConnectionStatus(data.status);
+              if(data.qr) setQrCode(data.qr);
+              if(data.pairingCode) setPairingCode(data.pairingCode);
+          }
+      } catch (e) { console.error(e); }
+  }, [token]);
+
+  // AUTO-REFRESH ON VISIBILITY CHANGE (BACKGROUND TO FOREGROUND)
+  useEffect(() => {
+      const handleVisibilityChange = () => {
+          if (document.visibilityState === 'visible' && token) {
+              console.log('[APP] App resumed (visible). Refetching data...');
+              fetchConversations();
+              fetchConnectionStatus();
+              fetchSettings(); // Good practice to ensure settings didn't change
+          }
+      };
+
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [token, fetchConversations, fetchConnectionStatus, fetchSettings]);
+
   // Initialize Socket Client
   useEffect(() => {
       if (token) {
@@ -359,7 +420,7 @@ export const App = () => {
               socketClient.disconnect();
           };
       }
-  }, [token]);
+  }, [token, fetchConversations]);
 
   // Landing Page Simulation Effect
   useEffect(() => {
@@ -401,51 +462,6 @@ export const App = () => {
           isSimulationRunning.current = false;
       };
   }, [simStep, token, currentScriptIndex]);
-
-  // Data Fetching
-  const fetchConversations = useCallback(async () => {
-    if (!token) return;
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/conversations`, { headers: getAuthHeaders(token) });
-      if (res.ok) {
-        const data = await res.json();
-        setConversations(data.sort((a: Conversation, b: Conversation) => 
-            new Date(b.lastActivity || 0).getTime() - new Date(a.lastActivity || 0).getTime()
-        ));
-      }
-    } catch (e) { console.error("Error fetching conversations", e); }
-  }, [token]);
-
-  const fetchSettings = useCallback(async () => {
-    if (!token) return;
-    setIsLoadingSettings(true);
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/settings`, { headers: getAuthHeaders(token) });
-      if (res.ok) setSettings(await res.json());
-    } catch (e) { console.error(e); } 
-    finally { setIsLoadingSettings(false); }
-  }, [token]);
-
-  const fetchUser = useCallback(async () => {
-      if (!token) return;
-      try {
-          const res = await fetch(`${BACKEND_URL}/api/user/me`, { headers: getAuthHeaders(token) });
-          if (res.ok) setCurrentUser(await res.json());
-      } catch (e) { console.error(e); }
-  }, [token]);
-
-  const fetchConnectionStatus = useCallback(async () => {
-      if (!token) return;
-      try {
-          const res = await fetch(`${BACKEND_URL}/api/status`, { headers: getAuthHeaders(token) });
-          if (res.ok) {
-              const data = await res.json();
-              setConnectionStatus(data.status);
-              if(data.qr) setQrCode(data.qr);
-              if(data.pairingCode) setPairingCode(data.pairingCode);
-          }
-      } catch (e) { console.error(e); }
-  }, [token]);
 
   useEffect(() => {
     if (token) {
@@ -748,6 +764,7 @@ export const App = () => {
                         isRequestingHistory={false}
                         connectionStatus={connectionStatus}
                         onDeleteConversation={(id) => setConversations(prev => prev.filter(c => c.id !== id))}
+                        onRefresh={fetchConversations} // PASSED PROP
                     />
                 </div>
                 <div className={`${!selectedConversationId && isMobile ? 'hidden' : 'flex'} flex-1 h-full`}>

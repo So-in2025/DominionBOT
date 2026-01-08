@@ -1,9 +1,11 @@
+
 import React, { useEffect, useState } from 'react';
 import { BotSettings, DashboardMetrics, User } from '../types.js';
 import { getAuthHeaders } from '../config';
 import TestBotSimulator from './Client/TestBotSimulator.js'; 
 import { openSupportWhatsApp } from '../utils/textUtils';
 import { audioService } from '../services/audioService.js';
+import { NeuralInsights } from './dashboard/NeuralInsights'; // IMPORTADO
 
 interface AgencyDashboardProps {
   token: string;
@@ -14,6 +16,7 @@ interface AgencyDashboardProps {
   showToast: (message: string, type: 'success' | 'error' | 'info') => void;
 }
 
+// ... (KEEP CONSTANTS LIKE DEPTH_MODES, KpiCard, FunnelStep, NeuralEngineStatus AS IS)
 // MAPPING FOR COMMERCIAL SIMPLIFICATION
 const DEPTH_MODES: Record<number, string> = {
     1: "⚡ Modo Rápido (Flash)",
@@ -102,9 +105,7 @@ const FunnelStep: React.FC<{ label: string; value: number; total: number; color:
 };
 
 const NeuralEngineStatus: React.FC<{ depthLevel: number; userId: string; username: string }> = ({ depthLevel, userId, username }) => {
-    // Map internal number to commercial name
     const commercialName = DEPTH_MODES[depthLevel] || `Nivel ${depthLevel}`;
-    
     let color = 'text-gray-400';
     let borderColor = 'border-white/10';
     let bg = 'bg-white/5';
@@ -155,7 +156,6 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
     }
     setApiKeyStatus('VERIFYING');
     try {
-        // This endpoint doesn't exist yet, but we define the frontend interaction
         const res = await fetch(`${backendUrl}/api/ai/verify-key`, {
             method: 'POST',
             headers: getAuthHeaders(token)
@@ -289,6 +289,13 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
             />
         </div>
 
+        {/* NEURAL INSIGHTS INJECTION */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="lg:col-span-3">
+               <NeuralInsights />
+            </div>
+        </div>
+
         {/* Client Test Bot Simulator */}
         {currentUser && (
             <TestBotSimulator 
@@ -301,6 +308,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 pb-20">
             <div className="lg:col-span-2 bg-brand-surface border border-white/5 rounded-[32px] p-10 shadow-2xl space-y-10 relative overflow-hidden">
+                {/* ... (Existing Funnel content) ... */}
                 <div className="flex justify-between items-center relative group/funnel-header">
                     <div>
                         <h3 className="text-xl font-black text-white uppercase tracking-widest flex items-center gap-2">
@@ -323,6 +331,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ token, backendUrl, se
 
             <div className="lg:col-span-1 space-y-8">
                  <div className="bg-brand-surface border border-white/5 rounded-[32px] p-8 shadow-2xl flex flex-col justify-between h-full">
+                    {/* ... (Existing Node Health content) ... */}
                     <div className="relative group/health-header">
                         <h3 className="text-xl font-black text-white uppercase tracking-widest flex items-center gap-2">
                             Salud del Nodo
