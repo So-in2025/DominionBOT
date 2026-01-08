@@ -157,7 +157,9 @@ const LandingPage: React.FC<{
                                             <span className={`mt-3 text-[10px] font-black uppercase px-4 py-1.5 rounded-full border tracking-widest ${
                                                 msg.statusLabel.includes('CALIENTE') || msg.statusLabel.includes('CERRADA') 
                                                 ? 'text-red-400 border-red-500/30 bg-red-500/10 shadow-[0_0_15px_rgba(239,68,68,0.2)]' 
-                                                : (msg.statusLabel.includes('TIBIO') ? 'text-yellow-400 border-yellow-500/30 bg-yellow-500/10') : 'text-blue-400 border-blue-500/10 bg-blue-500/10'
+                                                : msg.statusLabel.includes('TIBIO') 
+                                                    ? 'text-yellow-400 border-yellow-500/30 bg-yellow-500/10' 
+                                                    : 'text-blue-400 border-blue-500/10 bg-blue-500/10'
                                             }`}>{msg.statusLabel}</span>
                                         )}
                                     </div>
