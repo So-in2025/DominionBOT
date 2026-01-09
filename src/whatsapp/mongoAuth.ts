@@ -20,28 +20,43 @@ const SessionModel = (mongoose.models.BaileysSession || mongoose.model('BaileysS
 const SESSION_TTL = 60 * 60 * 24 * 7; 
 
 /**
- * Purgado completo de sesión.
+ * Purgado completo de sesión (Optimizado con SCAN).
+ * ARREGLO CRÍTICO: Usa 'scanStream' en lugar de 'keys' para evitar el error "too many keys" y el bloqueo del servidor.
  */
 export const clearBindedSession = async (userId: string) => {
+    if (!userId) {
+        console.error('[AUTH-ERROR] Intento de limpiar sesión con userId undefined.');
+        return false;
+    }
+
     try {
         const pattern = `auth:${userId}:*`;
-        const mongoPrefix = `${userId}_`;
         
-        // 1. Purge Redis (L2)
-        const keys = await redis.keys(pattern);
-        if (keys.length > 0) {
-            const pipeline = redis.pipeline();
-            keys.forEach(key => pipeline.del(key));
-            await pipeline.exec();
-        }
+        // 1. Purge Redis (L2) usando SCAN para evitar bloqueo del Event Loop
+        const stream = redis.scanStream({ match: pattern, count: 100 });
+        const pipeline = redis.pipeline();
+        
+        stream.on('data', (keys) => {
+            if (keys.length) {
+                keys.forEach((key: string) => pipeline.del(key));
+            }
+        });
+
+        await new Promise((resolve, reject) => {
+            stream.on('end', () => resolve(true));
+            stream.on('error', (err) => reject(err));
+        });
+
+        // Ejecutar borrado en lote si hay llaves pendientes
+        await pipeline.exec();
 
         // 2. Purge Mongo (L3)
         await SessionModel.deleteMany({ _id: { $regex: `^${userId}_` } });
         
-        logService.info(`[AUTH] 🧹 Sesión limpiada completamente para ${userId}.`);
+        logService.info(`[AUTH] 🧹 Sesión limpiada y saneada para ${userId}.`);
         return true;
     } catch (e) {
-        console.error(`[AUTH-ERROR] Error al limpiar:`, e);
+        console.error(`[AUTH-ERROR] Error al limpiar sesión:`, e);
         return false;
     }
 };
@@ -73,8 +88,6 @@ export const useMongoDBAuthState = async (userId: string) => {
     };
 
     // --- ZERO LATENCY WRITE STRATEGY (Write-Through) ---
-    // Clave del éxito: Escribimos en Redis y ESPERAMOS (await) la confirmación.
-    // Esto garantiza que Baileys no avance hasta que la llave esté segura en la memoria persistente.
     const writeData = async (data: any, category: string, id?: string) => {
         const redisKey = getRedisKey(category, id);
         const mongoId = getMongoId(category, id);
@@ -83,23 +96,20 @@ export const useMongoDBAuthState = async (userId: string) => {
             const serialized = JSON.stringify(data, BufferJSON.replacer);
 
             // 1. CRITICAL: Synchronous Write to Redis.
-            // Si Redis falla, lanzamos error para detener el proceso y no corromper el estado lógico.
             await redis.set(redisKey, serialized, 'EX', SESSION_TTL);
 
             // 2. BACKGROUND: Backup to MongoDB.
-            // "Fire and Forget". Si Mongo es lento, no frenamos el chat. Redis es la verdad.
             SessionModel.updateOne(
                 { _id: mongoId },
                 { $set: { data: serialized } },
                 { upsert: true }
             ).catch(err => {
-                // Solo logueamos advertencia, no rompemos el flujo si Mongo tiene lag.
                 // console.warn(`[AUTH-WARN] Fallo backup Mongo para ${mongoId}`, err.message);
             });
 
         } catch (err) {
             console.error(`[AUTH-CRITICAL] ❌ Fallo escritura Redis para ${userId}.`, err);
-            throw err; // Detener Baileys para proteger la integridad criptográfica
+            throw err;
         }
     };
 
@@ -124,8 +134,6 @@ export const useMongoDBAuthState = async (userId: string) => {
 
             return null;
         } catch (error) {
-            // Si falla la lectura, devolvemos null para que Baileys regenere si es posible,
-            // o falle controladamente.
             return null;
         }
     };
@@ -137,7 +145,7 @@ export const useMongoDBAuthState = async (userId: string) => {
             await redis.del(redisKey);
             SessionModel.deleteOne({ _id: mongoId }).exec().catch(() => {});
         } catch (error) {
-            // Silent fail is acceptable for deletes
+            // Silent fail
         }
     };
 
@@ -160,14 +168,10 @@ export const useMongoDBAuthState = async (userId: string) => {
                     return data;
                 },
                 set: async (data: any) => {
-                    // Procesamiento atómico de llaves
-                    // Usamos Promise.all para paralelizar escrituras a Redis pero esperar a todas.
                     const tasks: Promise<void>[] = [];
-                    
                     for (const category in data) {
                         for (const id in data[category]) {
                             const value = data[category][id];
-                            
                             if (value) {
                                 tasks.push(writeData(value, category, id));
                             } else {
@@ -175,12 +179,10 @@ export const useMongoDBAuthState = async (userId: string) => {
                             }
                         }
                     }
-                    // EL BLOQUEO: Esperamos que Redis confirme TODO antes de decirle a Baileys "OK"
                     await Promise.all(tasks);
                 }
             }
         },
-        // Guardado de credenciales principales (Identity Key, etc)
         saveCreds: async () => {
             await writeData(creds, 'creds');
         }

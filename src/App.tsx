@@ -206,7 +206,7 @@ const LandingPage: React.FC<{
                         </a>
                         <a href="https://instagram.com/so_in_agencia" target="_blank" rel="noopener noreferrer" className="transition-colors">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 448 512" fill="#E1306C" className="w-5 h-5">
-                              <path d="M224.1 141c-63.6 0-114.9 51.3-114.9 114.9s51.3 114.9 114.9 114.9S339 319.5 339 255.9 287.7 141 224.1 141zm0 189.6c-41.1 0-74.7-33.5-74.7-74.7s33.5-74.7 74.7-74.7 74.7 33.6 74.7-74.7 74.7zm146.4-194.3c0 14.9-12 26.8-26.8 26.8-14.9 0-26.8-12-26.8-26.8s12-26.8 26.8-26.8 26.8 12 26.8 26.8zm76.1 27.2c-1.7-35.9-9.9-67.7-36.2-93.9-26.2-26.2-58-34.4-93.9-36.2-37-2.1-147.9-2.1-184.9 0-35.8 1.7-67.6 9.9-93.9 36.1s-34.4 58-36.2 93.9c-2.1 37-2.1 147.9 0 184.9 1.7 35.9 9.9 67.7 36.2 93.9s58 34.4 93.9 36.2c37 2.1 147.9 2.1 184.9 0 35.9-1.7 67.7-9.9 93.9-36.2 26.2-26.2 34.4-58 36.2-93.9 2.1-37 2.1-147.8 0-184.8zM398.8 388c-7.8 19.6-22.9 34.7-42.6 42.6-29.5 11.7-99.5 9-132.1 9s-102.7 2.6-132.1-9c-19.6-7.8-34.7-22.9-42.6-42.6-11.7-29.5-9-99.5-9-132.1s-2.6-102.7 9-132.1c7.8-19.6 22.9-34.7 42.6-42.6 29.5-11.7 99.5-9 132.1-9s102.7-2.6 132.1 9c19.6 7.8 34.7 22.9 42.6 42.6 11.7 29.5 9 99.5 9 132.1s2.7 102.7-9 132.1z"/>
+                              <path d="M224.1 141c-63.6 0-114.9 51.3-114.9 114.9s51.3 114.9 114.9 114.9S339 319.5 339 255.9 287.7 141 224.1 141zm0 189.6c-41.1 0-74.7-33.5-74.7-74.7s33.5-74.7 74.7-74.7 74.7 33.6 74.7-74.7 74.7zm146.4-194.3c0 14.9-12 26.8-26.8 26.8-14.9 0-26.8-12-26.8-26.8s12-26.8 26.8-26.8 12 26.8 26.8zm76.1 27.2c-1.7-35.9-9.9-67.7-36.2-93.9-26.2-26.2-58-34.4-93.9-36.2-37-2.1-147.9-2.1-184.9 0-35.8 1.7-67.6 9.9-93.9 36.1s-34.4 58-36.2 93.9c-2.1 37-2.1 147.9 0 184.9 1.7 35.9 9.9 67.7 36.2 93.9s58 34.4 93.9 36.2c37 2.1 147.9 2.1 184.9 0 35.9-1.7 67.7-9.9 93.9-36.2 26.2-26.2 34.4-58 36.2-93.9 2.1-37 2.1-147.8 0-184.8zM398.8 388c-7.8 19.6-22.9 34.7-42.6 42.6-29.5 11.7-99.5 9-132.1 9s-102.7 2.6-132.1-9c-19.6-7.8-34.7-22.9-42.6-42.6-11.7-29.5-9-99.5-9-132.1s-2.6-102.7 9-132.1c7.8-19.6 22.9-34.7 42.6-42.6 29.5-11.7 99.5-9 132.1-9s102.7-2.6 132.1 9c19.6 7.8 34.7 22.9 42.6 42.6 11.7 29.5 9 99.5 9 132.1s2.7 102.7-9 132.1z"/>
                             </svg>
                         </a>
                         <a href="https://linkedin.com/company/so-in" target="_blank" rel="noopener noreferrer" className="transition-colors">
@@ -267,8 +267,8 @@ export const App = () => {
   const checkServer = async () => {
     try {
       const controller = new AbortController();
-      // Short timeout for check
-      const timeoutId = setTimeout(() => controller.abort(), 5000); 
+      // MOBILE FIX: 25s timeout allows for high latency mobile networks + tunnel handshake
+      const timeoutId = setTimeout(() => controller.abort(), 25000); 
       
       const start = Date.now();
       const res = await fetch(`${BACKEND_URL}/api/health`, { 
@@ -286,16 +286,15 @@ export const App = () => {
       }
     } catch (e) {
       connectionFailures.current++;
-      console.warn(`[HEARTBEAT] Connection check failed (${connectionFailures.current}/3)`);
+      console.warn(`[HEARTBEAT] Connection check failed (${connectionFailures.current}/5)`);
       
-      // Only mark as offline if we fail 3 times in a row (approx 15 seconds)
-      if (connectionFailures.current >= 3) {
+      // MOBILE FIX: Only mark offline after 5 failures (approx 50 seconds of issues)
+      if (connectionFailures.current >= 5) {
           setIsServerReady(false);
           setTunnelLatency(null);
       } else {
-          // Keep "Online" but indicate degradation via latency meter if desired
-          // Let's set latency to high to show Yellow/Red dot without full offline
-          setTunnelLatency(prev => (prev ? prev + 500 : 500));
+          // Keep "Online" visually but degrading
+          setTunnelLatency(prev => (prev ? prev + 1000 : 2000));
       }
     }
   };
@@ -310,7 +309,8 @@ export const App = () => {
         sessionStorage.setItem('intro_played', 'true');
     }
 
-    const interval = setInterval(checkServer, 5000);
+    // MOBILE FIX: Check every 10s instead of 5s to save radio battery and reduce congestion
+    const interval = setInterval(checkServer, 10000);
     return () => clearInterval(interval);
   }, []);
 

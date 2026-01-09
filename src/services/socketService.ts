@@ -16,10 +16,17 @@ class SocketService {
     public init(httpServer: HttpServer) {
         this.io = new Server(httpServer, {
             cors: {
-                origin: "*", // Adjust based on your CORS policy in env or server.ts
+                origin: "*", 
                 methods: ["GET", "POST"]
             },
-            path: '/socket.io'
+            path: '/socket.io',
+            // OPTIMIZACIÓN MÓVIL: Aumentamos tolerancia
+            // 60s timeout permite que un móvil con mala señal no se desconecte inmediatamente
+            pingTimeout: 60000, 
+            // 25s intervalo de ping para mantener vivo el túnel Cloudflare
+            pingInterval: 25000,
+            // Permitir transportes flexibles
+            transports: ['polling', 'websocket'] 
         });
 
         // Authentication Middleware
@@ -54,15 +61,15 @@ class SocketService {
                 socket.join('super_admin');
             }
 
-            socket.on(SocketEvents.DISCONNECT, () => {
-                // logService.debug(`[SOCKET] Cliente desconectado: ${user.username}`, user.id);
+            socket.on(SocketEvents.DISCONNECT, (reason) => {
+                // Solo loguear si es una desconexión inesperada, no cierre de pestaña
+                if (reason !== 'transport close' && reason !== 'client namespace disconnect') {
+                     // logService.debug(`[SOCKET] Cliente desconectado (${reason}): ${user.username}`, user.id);
+                }
             });
-            
-            // Handle client-side events here if needed
-            // socket.on('ping', () => socket.emit('pong'));
         });
 
-        console.log(`\x1b[32m✅ [SOCKET] Servicio de Real-Time inicializado.\x1b[0m`);
+        console.log(`\x1b[32m✅ [SOCKET] Servicio de Real-Time inicializado (Mobile-Optimized).\x1b[0m`);
     }
 
     /**

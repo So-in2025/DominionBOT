@@ -98,7 +98,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClo
         
         try {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 15000);
+            // MOBILE FIX: 45 seconds for mobile tunnel latency
+            const timeoutId = setTimeout(() => controller.abort(), 45000);
 
             const res = await fetch(`${BACKEND_URL}${endpoint}`, {
                 method: 'POST',
@@ -129,7 +130,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClo
         } catch (err: any) {
             console.error("Auth Fail", err);
             if (err.name === 'AbortError') {
-                setError('La operación de autenticación ha tardado demasiado. Intente nuevamente.');
+                setError('La red está muy lenta. Inténtalo de nuevo.');
             } else if (err.name === 'TypeError' && err.message === 'Failed to fetch') {
                 setError(`Error de red: No se pudo conectar con el backend en ${BACKEND_URL}. Verifique su conexión.`);
             } else {

@@ -7,6 +7,7 @@ import { campaignService } from '../services/campaignService.js';
 import { fetchUserGroups } from '../whatsapp/client.js';
 import { v4 as uuidv4 } from 'uuid';
 import { generateContentWithFallback } from '../services/geminiService.js';
+import { sanitizeKey } from '../database.js'; // Ensure imported
 
 // FIX: Explicitly add body, params, and query to fix type inheritance issues.
 export interface AuthenticatedRequest<P = any, ResBody = any, ReqBody = any, ReqQuery = any> extends Request<P, ResBody, ReqBody, ReqQuery> {
@@ -263,4 +264,41 @@ export const handleGenerateCampaignPrompt = async (req: AuthenticatedRequest, re
         logService.error('Error generating AI campaign prompt', error, getClientUser(req).id);
         res.status(500).json({ message: error.message || 'Error interno del servidor.' });
     }
+};
+
+// --- SETTINGS & USER ---
+export const handleGetUser = async (req: any, res: any) => {
+    try {
+        if (req.user.role === 'super_admin') {
+             return res.json({
+                 id: 'super_admin',
+                 username: 'master',
+                 role: 'super_admin',
+                 business_name: 'DOMINION GOD MODE',
+                 plan_status: 'active',
+                 plan_type: 'pro',
+                 billing_end_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+                 settings: { isActive: true, productName: 'Sistema Central' }
+             });
+        }
+        const user = await db.getUser(req.user.id);
+        if (!user) {
+            return res.status(404).json({ message: "Usuario no encontrado en base de datos." });
+        }
+        res.json(user);
+    } catch (e) {
+        res.status(500).json({ message: "Error retrieval" });
+    }
+};
+
+// --- CRITICAL FIX: Safe Conversation Delete ---
+export const handleDeleteConversation = async (req: any, res: any) => {
+    const { id } = req.params;
+    const user = await db.getUser(req.user.id);
+    if(user && user.conversations) {
+        const safeId = sanitizeKey(id);
+        // Utilizar rawUpdateUser para pasar el operador $unset sin que Mongoose lo envuelva en $set
+        await db.rawUpdateUser(req.user.id, { $unset: { [`conversations.${safeId}`]: 1, [`conversations.${id}`]: 1 } });
+    }
+    res.json({ success: true });
 };

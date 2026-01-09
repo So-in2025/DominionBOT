@@ -140,7 +140,14 @@ class Database {
     }
     
     async updateUser(id: string, data: any): Promise<User | null> { 
+        // Standard Update: Wraps data in $set to prevent overwriting entire document
         return UserModel.findOneAndUpdate({ id }, { $set: data }, { new: true }).lean() as unknown as User | null; 
+    }
+
+    // NEW: Raw Update for advanced operations like $unset, $push, etc.
+    // FIXES: "The dollar ($) prefixed field '$unset' in '$unset' is not allowed"
+    async rawUpdateUser(id: string, updateQuery: any): Promise<User | null> {
+        return UserModel.findOneAndUpdate({ id }, updateQuery, { new: true }).lean() as unknown as User | null;
     }
     
     async deleteUser(id: string): Promise<boolean> {

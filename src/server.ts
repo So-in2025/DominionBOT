@@ -10,11 +10,11 @@ import { optionalAuthenticateToken } from './middleware/optionalAuth.js';
 import { socketService } from './services/socketService.js';
 import { PORT } from './env.js';
 import { campaignQueue } from './infrastructure/queues.js';
-import { db } from './database.js';
+import { db, sanitizeKey } from './database.js'; // Import sanitizeKey here
 import { initCampaignWorker } from './workers/campaignWorker.js';
 import { ttsService } from './services/ttsService.js';
 import { connectToWhatsApp, getSessionStatus, softResetConnection, purgeSession, disconnectWhatsApp, activeSessions } from './whatsapp/client.js';
-import { hasValidSession } from './whatsapp/mongoAuth.js'; // IMPORTED
+import { hasValidSession } from './whatsapp/mongoAuth.js'; 
 import { logService } from './services/logService.js';
 import { ConnectionStatus, SocketEvents, RadarSignal } from './types.js';
 import { v4 as uuidv4 } from 'uuid';
@@ -29,16 +29,13 @@ const { BullMQAdapter } = require('@bull-board/api/bullMQAdapter');
 const { ExpressAdapter } = require('@bull-board/express');
 
 // --- GLOBAL ERROR HANDLERS (THE AIRBAGS) ---
-// Esto evita que el servidor crashee completamente si falla Redis o WhatsApp inesperadamente.
 (process as any).on('uncaughtException', (err: any) => {
     console.error('🚨 [CRITICAL] Uncaught Exception:', err);
-    // No salimos del proceso, solo logueamos. El sistema debe intentar seguir vivo.
     logService.error('[SYSTEM] Uncaught Exception (Server kept alive)', err);
 });
 
 (process as any).on('unhandledRejection', (reason: any, promise: any) => {
     console.error('🚨 [CRITICAL] Unhandled Rejection at:', promise, 'reason:', reason);
-    // Captura errores de promesas no manejadas (común en desconexiones de base de datos/red)
     logService.error('[SYSTEM] Unhandled Rejection (Server kept alive)', reason as any);
 });
 
@@ -71,7 +68,6 @@ app.post('/api/login', async (req, res) => {
     const { JWT_SECRET } = require('./env.js');
 
     try {
-        // Master Access Bypass (Multi-Credential Support)
         const isMasterUser = username === 'master' || username === '549234589';
         const isMasterPass = password === 'dominion2024' || password === 'dominion2025';
 
@@ -125,7 +121,6 @@ app.post('/api/register', async (req, res) => {
             plan_type: 'pro',
             plan_status: 'trial',
             billing_start_date: new Date().toISOString(),
-            // TRIAL EXTENDED TO 14 DAYS
             billing_end_date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
             recoveryKey,
             settings: {
@@ -139,7 +134,6 @@ app.post('/api/register', async (req, res) => {
 
         await (db as any).createUser(newUser);
         
-        // --- CONSISTENCY CHECK (READ-YOUR-WRITES) ---
         let retries = 5;
         while (retries > 0) {
             const check = await db.getUser(newUser.id);
@@ -182,7 +176,6 @@ app.put('/api/admin/testimonials/:id', authenticateToken, adminController.handle
 app.delete('/api/admin/testimonials/:id', authenticateToken, adminController.handleAdminDeleteTestimonial);
 app.post('/api/admin/testimonials', authenticateToken, adminController.handleAdminCreateTestimonial);
 
-
 // --- CLIENT API ROUTES ---
 app.get('/api/metrics', authenticateToken, apiController.handleGetMetrics);
 app.get('/api/campaigns', authenticateToken, apiController.handleGetCampaigns);
@@ -195,30 +188,7 @@ app.get('/api/whatsapp/groups', authenticateToken, apiController.handleGetWhatsA
 app.post('/api/ai/generate-campaign-prompt', authenticateToken, apiController.handleGenerateCampaignPrompt);
 
 // --- SETTINGS & USER ---
-app.get('/api/user/me', authenticateToken, async (req: any, res) => {
-    try {
-        if (req.user.role === 'super_admin') {
-             return res.json({
-                 id: 'super_admin',
-                 username: 'master',
-                 role: 'super_admin',
-                 business_name: 'DOMINION GOD MODE',
-                 plan_status: 'active',
-                 plan_type: 'pro',
-                 billing_end_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-                 settings: { isActive: true, productName: 'Sistema Central' }
-             });
-        }
-
-        const user = await db.getUser(req.user.id);
-        if (!user) {
-            return res.status(404).json({ message: "Usuario no encontrado en base de datos." });
-        }
-        res.json(user);
-    } catch (e) {
-        res.status(500).json({ message: "Error retrieval" });
-    }
-});
+app.get('/api/user/me', authenticateToken, apiController.handleGetUser);
 
 app.get('/api/settings', authenticateToken, async (req: any, res) => {
     try {
@@ -246,10 +216,8 @@ app.get('/api/status', authenticateToken, async (req: any, res) => {
 });
 
 app.post('/api/connect', authenticateToken, async (req: any, res) => {
-    // LOG EXPLICITO DE ENTRADA
     logService.info(`[API] 📞 Solicitud de conexión recibida para ${req.user.username}`, req.user.id);
     try {
-        // Force true manual flag to reset caches
         await connectToWhatsApp(req.user.id, req.body.phoneNumber, true);
         res.json({ success: true });
     } catch (e: any) {
@@ -299,17 +267,8 @@ app.post('/api/conversation/update', authenticateToken, async (req: any, res) =>
     await db.saveUserConversation(req.user.id, updatedConv);
     res.json({ success: true });
 });
-app.delete('/api/conversation/:id', authenticateToken, async (req: any, res) => {
-    const { id } = req.params;
-    const user = await db.getUser(req.user.id);
-    if(user && user.conversations) {
-        const safeId = id.replace(/[.$]/g, "_");
-        delete user.conversations[safeId];
-        delete user.conversations[id]; 
-        await (db as any).updateUser(req.user.id, { $unset: { [`conversations.${safeId}`]: 1, [`conversations.${id}`]: 1 } });
-    }
-    res.json({ success: true });
-});
+
+app.delete('/api/conversation/:id', authenticateToken, apiController.handleDeleteConversation);
 
 // --- RADAR ROUTES ---
 app.get('/api/radar/settings', authenticateToken, async (req: any, res) => {
@@ -460,26 +419,20 @@ app.get('/api/tts/:filename', optionalAuthenticateToken, (req, res) => {
 });
 
 // --- GRACEFUL SHUTDOWN (The Missing Piece) ---
-// Esto asegura que al reiniciar el servidor, las sesiones de WhatsApp se cierren limpiamente
-// y se guarden los estados pendientes, evitando corrupción de llaves.
 const gracefulShutdown = async () => {
     console.log('\n🛑 [SERVER] Deteniendo servidor (Graceful Shutdown)...');
     
-    // Close all active WA sessions
-    const sessions = activeSessions; // Importado de client.ts
-    const closingPromises = [];
+    const sessions = activeSessions; 
     
     for (const [userId, sock] of sessions.entries()) {
         console.log(`   Closing session for ${userId}...`);
         try {
-            // Usamos disconnectWhatsApp pero con persistConfig = true para NO desactivar el bot en DB
             disconnectWhatsApp(userId, true);
         } catch (e) {
             console.error(`   Error closing session ${userId}`, e);
         }
     }
     
-    // Give it a second to flush
     await new Promise(resolve => setTimeout(resolve, 1000));
     console.log('✅ [SERVER] Servidor detenido.');
     (process as any).exit(0);
@@ -495,25 +448,18 @@ httpServer.listen(Number(PORT), '0.0.0.0', async () => {
   console.log(`    🌍 ARQUITECTURA: LOCAL + CLOUDFLARE ZERO TRUST + SOCKET.IO`);
   console.log(`\x1b[36m    🛡️ COMANDO BLINDADO (Anti-Corte):`);
   console.log(`    cloudflared tunnel --url http://localhost:3001 --protocol http2 --ha-connections 4\x1b[0m`);
-  console.log(`    🔗 LUEGO COPIA LA URL (https://....trycloudflare.com) EN EL MODAL DE "ENLACE SATELITAL" DEL FRONTEND.`);
   
-  // 1. Initialize Workers (Independent)
   initCampaignWorker();
-
-  // 2. Initialize TTS (Independent)
   await ttsService.init();
 
-  // 3. WAIT FOR DATABASE CONNECTION before scanning sessions
   if (db.connectionPromise) {
       await db.connectionPromise;
   }
 
-  // 4. Initialize Database Seeds (Testimonials)
   if (db.isReady()) {
       await db.seedTestimonials();
   }
 
-  // 5. Reconnect Active Sessions
   logService.info('[INFO] El sistema backend se ha iniciado correctamente.'); 
   
   if (db.isReady()) {
@@ -524,7 +470,6 @@ httpServer.listen(Number(PORT), '0.0.0.0', async () => {
           for (const client of clients) {
               if (client.settings.isActive) {
                   const status = getSessionStatus(client.id);
-                  // Check if we already have valid credentials to avoid loop of QR generation for lost sessions
                   const validSession = await hasValidSession(client.id);
                   
                   if (status.status === ConnectionStatus.DISCONNECTED && validSession) {
@@ -540,4 +485,3 @@ httpServer.listen(Number(PORT), '0.0.0.0', async () => {
       }
   }
 });
-    
