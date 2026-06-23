@@ -680,3 +680,23 @@ El sistema ahora permite reescribir la realidad de los nombres de contacto.
     - Si el usuario edita manualmente el nombre de un lead (ej: "Juan - Dueño Toyota"), el sistema activa el candado.
     - Futuros mensajes entrantes de ese usuario, aunque traigan un `pushName` diferente de WhatsApp (ej: "Juan P."), **NO sobrescribirán** el alias manual.
 - **Beneficio:** El vendedor mantiene el control total sobre la organización de su cartera, sin que WhatsApp altere sus etiquetas.
+
+---
+
+## ⚙️ ADDENDUM v3.6: ESTABILIDAD Y GRACEFUL DEGRADATION
+
+### 1. Sistema Anti-Duplicados Avanzado
+Para evitar procesamiento redundante durante reconexiones inestables de la librería de WhatsApp.
+- **Detección por `key.id`:** Se guarda un registro temporal en memoria (`processedMessages`) con los ID únicos de mensajes ya ingestados.
+- **TTL Integrado:** Los IDs se retienen en memoria y se depuran aleatoriamente tras 5 minutos, manteniendo una huella de memoria (memory footprint) mínima.
+
+### 2. Redis Graceful Degradation (Survival Mode)
+Prevención de caída en cascada ante desajustes de DNS o red.
+- **Silenciado Inteligente (`ENOTFOUND`/`ECONNREFUSED`):** Si Redis o BullMQ pierden la conexión, las alertas se controlan y la reconexión se estabiliza.
+- **Resiliencia Pura:** Asegura que una pérdida de caché no bloquee el sistema base de atención, operando en modo degradado temporal en lugar de un colapso general (crash loop).
+
+### 3. Triage Retrospectivo de Mensajes (Offline Triage)
+Manejo comercial inteligente de mensajes encolados tras desconexiones prolongadas (evitando respuestas robóticas desfasadas).
+- **0 a 10 Minutos:** Interacción en caliente. La IA analiza e intenta responder para salvar la conversión rápida.
+- **10 a 60 Minutos:** Enfriamiento. El lead se marca como pendiente pero la IA interrumpe envíos autónomos, dejando la resolución en manos del humano (Shadow Mode preventivo).
+- **Más de 60 Minutos:** Ingreso pasivo al CRM. La información entra al sistema sin accionar automatizaciones para evitar la fricción social de responder tarde automáticamente.

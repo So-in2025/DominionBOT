@@ -7,9 +7,12 @@ let redisClient: Redis;
 
 try {
     redisClient = new Redis(REDIS_URL, {
-        maxRetriesPerRequest: 3,
+        maxRetriesPerRequest: null, // Required by BullMQ
+        enableReadyCheck: false,
         retryStrategy(times) {
-            const delay = Math.min(times * 50, 2000);
+            // Limited retries in degraded mode: don't spam the console if it's down.
+            if (times > 10) return 60000; // 1 minute if consistently failing
+            const delay = Math.min(times * 1000, 5000);
             return delay;
         },
         reconnectOnError(err) {
@@ -25,12 +28,12 @@ try {
         console.log(`\x1b[35m✅ [REDIS] Iron Memory Online (${REDIS_URL.split('@')[1] || 'localhost'})\x1b[0m`);
     });
 
-    redisClient.on('error', (err) => {
-        // Suppress initial connection errors to avoid console spam if Redis isn't running in dev
-        if (process.env.NODE_ENV !== 'development' || !err.message.includes('ECONNREFUSED')) {
-            logService.error('[REDIS] Error de conexión', err);
+    redisClient.on('error', (err: any) => {
+        // Suppress DNS/Connection errors to avoid console spam when running in degraded mode
+        if (err.code === 'ENOTFOUND' || err.code === 'ECONNREFUSED') {
+            // Silently fail or log quietly once
         } else {
-            console.warn('\x1b[33m[REDIS] ⚠️ No conectado. Asegúrate de que Redis esté corriendo.\x1b[0m');
+            logService.error('[REDIS] Error de conexión', err.message || err);
         }
     });
 

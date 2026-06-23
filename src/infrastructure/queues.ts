@@ -1,18 +1,10 @@
 
 import { Queue } from 'bullmq';
-import { REDIS_URL } from '../env.js';
+import { redis } from '../redis.js';
 import { logService } from '../services/logService.js';
 
-// Configuration for Redis connection (BullMQ needs parsed connection options)
-// We extract host/port from REDIS_URL or pass the URL directly if supported.
-const connection = {
-    url: REDIS_URL
-};
-
 export const campaignQueue = new Queue('campaign-execution', {
-    connection: {
-        url: REDIS_URL
-    },
+    connection: redis as any,
     defaultJobOptions: {
         attempts: 3, // Retry failed campaigns 3 times
         backoff: {
@@ -25,9 +17,7 @@ export const campaignQueue = new Queue('campaign-execution', {
 });
 
 export const aiProcessingQueue = new Queue('ai-processing', {
-    connection: {
-        url: REDIS_URL
-    },
+    connection: redis as any,
     defaultJobOptions: {
         attempts: 2,
         backoff: { type: 'fixed', delay: 2000 },

@@ -15,13 +15,15 @@ import { campaignQueue } from './infrastructure/queues.js';
 import { db, sanitizeKey } from './database.js'; // Import sanitizeKey here
 import { initCampaignWorker } from './workers/campaignWorker.js';
 import { ttsService } from './services/ttsService.js';
-import { connectToWhatsApp, getSessionStatus, softResetConnection, purgeSession, disconnectWhatsApp, activeSessions } from './whatsapp/client.js';
+import { connectToWhatsApp, getSessionStatus, softResetConnection, purgeSession, disconnectWhatsApp, activeSessions, waMetrics } from './whatsapp/client.js';
 import { hasValidSession } from './whatsapp/mongoAuth.js'; 
 import { logService } from './services/logService.js';
 import { ConnectionStatus, SocketEvents, RadarSignal } from './types.js';
 import { v4 as uuidv4 } from 'uuid';
 import { generateContentWithFallback } from './services/geminiService.js';
 import { radarService } from './services/radarService.js';
+import mongoose from 'mongoose';
+import { redis } from './redis.js';
 
 // Initialize require for CommonJS fallback
 const require = createRequire(import.meta.url);
@@ -58,8 +60,43 @@ createBullBoard({
 app.use('/admin/queues', serverAdapter.getRouter() as any);
 
 // --- HEALTH CHECK (HEARTBEAT) ---
-app.get('/api/health', (req, res) => {
-    res.status(200).json({ status: 'ok', timestamp: Date.now() });
+app.get('/api/health', async (req, res) => {
+    let mongoStatus = 'disconnected';
+    if (mongoose.connection.readyState === 1) mongoStatus = 'connected';
+    else if (mongoose.connection.readyState === 2) mongoStatus = 'connecting';
+
+    let redisStatus = 'disconnected';
+    if (redis.status === 'ready') redisStatus = 'connected';
+    else if (redis.status === 'connecting' || redis.status === 'reconnecting') redisStatus = 'connecting';
+
+    // Verify BullMQ connection
+    let bullMqStatus = 'disconnected';
+    try {
+        const ping = await redis.ping();
+        if (ping === 'PONG') bullMqStatus = 'connected';
+    } catch (e) {
+        bullMqStatus = 'error';
+    }
+
+    res.status(200).json({
+        status: 'ok',
+        timestamp: Date.now(),
+        uptimeSeconds: process.uptime(),
+        infrastructure: {
+            mongo: mongoStatus,
+            redis: redisStatus,
+            bullMQ: bullMqStatus
+        },
+        whatsapp: {
+            activeSessions: activeSessions.size,
+            metrics: {
+                lastReceived: waMetrics.lastMessageReceived,
+                lastSent: waMetrics.lastMessageSent,
+                totalReceived: waMetrics.messagesProcessed,
+                totalSent: waMetrics.messagesSent
+            }
+        }
+    });
 });
 
 // --- AUTH ROUTES ---

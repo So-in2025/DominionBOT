@@ -34,6 +34,13 @@ const isConnecting = new Map<string, boolean>();
 // REAL-TIME STATE TRACKING
 const connectionStateMap = new Map<string, ConnectionStatus>();
 
+export const waMetrics = {
+    lastMessageReceived: null as Date | null,
+    lastMessageSent: null as Date | null,
+    messagesProcessed: 0,
+    messagesSent: 0
+};
+
 // RECONNECTION STATE
 const reconnectAttempts = new Map<string, number>();
 const reconnectTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
@@ -122,6 +129,27 @@ export function getSessionStatus(userId: string): { status: ConnectionStatus, qr
 
 export function getSocket(userId: string): WASocket | undefined {
     return sessions.get(userId);
+}
+
+const processedMessages = new Map<string, number>();
+
+function isMessageProcessed(id: string): boolean {
+    const now = Date.now();
+    // Random cleanup to prevent memory leak (5% chance per check)
+    if (Math.random() < 0.05) {
+        for (const [key, timestamp] of processedMessages.entries()) {
+            if (now - timestamp > 5 * 60 * 1000) { // 5 minutes TTL
+                processedMessages.delete(key);
+            }
+        }
+    }
+    
+    if (processedMessages.has(id)) {
+        return true;
+    }
+    
+    processedMessages.set(id, now);
+    return false;
 }
 
 // ----------------------------------------------------------------------
@@ -306,7 +334,11 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
 
             for (const msg of messages) {
                 try {
+                    if (msg.key.id && isMessageProcessed(msg.key.id)) continue;
                     if (msg.key.remoteJid === 'status@broadcast') continue;
+
+                    waMetrics.lastMessageReceived = new Date();
+                    waMetrics.messagesProcessed++;
 
                     const rawJid = msg.key.remoteJid;
                     const canonicalJid = normalizeJid(rawJid);
@@ -337,10 +369,18 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
 
                     if (!isMe) {
                         logService.info(`[INBOX] 📩 Nuevo mensaje de ${canonicalJid}`, userId);
-                        if ((now - msgTime) <= 600) { // Umbral aumentado a 10 mins para dar mayor estabilidad al procesamiento
+                        
+                        const diffSeconds = now - msgTime;
+                        
+                        if (diffSeconds <= 600) { 
+                            // 0-10 min -> IA responde
                             await processAiResponseForJid(userId, canonicalJid);
-                        } else {
-                            logService.info(`[INBOX] ⏳ Mensaje antiguo de ${canonicalJid} guardado en historial pero omitido por IA para evitar spam retrospectivo (Diferencia de tiempo: ${now - msgTime}s).`, userId);
+                        } else if (diffSeconds <= 3600) { 
+                            // 10-60 min -> Marcar pendiente
+                            logService.info(`[INBOX] ⏳ Mensaje antiguo de ${canonicalJid} marcado como pendiente (Diferencia: ${diffSeconds}s).`, userId);
+                        } else { 
+                            // > 60 min -> Sólo CRM
+                            logService.info(`[INBOX] 📂 Mensaje muy antiguo de ${canonicalJid} archivado silenciosamente en CRM (Diferencia: ${diffSeconds}s).`, userId);
                         }
                     }
                 } catch (err: any) {
@@ -439,6 +479,9 @@ export async function sendMessage(senderId: string, jid: string, text: string, i
     const enqueue = async () => {
         let sock = sessions.get(senderId);
         if (!sock) throw new Error("Socket no disponible");
+
+        waMetrics.lastMessageSent = new Date();
+        waMetrics.messagesSent++;
 
         if (!imageUrl) {
             await sock.sendPresenceUpdate('composing', canonicalJid);
