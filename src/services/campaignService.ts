@@ -147,12 +147,10 @@ class CampaignService {
         // --- IRON MEMORY LOCKING ---
         const lockAcquired = await redis.set(`campaign:lock:${campaign.id}`, 'LOCKED', 'EX', 600, 'NX');
         
-        const currentLockVal = await redis.get(`campaign:lock:${campaign.id}`);
-        if (currentLockVal === 'LOCKED') {
+        if (!lockAcquired) {
              logService.warn(`[CAMPAIGN] Skipping ${campaign.name}, already executing.`, campaign.userId);
              return;
         }
-        await redis.set(`campaign:lock:${campaign.id}`, 'LOCKED', 'EX', 600);
         
         // --- IDEMPOTENCY LAYER ---
         if (!force && campaign.stats.lastRunAt) {

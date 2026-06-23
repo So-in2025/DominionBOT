@@ -37,8 +37,13 @@ const getBackendUrl = (): string => {
         return viteUrl.replace(/\/$/, ''); // Quitar slash final si existe
     }
 
-    // 3. Fallback Default (Solo Desarrollo Local)
-    return "http://localhost:3001";
+    // 3. Same-origin fallback
+    if (typeof window !== 'undefined') {
+        return window.location.origin;
+    }
+
+    // 4. Fallback Default (Solo Desarrollo Local)
+    return "http://localhost:3000";
 };
 
 export const BACKEND_URL = getBackendUrl();

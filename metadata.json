@@ -2,5 +2,6 @@
   "name": "Dominion Bot v3.0.0",
   "version": "3.0.0",
   "description": "Responde, califica y te notifica. La herramienta de IA para no perder ventas en WhatsApp.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": []
 }

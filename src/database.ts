@@ -58,18 +58,24 @@ const DEFAULT_SYSTEM_SETTINGS: Partial<SystemSettings> = {
     planNeuroBoostDescription: 'Potencia cognitiva bajo demanda para momentos críticos. Activa la máxima capacidad de razonamiento.'
 };
 
+// Configure global mongoose behavior
+mongoose.set('bufferCommands', false);
+
 class Database {
     public connectionPromise: Promise<void> | null = null;
 
     constructor() {
         if(MONGO_URI) {
             console.log('⏳ [DB] Conectando a MongoDB...');
-            this.connectionPromise = mongoose.connect(MONGO_URI)
+            this.connectionPromise = mongoose.connect(MONGO_URI, {
+                serverSelectionTimeoutMS: 2000,
+                connectTimeoutMS: 2000
+            })
                 .then(() => {
                     console.log('\x1b[36m✅ [DB] Conexión establecida a la base de datos.\x1b[0m');
                 })
                 .catch(err => {
-                    console.error("❌ [DB] Error crítico de conexión:", err);
+                    console.error("❌ [DB] Error crítico de conexión a MongoDB. Trabajando en modo degradado/desconectado.", err.message);
                 });
         }
     }
@@ -183,9 +189,14 @@ class Database {
     }
     
     async getSystemSettings(): Promise<SystemSettings> { 
-        const data = await SystemSettingsModel.findOne({ id: 'global' }).lean();
-        // Merge defaults with stored data to ensure all fields exist
-        return { ...DEFAULT_SYSTEM_SETTINGS, ...(data || {}) } as unknown as SystemSettings; 
+        try {
+            const data = await SystemSettingsModel.findOne({ id: 'global' }).lean();
+            // Merge defaults with stored data to ensure all fields exist
+            return { ...DEFAULT_SYSTEM_SETTINGS, ...(data || {}) } as unknown as SystemSettings; 
+        } catch (e: any) {
+            console.warn('[DB] Error fetching system settings, returning defaults:', e.message);
+            return DEFAULT_SYSTEM_SETTINGS as SystemSettings;
+        }
     }
     
     async updateSystemSettings(updates: Partial<SystemSettings>): Promise<SystemSettings | null> {

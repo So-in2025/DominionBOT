@@ -31,7 +31,7 @@ if (!process.env.MONGO_URI) {
 export const JWT_SECRET = process.env.JWT_SECRET || 'dominion-local-secret-key';
 export const MONGO_URI = process.env.MONGO_URI; 
 export const REDIS_URL = process.env.REDIS_URL || 'redis://127.0.0.1:6379';
-export const PORT = process.env.PORT || 3001;
+export const PORT = process.env.PORT || 3000;
 export const LOG_LEVEL = process.env.LOG_LEVEL || 'INFO';
 export const ENABLE_GOD_MODE = process.env.ENABLE_GOD_MODE === 'true';
 

@@ -3,6 +3,8 @@ import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
 import { createRequire } from 'module'; 
+import path from 'path';
+import fs from 'fs'; 
 import * as apiController from './controllers/apiController.js';
 import * as adminController from './controllers/adminController.js';
 import { authenticateToken } from './middleware/auth.js';
@@ -417,6 +419,26 @@ app.get('/api/tts/:filename', optionalAuthenticateToken, (req, res) => {
         res.status(404).send('Audio not found');
     }
 });
+
+// --- BUNDLE & CLIENT INTEGRATION ---
+const distPath = path.join(process.cwd(), 'dist-client');
+const hasDistClient = fs.existsSync(distPath);
+
+if (process.env.NODE_ENV !== 'production' || !hasDistClient) {
+    console.log('🔮 [VITE] Integrando middleware de desarrollo Vite en Express...');
+    const { createServer: createViteServer } = await import('vite');
+    const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: 'spa',
+    });
+    app.use(vite.middlewares);
+} else {
+    console.log('📦 [PRODUCTION] Sirviendo archivos estáticos de React...');
+    app.use(express.static(distPath));
+    app.get('*', (req: any, res: any) => {
+        res.sendFile(path.join(distPath, 'index.html'));
+    });
+}
 
 // --- GRACEFUL SHUTDOWN (The Missing Piece) ---
 const gracefulShutdown = async () => {

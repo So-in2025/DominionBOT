@@ -318,8 +318,6 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
                     const msgTime = (typeof msg.messageTimestamp === 'number' ? msg.messageTimestamp : (msg.messageTimestamp as any)?.low) || Math.floor(Date.now() / 1000);
                     const now = Math.floor(Date.now() / 1000);
                     
-                    if ((now - msgTime) > 300) continue; 
-
                     if (!msg.message) continue;
                     if (isJidGroup(canonicalJid)) continue; 
 
@@ -339,7 +337,11 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
 
                     if (!isMe) {
                         logService.info(`[INBOX] 📩 Nuevo mensaje de ${canonicalJid}`, userId);
-                        await processAiResponseForJid(userId, canonicalJid);
+                        if ((now - msgTime) <= 600) { // Umbral aumentado a 10 mins para dar mayor estabilidad al procesamiento
+                            await processAiResponseForJid(userId, canonicalJid);
+                        } else {
+                            logService.info(`[INBOX] ⏳ Mensaje antiguo de ${canonicalJid} guardado en historial pero omitido por IA para evitar spam retrospectivo (Diferencia de tiempo: ${now - msgTime}s).`, userId);
+                        }
                     }
                 } catch (err: any) {
                     // console.error("Error processing message:", err.message); // Silent for now
@@ -428,24 +430,52 @@ export async function purgeSession(userId: string) {
     socketService.emitToUser(userId, SocketEvents.SESSION_STATUS_UPDATE, { status: ConnectionStatus.DISCONNECTED });
 }
 
-export async function sendMessage(senderId: string, jid: string, text: string, imageUrl?: string) {
-    let sock = sessions.get(senderId);
+const userMessageQueues = new Map<string, Promise<any>>();
+
+export async function sendMessage(senderId: string, jid: string, text: string, imageUrl?: string): Promise<any> {
     const canonicalJid = normalizeJid(jid);
     if (!canonicalJid) throw new Error("JID inválido");
 
-    if (!sock) throw new Error("Socket no disponible");
+    const enqueue = async () => {
+        let sock = sessions.get(senderId);
+        if (!sock) throw new Error("Socket no disponible");
 
-    if (!imageUrl) {
-        await sock.sendPresenceUpdate('composing', canonicalJid);
-        await new Promise(resolve => setTimeout(resolve, 1000)); 
-        await sock.sendPresenceUpdate('paused', canonicalJid);
-        return await sock.sendMessage(canonicalJid, { text });
-    } else {
-        const buffer = imageUrl.startsWith('http') 
-            ? { url: imageUrl } 
-            : Buffer.from(imageUrl.replace(/^data:image\/\w+;base64,/, ""), 'base64');
-        return await sock.sendMessage(canonicalJid, { image: buffer as any, caption: text });
-    }
+        if (!imageUrl) {
+            await sock.sendPresenceUpdate('composing', canonicalJid);
+            await new Promise(resolve => setTimeout(resolve, 1000)); 
+            await sock.sendPresenceUpdate('paused', canonicalJid);
+            return await sock.sendMessage(canonicalJid, { text });
+        } else {
+            const buffer = imageUrl.startsWith('http') 
+                ? { url: imageUrl } 
+                : Buffer.from(imageUrl.replace(/^data:image\/\w+;base64,/, ""), 'base64');
+            return await sock.sendMessage(canonicalJid, { image: buffer as any, caption: text });
+        }
+    };
+
+    const previousTask = userMessageQueues.get(senderId) || Promise.resolve();
+    
+    const newTask = new Promise((resolve, reject) => {
+        previousTask.finally(async () => {
+            try {
+                const result = await enqueue();
+                resolve(result);
+            } catch (err) {
+                reject(err);
+            }
+        });
+    });
+
+    userMessageQueues.set(senderId, newTask);
+    
+    // Auto-clean queue to prevent memory leaks from retained task chains
+    newTask.finally(() => {
+        if (userMessageQueues.get(senderId) === newTask) {
+            userMessageQueues.delete(senderId);
+        }
+    });
+
+    return newTask;
 }
 
 export async function fetchUserGroups(userId: string): Promise<WhatsAppGroup[]> {

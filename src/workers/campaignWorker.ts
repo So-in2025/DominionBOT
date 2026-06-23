@@ -5,6 +5,27 @@ import { logService } from '../services/logService.js';
 import { campaignService } from '../services/campaignService.js';
 import { db } from '../database.js';
 
+// Configuration for Redis connection (BullMQ needs parsed connection options)
+const parseRedisUrl = (url: string) => {
+    try {
+        const parsed = new URL(url);
+        return {
+            host: parsed.hostname,
+            port: parseInt(parsed.port || '6379'),
+            password: parsed.password || undefined,
+            username: parsed.username || undefined,
+            tls: parsed.protocol === 'rediss:' ? {} : undefined
+        };
+    } catch (e) {
+        return {
+            host: '127.0.0.1',
+            port: 6379
+        };
+    }
+};
+
+const redisOptions = parseRedisUrl(REDIS_URL);
+
 // The Worker is the "consumer" that takes jobs from Redis and executes them.
 export const initCampaignWorker = () => {
     const worker = new Worker('campaign-execution', async (job: Job) => {
@@ -34,9 +55,7 @@ export const initCampaignWorker = () => {
         }
 
     }, {
-        connection: {
-            url: REDIS_URL
-        },
+        connection: redisOptions,
         concurrency: 2, // Allow processing 2 campaigns simultaneously per node
         limiter: {
             max: 10, // Max 10 jobs
