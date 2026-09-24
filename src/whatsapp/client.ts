@@ -38,7 +38,9 @@ export const waMetrics = {
     lastMessageReceived: null as Date | null,
     lastMessageSent: null as Date | null,
     messagesProcessed: 0,
-    messagesSent: 0
+    messagesSent: 0,
+    reconnectionsCount: 0,
+    lastEventReceived: null as Date | null
 };
 
 // RECONNECTION STATE
@@ -129,6 +131,12 @@ export function getSessionStatus(userId: string): { status: ConnectionStatus, qr
 
 export function getSocket(userId: string): WASocket | undefined {
     return sessions.get(userId);
+}
+
+export function isSessionConnected(userId: string): boolean {
+    const currentStatus = connectionStateMap.get(userId);
+    const sock = sessions.get(userId);
+    return currentStatus === ConnectionStatus.CONNECTED && !!sock?.user;
 }
 
 const processedMessages = new Map<string, number>();
@@ -265,6 +273,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
         }
 
         sock.ev.on('connection.update', async (update) => {
+            waMetrics.lastEventReceived = new Date();
             const { connection, lastDisconnect, qr } = update;
             const pairingCode = (update as any).pairingCode;
 
@@ -297,6 +306,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
                 }
 
                 if (statusCode === DisconnectReason.restartRequired) {
+                    waMetrics.reconnectionsCount++;
                     connectToWhatsApp(userId, phoneNumber); 
                     return;
                 }
@@ -308,6 +318,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
                 if (delay > 3000) updateStatus(userId, ConnectionStatus.DISCONNECTED); 
                 
                 reconnectAttempts.set(userId, attempts + 1);
+                waMetrics.reconnectionsCount++;
                 const timeoutId = setTimeout(() => connectToWhatsApp(userId, phoneNumber), delay);
                 reconnectTimeouts.set(userId, timeoutId);
 
@@ -330,6 +341,7 @@ export async function connectToWhatsApp(userId: string, phoneNumber?: string, is
         });
 
         sock.ev.on('messages.upsert', async ({ messages, type }) => {
+            waMetrics.lastEventReceived = new Date();
             if (type !== 'notify' && type !== 'append') return;
 
             for (const msg of messages) {

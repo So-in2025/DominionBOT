@@ -33,6 +33,7 @@ const AUDIO_EVENTS: Record<string, string> = {
 
 class TtsService {
     private audioDir: string;
+    private isGenerating = false;
 
     constructor() {
         const __filename = fileURLToPath(import.meta.url);
@@ -40,25 +41,58 @@ class TtsService {
         this.audioDir = path.resolve(__dirname, '..', '..', 'public', 'audio');
     }
 
+    public async getOrGenerate(eventName: string): Promise<Buffer | null> {
+        const audioPath = path.join(this.audioDir, `${eventName}.mp3`);
+        if (fs.existsSync(audioPath)) {
+            try {
+                return await fs.promises.readFile(audioPath);
+            } catch {
+                return null;
+            }
+        }
+
+        const text = AUDIO_EVENTS[eventName];
+        if (!text) return null;
+
+        const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+        if (!apiKey) return null;
+
+        try {
+            const response = await generateAudioWithFallback(apiKey, text, 'Kore');
+            const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+            if (!base64Audio) return null;
+
+            const audioBuffer = Buffer.from(base64Audio, 'base64');
+            await fs.promises.mkdir(this.audioDir, { recursive: true });
+            await fs.promises.writeFile(audioPath, audioBuffer);
+            return audioBuffer;
+        } catch {
+            return null;
+        }
+    }
+
     public async init() {
-        logService.info('[TTS] Iniciando servicio de pre-generación de audio...');
+        if (this.isGenerating) return;
+        this.isGenerating = true;
 
         try {
             await fs.promises.mkdir(this.audioDir, { recursive: true });
         } catch (error) {
-            logService.error('[TTS] No se pudo crear el directorio de audio.', error);
+            logService.warn('[TTS] No se pudo crear el directorio de audio.');
+            this.isGenerating = false;
             return;
         }
 
-        const apiKey = process.env.API_KEY;
+        const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
         if (!apiKey) {
-            // CRÍTICO: El usuario debe configurar API_KEY en su archivo .env o .env.local
-            // Esta advertencia es apropiada si los audios no están generados aún.
-            logService.warn('[TTS] API_KEY de Gemini no encontrada en las variables de entorno para pre-generación de audios. Los audios no se generarán si no existen.');
-            logService.warn('[TTS] Si necesitas generar nuevos audios TTS, añade API_KEY=TU_CLAVE_DE_GEMINI_AQUI en tu archivo .env o .env.local y reinicia el backend.');
+            logService.info('[TTS] API_KEY de Gemini no configurada.');
+            this.isGenerating = false;
             return;
         }
 
+        logService.info('[TTS] Verificando biblioteca de audios en segundo plano...');
+
+        let consecutiveFailures = 0;
         for (const [eventName, text] of Object.entries(AUDIO_EVENTS)) {
             const audioPath = path.join(this.audioDir, `${eventName}.mp3`);
             
@@ -67,9 +101,6 @@ class TtsService {
             }
 
             try {
-                logService.info(`[TTS] Generando audio para el evento: ${eventName}`);
-                
-                // Usamos el servicio centralizado con sistema de fallback y blacklisting
                 const response = await generateAudioWithFallback(apiKey, text, 'Kore');
 
                 const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
@@ -79,12 +110,21 @@ class TtsService {
 
                 const audioBuffer = Buffer.from(base64Audio, 'base64');
                 await fs.promises.writeFile(audioPath, audioBuffer);
+                consecutiveFailures = 0;
 
-            } catch (error) {
-                logService.error(`[TTS] Falló la generación de audio para "${eventName}"`, error);
+                // Rate limit spacing between TTS calls
+                await new Promise((r) => setTimeout(r, 3000));
+
+            } catch (error: any) {
+                consecutiveFailures++;
+                logService.warn(`[TTS] Audio "${eventName}" se generará bajo demanda (${error?.message || 'indisponible'}).`);
+                if (consecutiveFailures >= 2) {
+                    logService.info('[TTS] Pre-generación pausada; los audios se sintetizarán dinámicamente según se requieran.');
+                    break;
+                }
             }
         }
-        logService.info('[TTS] Verificación de audios completada.');
+        this.isGenerating = false;
     }
 }
 

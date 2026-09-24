@@ -2,7 +2,7 @@
 import { Conversation, LeadStatus, Message, SocketEvents } from '../types.js';
 import { db, sanitizeKey } from '../database.js';
 import { logService } from './logService.js';
-import { ELITE_BOT_JID } from '../whatsapp/client.js'; 
+import { ELITE_BOT_JID } from '../whatsapp/index.js'; 
 import { createHash } from 'crypto';
 import { normalizeJid } from '../utils/jidUtils.js';
 import { socketService } from './socketService.js';

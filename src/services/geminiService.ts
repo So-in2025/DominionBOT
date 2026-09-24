@@ -5,21 +5,40 @@ import { logService } from './logService.js';
 import { redis } from '../redis.js'; // IMPORT REDIS
 
 const MODEL_PRIORITY = [
-    "gemini-2.0-flash-exp",
-    "gemini-2.5-flash",
-    "gemini-3-flash-preview",
-    "gemini-2.5-pro",
-    "gemini-3-pro-preview"
+    "gemini-3.8-flash",
+    "gemini-3.1-pro-preview"
 ];
 
 // DEDICATED MODEL FOR RADAR BATCHING (High Reasoning, separate quota)
-const RADAR_MODEL = "gemini-3-pro-preview";
+const RADAR_MODEL = "gemini-3.1-pro-preview";
 
 const TTS_MODEL_PRIORITY = [
-    "gemini-2.5-flash-preview-tts"
+    "gemini-3.1-flash-tts-preview"
 ];
 
 const MODEL_COOLDOWN_SECONDS = 60 * 60; // 60 Minutes
+
+const safeRedisGet = async (key: string): Promise<string | null> => {
+    if (redis.status !== 'ready') return null;
+    try {
+        const getPromise = redis.get(key);
+        const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 300));
+        return await Promise.race([getPromise, timeoutPromise]);
+    } catch {
+        return null;
+    }
+};
+
+const safeRedisSet = async (key: string, val: string, mode?: string, duration?: number): Promise<void> => {
+    if (redis.status !== 'ready') return;
+    try {
+        if (mode && duration) {
+            await redis.set(key, val, mode as any, duration);
+        } else {
+            await redis.set(key, val);
+        }
+    } catch {}
+};
 
 interface GenerateContentParams {
     apiKey: string;
@@ -44,7 +63,7 @@ export const generateContentWithFallback = async ({
 
     for (const modelName of MODEL_PRIORITY) {
         // 1. CHEQUEO DE LISTA NEGRA EN REDIS (Ultra rápido)
-        const isCooldown = await redis.get(`model:cooldown:${modelName}`);
+        const isCooldown = await safeRedisGet(`model:cooldown:${modelName}`);
         if (isCooldown) {
             // logService.debug(`[GEMINI-REDIS] Modelo ${modelName} en cooldown. Saltando.`);
             continue;
@@ -75,14 +94,14 @@ export const generateContentWithFallback = async ({
                 logService.warn(`[GEMINI-SERVICE] ⚠️ RATE LIMIT (429) con ${modelName}. Bloqueando en Redis por 60m.`, undefined, undefined);
                 
                 // SET key, Value '1', EXpire 3600s
-                await redis.set(`model:cooldown:${modelName}`, '1', 'EX', MODEL_COOLDOWN_SECONDS);
+                await safeRedisSet(`model:cooldown:${modelName}`, '1', 'EX', MODEL_COOLDOWN_SECONDS);
                 
                 continue; 
             }
 
             // 3. FALLO TÉCNICO -> Bloqueo corto (5 min)
             logService.warn(`[GEMINI-FAILOVER] Fallo técnico con ${modelName}. Mensaje: ${errorMessage}. Pasando al siguiente.`, undefined, undefined);
-            await redis.set(`model:cooldown:${modelName}`, '1', 'EX', 300);
+            await safeRedisSet(`model:cooldown:${modelName}`, '1', 'EX', 300);
         }
     }
 
@@ -104,7 +123,7 @@ export const generateHighReasoningBatch = async ({
     const ai = new GoogleGenAI({ apiKey });
     
     // Check specific cooldown for the Pro model
-    const isCooldown = await redis.get(`model:cooldown:${RADAR_MODEL}`);
+    const isCooldown = await safeRedisGet(`model:cooldown:${RADAR_MODEL}`);
     if (isCooldown) {
         throw new Error(`Modelo Radar (${RADAR_MODEL}) en enfriamiento por límites de cuota.`);
     }
@@ -132,7 +151,7 @@ export const generateHighReasoningBatch = async ({
         const errorMessage = err.message || '';
         if (errorMessage.includes('429') || errorMessage.includes('RESOURCE_EXHAUSTED')) {
             logService.warn(`[RADAR-BATCH] ⚠️ Cuota agotada para ${RADAR_MODEL}. Pausando Radar por 1 hora.`, undefined, undefined);
-            await redis.set(`model:cooldown:${RADAR_MODEL}`, '1', 'EX', MODEL_COOLDOWN_SECONDS);
+            await safeRedisSet(`model:cooldown:${RADAR_MODEL}`, '1', 'EX', MODEL_COOLDOWN_SECONDS);
         }
         throw err;
     }
@@ -142,7 +161,7 @@ export const generateAudioWithFallback = async (apiKey: string, text: string, vo
     const ai = new GoogleGenAI({ apiKey });
 
     for (const modelName of TTS_MODEL_PRIORITY) {
-        const isCooldown = await redis.get(`model:cooldown:${modelName}`);
+        const isCooldown = await safeRedisGet(`model:cooldown:${modelName}`);
         if (isCooldown) {
             continue;
         }
@@ -168,15 +187,15 @@ export const generateAudioWithFallback = async (apiKey: string, text: string, vo
             
             if (errorMessage.includes('429') || errorMessage.includes('RESOURCE_EXHAUSTED')) {
                 logService.warn(`[GEMINI-TTS] ⚠️ RATE LIMIT (429) con ${modelName}. Bloqueando en Redis.`, undefined, undefined);
-                await redis.set(`model:cooldown:${modelName}`, '1', 'EX', MODEL_COOLDOWN_SECONDS);
+                await safeRedisSet(`model:cooldown:${modelName}`, '1', 'EX', MODEL_COOLDOWN_SECONDS);
                 continue;
             }
 
-            logService.warn(`[GEMINI-TTS-FAILOVER] Fallo técnico con ${modelName}.`, undefined, undefined);
-            await redis.set(`model:cooldown:${modelName}`, '1', 'EX', 300);
+            logService.warn(`[GEMINI-TTS-FAILOVER] No se pudo generar audio con ${modelName}: ${errorMessage}`);
+            await safeRedisSet(`model:cooldown:${modelName}`, '1', 'EX', 300);
         }
     }
 
-    logService.error('[GEMINI-TTS] CRITICAL: Todos los modelos de audio fallaron.', new Error('All TTS models failed'), undefined, undefined);
+    logService.warn('[GEMINI-TTS] Servicio de generación de audio no disponible.');
     throw new Error("El servicio de generación de audio no está disponible.");
 };

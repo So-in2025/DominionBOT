@@ -3,7 +3,7 @@ import { Request as ExpressRequest, Response } from 'express';
 import { db, sanitizeKey } from '../database.js'; 
 import { logService } from '../services/logService.js';
 import { ConnectionStatus, User, SystemSettings, Message, LeadStatus, Conversation, Testimonial } from '../types.js';
-import { getSessionStatus, processAiResponseForJid, ELITE_BOT_JID, ELITE_BOT_NAME } from '../whatsapp/client.js'; 
+import { getSessionStatus, processAiResponseForJid, ELITE_BOT_JID, ELITE_BOT_NAME } from '../whatsapp/index.js'; 
 import { conversationService } from '../services/conversationService.js'; 
 import { v4 as uuidv4 } from 'uuid'; 
 

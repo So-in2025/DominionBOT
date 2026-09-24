@@ -303,6 +303,11 @@ export interface Campaign {
         lastRunAt?: string;
         // FIX: Changed to string to match database schema
         nextRunAt?: string;
+        // Execution safety & tracking
+        lockedAt?: string;
+        lockExpiry?: string;
+        currentJobId?: string;
+        sentGroupIds?: string[];
     };
     // FIX: Changed to string to match database schema
     createdAt: string;

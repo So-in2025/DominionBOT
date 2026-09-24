@@ -2,7 +2,7 @@
 import { db } from '../database.js';
 import { Campaign, CampaignStatus, WhatsAppGroup, SocketEvents } from '../types.js';
 import { logService } from './logService.js';
-import { getSocket, sendMessage, fetchUserGroups } from '../whatsapp/client.js';
+import { isSessionConnected, sendMessage, fetchUserGroups } from '../whatsapp/index.js';
 import { capabilityResolver } from './capabilityResolver.js'; 
 import { redis } from '../redis.js'; 
 import { campaignQueue } from '../infrastructure/queues.js'; 
@@ -57,6 +57,20 @@ class CampaignService {
         if (!campaign) throw new Error("Campaña no encontrada");
         if (campaign.userId !== userId) throw new Error("Acceso denegado");
 
+        // Validate state
+        if (campaign.status === 'PAUSED') {
+            throw new Error("La campaña está pausada. Actívala antes de forzar su ejecución.");
+        }
+        if (campaign.status === 'COMPLETED' && campaign.schedule.type === 'ONCE') {
+            throw new Error("Esta campaña puntual ya ha sido completada.");
+        }
+
+        // Check if already actively executing (fail-fast to prevent queue flooding)
+        const isRedisLocked = await redis.exists(`campaign:lock:${campaign.id}`).catch(() => 0);
+        if (isRedisLocked) {
+            return { message: "La campaña ya se encuentra en ejecución activa.", alreadyRunning: true };
+        }
+
         logService.warn(`[CAMPAIGN] ⚡ ENCOLANDO CAMPAÑA ${force ? '(FORZADA)' : ''}: ${campaign.name}`, userId);
         
         await campaignQueue.add('force-execute', {
@@ -68,6 +82,18 @@ class CampaignService {
         });
         
         return { message: "Campaña encolada para ejecución inmediata." };
+    }
+
+    /**
+     * Releases execution lock in both Redis and MongoDB.
+     */
+    public async releaseLock(campaignId: string): Promise<void> {
+        try {
+            await redis.del(`campaign:lock:${campaignId}`).catch(() => {});
+            await db.releaseCampaignLock(campaignId).catch(() => {});
+        } catch (e: any) {
+            logService.warn(`[CAMPAIGN] Error al liberar lock de ${campaignId}: ${e?.message}`);
+        }
     }
 
     private async processPendingCampaigns() {
@@ -87,11 +113,20 @@ class CampaignService {
             const pendingCampaigns = await db.getPendingCampaigns();
             
             for (const campaign of pendingCampaigns) {
-                const isLocked = await redis.exists(`campaign:lock:${campaign.id}`);
+                // Must be strictly ACTIVE to run on schedule
+                if (campaign.status !== 'ACTIVE') continue;
+
+                // Check Redis lock
+                const isLocked = await redis.exists(`campaign:lock:${campaign.id}`).catch(() => 0);
                 if (isLocked) continue;
 
                 const freshCampaign = await db.getCampaign(campaign.id);
-                if (!freshCampaign) continue;
+                if (!freshCampaign || freshCampaign.status !== 'ACTIVE') continue;
+
+                // Check MongoDB lease lock to prevent multi-node / multi-worker double queueing
+                if (freshCampaign.stats.lockExpiry && new Date(freshCampaign.stats.lockExpiry) > new Date()) {
+                    continue;
+                }
 
                 if (freshCampaign.stats.lastRunAt) {
                     const lastRunDate = new Date(freshCampaign.stats.lastRunAt).toDateString();
@@ -107,13 +142,14 @@ class CampaignService {
                 
                 logService.info(`[SCHEDULER] 🕒 Encolando campaña programada: ${campaign.name}`, campaign.userId);
                 
+                // Set short-term queue lock
+                await redis.set(`campaign:lock:${campaign.id}`, 'QUEUED', 'EX', 60).catch(() => {});
+                
                 await campaignQueue.add('scheduled-execute', {
                     campaignId: campaign.id,
                     userId: campaign.userId,
                     force: false
                 });
-
-                await redis.set(`campaign:lock:${campaign.id}`, 'QUEUED', 'EX', 60);
             }
         } catch (error) {
             logService.error('[CAMPAIGN-SCHEDULER] Error en ciclo de reloj:', error);
@@ -143,94 +179,135 @@ class CampaignService {
     /**
      * PUBLIC BUT INTERNAL: Called by Worker
      */
-    public async executeCampaignBatch(campaign: Campaign, force: boolean = false) {
-        // --- IRON MEMORY LOCKING ---
-        const lockAcquired = await redis.set(`campaign:lock:${campaign.id}`, 'LOCKED', 'EX', 600, 'NX');
-        
-        if (!lockAcquired) {
-             logService.warn(`[CAMPAIGN] Skipping ${campaign.name}, already executing.`, campaign.userId);
+    public async executeCampaignBatch(campaign: Campaign, force: boolean = false, jobId?: string) {
+        // --- 1. DUAL ATOMIC LOCKING (Redis NX + MongoDB Lease Lock) ---
+        // Prevents dual execution even if Redis restarts, multiple workers trigger, or network partitions occur.
+        let redisLockAcquired = false;
+        try {
+            const res = await redis.set(`campaign:lock:${campaign.id}`, 'LOCKED', 'EX', 600, 'NX');
+            redisLockAcquired = (res === 'OK');
+        } catch (e) {
+            // If Redis is offline or degraded, fallback safely to MongoDB atomic lock
+            redisLockAcquired = true;
+        }
+
+        if (!redisLockAcquired) {
+             logService.warn(`[CAMPAIGN] Skipping ${campaign.name}, already executing in Redis.`, campaign.userId);
              return;
         }
-        
-        // --- IDEMPOTENCY LAYER ---
-        if (!force && campaign.stats.lastRunAt) {
-            const lastRunDate = new Date(campaign.stats.lastRunAt).toDateString();
+
+        // Persistent MongoDB atomic lock with lease (10 minutes)
+        const lockedCampaign = await db.acquireCampaignLock(campaign.id, 600000, jobId);
+        if (!lockedCampaign && db.isReady()) {
+            logService.warn(`[CAMPAIGN] Skipping ${campaign.name}, already locked in DB lease.`, campaign.userId);
+            await redis.del(`campaign:lock:${campaign.id}`).catch(() => {});
+            return;
+        }
+
+        // Refresh campaign state from locked document or DB
+        const currentCampaign = lockedCampaign || await db.getCampaign(campaign.id) || campaign;
+
+        // Check if campaign was paused or aborted while queued
+        if (currentCampaign.status === 'PAUSED' || currentCampaign.status === 'ABORTED') {
+            logService.warn(`[CAMPAIGN] Campaña "${currentCampaign.name}" está ${currentCampaign.status}. Abortando ejecución del batch.`, currentCampaign.userId);
+            await this.releaseLock(currentCampaign.id);
+            return;
+        }
+
+        // --- 2. IDEMPOTENCY LAYER ---
+        if (!force && currentCampaign.stats.lastRunAt) {
+            const lastRunDate = new Date(currentCampaign.stats.lastRunAt).toDateString();
             const todayDate = new Date().toDateString();
 
-            if (lastRunDate === todayDate && campaign.schedule.type !== 'ONCE') {
-                logService.warn(`[CAMPAIGN-SAFETY-NET] 🛡️ Bloqueada ejecución duplicada de "${campaign.name}".`, campaign.userId);
-                const nextRun = this.calculateNextRun(campaign);
-                await db.updateCampaign(campaign.id, { stats: { ...campaign.stats, nextRunAt: nextRun } });
-                await redis.del(`campaign:lock:${campaign.id}`);
+            if (lastRunDate === todayDate && currentCampaign.schedule.type !== 'ONCE') {
+                logService.warn(`[CAMPAIGN-SAFETY-NET] 🛡️ Bloqueada ejecución duplicada de "${currentCampaign.name}".`, currentCampaign.userId);
+                const nextRun = this.calculateNextRun(currentCampaign);
+                await db.updateCampaign(currentCampaign.id, { stats: { ...currentCampaign.stats, nextRunAt: nextRun } });
+                await this.releaseLock(currentCampaign.id);
                 return;
             }
         }
 
-        const preLockNextRun = this.calculateNextRun(campaign);
+        const preLockNextRun = this.calculateNextRun(currentCampaign);
         
-        // UPDATE STATUS TO ACTIVE
-        await db.updateCampaign(campaign.id, {
+        // UPDATE RUN STATS & SET ACTIVE STATUS (Preserves atomic stats fields)
+        await db.updateCampaign(currentCampaign.id, {
             stats: {
-                ...campaign.stats,
+                ...currentCampaign.stats,
                 lastRunAt: new Date().toISOString(), 
                 nextRunAt: preLockNextRun 
             },
-            status: campaign.schedule.type === 'ONCE' ? 'COMPLETED' : 'ACTIVE'
+            status: currentCampaign.schedule.type === 'ONCE' ? 'COMPLETED' : 'ACTIVE'
         });
         
-        // 🔥 REAL-TIME UPDATE: Notify client that campaign started
-        const startedCampaign = await db.getCampaign(campaign.id);
-        if(startedCampaign) socketService.emitToUser(campaign.userId, SocketEvents.CAMPAIGN_UPDATE, startedCampaign);
+        // REAL-TIME UPDATE: Notify client that campaign started
+        const startedCampaign = await db.getCampaign(currentCampaign.id);
+        if (startedCampaign) socketService.emitToUser(currentCampaign.userId, SocketEvents.CAMPAIGN_UPDATE, startedCampaign);
 
         try {
-            const socket = getSocket(campaign.userId);
-            
-            if (!socket?.user) {
-                logService.warn(`[CAMPAIGN] Omitiendo ejecución para ${campaign.name}. Usuario desconectado.`, campaign.userId);
+            if (!isSessionConnected(currentCampaign.userId)) {
+                logService.warn(`[CAMPAIGN] Omitiendo ejecución para ${currentCampaign.name}. Usuario desconectado.`, currentCampaign.userId);
                 return;
             }
 
-            const user = await db.getUser(campaign.userId);
+            const user = await db.getUser(currentCampaign.userId);
             const isYellowState = user?.governance?.systemState === 'WARNING';
             
             if (isYellowState) {
-                logService.warn(`[GOVERNANCE] ⚠️ Usuario en ESTADO AMARILLO. Aplicando penalización de velocidad.`, campaign.userId);
+                logService.warn(`[GOVERNANCE] ⚠️ Usuario en ESTADO AMARILLO. Aplicando penalización de velocidad.`, currentCampaign.userId);
             }
 
-            logService.info(`[CAMPAIGN] 🚀 EJECUTANDO BATCH: ${campaign.name}`, campaign.userId);
+            logService.info(`[CAMPAIGN] 🚀 EJECUTANDO BATCH: ${currentCampaign.name}`, currentCampaign.userId);
 
-            const capabilities = await capabilityResolver.resolve(campaign.userId);
+            const capabilities = await capabilityResolver.resolve(currentCampaign.userId);
             const jitterFactor = capabilities.variationDepth / 100; 
 
             let groupsMeta: WhatsAppGroup[] = [];
             try {
-                groupsMeta = await fetchUserGroups(campaign.userId);
+                groupsMeta = await fetchUserGroups(currentCampaign.userId);
             } catch (e) { 
-                logService.warn(`[CAMPAIGN] No se pudieron obtener metadatos de grupos.`, campaign.userId);
+                logService.warn(`[CAMPAIGN] No se pudieron obtener metadatos de grupos.`, currentCampaign.userId);
             }
 
-            const groups = campaign.groups;
+            const groups = currentCampaign.groups;
+            // Existing successfully sent targets in current execution window (Idempotency)
+            const alreadySentGroups = new Set<string>(currentCampaign.stats?.sentGroupIds || []);
             let sentCount = 0;
             let failedCount = 0;
             let consecutiveFailures = 0; 
 
             for (const groupId of groups) {
-                await redis.expire(`campaign:lock:${campaign.id}`, 600);
+                // Check if user paused or cancelled campaign mid-run
+                const liveCheck = await db.getCampaign(currentCampaign.id);
+                if (liveCheck && (liveCheck.status === 'PAUSED' || liveCheck.status === 'ABORTED')) {
+                    logService.info(`[CAMPAIGN] Batch de ${currentCampaign.name} detenido por cambio de estado a ${liveCheck.status}.`, currentCampaign.userId);
+                    break;
+                }
 
-                if (!force && !this.isInOperatingWindow(campaign)) {
-                    logService.info(`[CAMPAIGN] Pausando batch de ${campaign.name} por cierre de ventana operativa.`, campaign.userId);
+                // Renew locks (Lease pattern to prevent lock expiration during slow batches)
+                await redis.expire(`campaign:lock:${currentCampaign.id}`, 600).catch(() => {});
+                await db.renewCampaignLock(currentCampaign.id, 600000).catch(() => {});
+
+                // Idempotency: Skip groups already successfully sent in this batch/retry
+                if (alreadySentGroups.has(groupId)) {
+                    logService.debug(`[CAMPAIGN-IDEMPOTENCY] Destinatario ${groupId} ya fue procesado en este lote. Saltando.`, currentCampaign.userId);
+                    continue;
+                }
+
+                if (!force && !this.isInOperatingWindow(currentCampaign)) {
+                    logService.info(`[CAMPAIGN] Pausando batch de ${currentCampaign.name} por cierre de ventana operativa.`, currentCampaign.userId);
                     break; 
                 }
 
                 if (consecutiveFailures >= 3) {
-                    logService.error(`[CAMPAIGN-CIRCUIT-BREAKER] 🛑 CAMPAÑA ABORTADA: ${campaign.name}. 3 fallos consecutivos.`, null, campaign.userId);
-                    await db.updateCampaign(campaign.id, { status: 'ABORTED' });
+                    logService.error(`[CAMPAIGN-CIRCUIT-BREAKER] 🛑 CAMPAÑA ABORTADA: ${currentCampaign.name}. 3 fallos consecutivos.`, null, currentCampaign.userId);
+                    await db.updateCampaign(currentCampaign.id, { status: 'ABORTED' });
                     break; 
                 }
 
                 try {
-                    let safeMin = Math.max(30, campaign.config.minDelaySec || 30);
-                    let safeMax = Math.max(60, campaign.config.maxDelaySec || 60);
+                    let safeMin = Math.max(30, currentCampaign.config.minDelaySec || 30);
+                    let safeMax = Math.max(60, currentCampaign.config.maxDelaySec || 60);
 
                     if (isYellowState) {
                         safeMin += 30; 
@@ -246,15 +323,19 @@ class CampaignService {
 
                     await new Promise(resolve => setTimeout(resolve, finalDelay));
 
-                    let finalMessage = campaign.message;
-                    if (campaign.config.useSpintax) finalMessage = this.processSpintax(finalMessage);
+                    let finalMessage = currentCampaign.message;
+                    if (currentCampaign.config.useSpintax) finalMessage = this.processSpintax(finalMessage);
                     if (finalMessage.includes('{group_name}')) {
                         const gMeta = groupsMeta.find(g => g.id === groupId);
                         const gName = gMeta ? gMeta.subject : "Grupo";
                         finalMessage = finalMessage.replace(/{group_name}/g, gName);
                     }
 
-                    await sendMessage(campaign.userId, groupId, finalMessage, campaign.imageUrl);
+                    await sendMessage(currentCampaign.userId, groupId, finalMessage, currentCampaign.imageUrl);
+                    
+                    // Mark group atomically sent for idempotency
+                    await db.markCampaignGroupSent(currentCampaign.id, groupId);
+                    alreadySentGroups.add(groupId);
                     sentCount++;
                     consecutiveFailures = 0; 
 
@@ -262,29 +343,35 @@ class CampaignService {
                     const isNetworkError = error?.message?.includes('ETIMEDOUT') || error?.message?.includes('Connection Closed');
 
                     if (isNetworkError) {
-                        logService.warn(`[CAMPAIGN] 📉 Fallo de red local.`, campaign.userId);
+                        logService.warn(`[CAMPAIGN] 📉 Fallo de red local al enviar a ${groupId}.`, currentCampaign.userId);
+                        await db.markCampaignGroupFailed(currentCampaign.id);
                         failedCount++;
                         await new Promise(resolve => setTimeout(resolve, 5000));
                     } else {
-                        logService.error(`[CAMPAIGN] Fallo de envío LÓGICO a ${groupId}`, error, campaign.userId);
+                        logService.error(`[CAMPAIGN] Fallo de envío LÓGICO a ${groupId}`, error, currentCampaign.userId);
+                        await db.markCampaignGroupFailed(currentCampaign.id);
                         failedCount++;
                         consecutiveFailures++; 
                     }
                 }
             }
 
-            await db.incrementCampaignStats(campaign.id, sentCount, failedCount);
+            // If recurring, reset the sentGroupIds tracking array so future runs start fresh
+            if (currentCampaign.schedule.type !== 'ONCE') {
+                await db.resetCampaignSentGroupIds(currentCampaign.id);
+            }
             
-            // 🔥 REAL-TIME UPDATE: Notify client of completion stats
-            const updatedCampaign = await db.getCampaign(campaign.id);
-            if(updatedCampaign) socketService.emitToUser(campaign.userId, SocketEvents.CAMPAIGN_UPDATE, updatedCampaign);
+            // REAL-TIME UPDATE: Notify client of completion stats
+            const updatedCampaign = await db.getCampaign(currentCampaign.id);
+            if (updatedCampaign) socketService.emitToUser(currentCampaign.userId, SocketEvents.CAMPAIGN_UPDATE, updatedCampaign);
 
-            logService.info(`[CAMPAIGN] ✅ Campaña ${campaign.name} finalizada (Enviados: ${sentCount}).`, campaign.userId);
+            logService.info(`[CAMPAIGN] ✅ Campaña ${currentCampaign.name} finalizada (Enviados: ${sentCount}).`, currentCampaign.userId);
 
         } catch(err) {
-            logService.error(`[CAMPAIGN] Error crítico ejecutando batch de ${campaign.name}`, err, campaign.userId);
+            logService.error(`[CAMPAIGN] Error crítico ejecutando batch de ${currentCampaign.name}`, err, currentCampaign.userId);
+            throw err; // Allow worker to catch and handle retry safely
         } finally {
-            await redis.del(`campaign:lock:${campaign.id}`);
+            await this.releaseLock(currentCampaign.id);
         }
     }
 

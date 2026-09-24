@@ -26,8 +26,39 @@ export const aiProcessingQueue = new Queue('ai-processing', {
     }
 });
 
+let hasLoggedOfflineWarning = false;
+
+const handleQueueError = (queueName: string, err: any) => {
+    const isConnError = err?.code === 'ENOTFOUND' || err?.code === 'ECONNREFUSED' || err?.message?.includes('ENOTFOUND') || err?.message?.includes('ECONNREFUSED');
+    if (isConnError) {
+        if (!hasLoggedOfflineWarning) {
+            hasLoggedOfflineWarning = true;
+            logService.warn(`[QUEUE] Redis no disponible (${err.code || 'ECONN'}). Las colas BullMQ operan en modo pausado hasta que Redis esté en línea.`);
+        }
+        return;
+    }
+    logService.error(`[QUEUE] Error en cola de ${queueName}`, err);
+};
+
 campaignQueue.on('error', (err) => {
-    logService.error('[QUEUE] Error en cola de campañas', err);
+    handleQueueError('campañas', err);
+});
+
+aiProcessingQueue.on('error', (err) => {
+    handleQueueError('IA', err);
 });
 
 logService.info('[HYDRA] 🐍 Colas de trabajo inicializadas (BullMQ).');
+
+export async function closeQueues(): Promise<void> {
+    logService.info('[QUEUE] Cerrando colas BullMQ...');
+    try {
+        await Promise.all([
+            campaignQueue.close().catch(() => {}),
+            aiProcessingQueue.close().catch(() => {})
+        ]);
+        logService.info('[QUEUE] Colas BullMQ cerradas.');
+    } catch (e: any) {
+        logService.error('[QUEUE] Error cerrando colas', e);
+    }
+}

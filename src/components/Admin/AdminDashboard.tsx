@@ -3,7 +3,6 @@ import React, { useEffect, useState } from 'react';
 import { User, LogEntry, GlobalDashboardMetrics, SystemSettings, LogLevel, Conversation, Message, LeadStatus, Testimonial } from '../../types';
 import { getAuthHeaders } from '../../config';
 import { conversationService } from '../../services/conversationService';
-import { processAiResponseForJid, ELITE_BOT_JID, ELITE_BOT_NAME } from '../../whatsapp/client';
 import { sanitizeKey, db } from '../../database';
 import { v4 as uuidv4 } from 'uuid';
 

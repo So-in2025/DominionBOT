@@ -77,12 +77,13 @@ class AudioService {
             console.log(`[AudioService] Fetch response for ${eventName}: Status ${response.status}`);
 
             if (!response.ok) {
-                throw new Error(`Fallo al obtener el audio para ${eventName}: ${response.statusText}`);
+                console.info(`[AudioService] Audio no pre-generado en backend para '${eventName}' (${response.status}).`);
+                return;
             }
 
             const arrayBuffer = await response.arrayBuffer();
             if (arrayBuffer.byteLength < 100 || arrayBuffer.byteLength % 2 !== 0) {
-                 console.error(`[AudioService] Received empty or invalid audio buffer for ${eventName}. Length: ${arrayBuffer.byteLength}`);
+                 console.info(`[AudioService] Buffer de audio no disponible para ${eventName}.`);
                  return;
             }
             console.log(`[AudioService] Received ArrayBuffer of length ${arrayBuffer.byteLength} for ${eventName}. Decoding...`);
@@ -93,8 +94,8 @@ class AudioService {
             this._playBuffer(audioBuffer);
             console.log(`[AudioService] Successfully scheduled ${eventName} for playback.`);
 
-        } catch (error) {
-            console.error(`Error al procesar el audio para ${eventName}:`, error);
+        } catch (error: any) {
+            console.warn(`[AudioService] No se pudo reproducir audio para ${eventName}: ${error?.message || error}`);
         }
     }
 

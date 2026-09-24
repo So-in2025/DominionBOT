@@ -27,18 +27,18 @@ const getBackendUrl = (): string => {
     // 1. LocalStorage Override (Dynamic Tunnel Support)
     if (typeof window !== 'undefined') {
         const local = localStorage.getItem(STORAGE_KEY_BACKEND);
-        if (local) return local.replace(/\/$/, '');
+        if (local && !local.includes('trycloudflare.com')) return local.replace(/\/$/, '');
     }
 
     // 2. Variable de Entorno (Vercel / Producción / .env)
-    const viteUrl = (import.meta as any).env.VITE_BACKEND_URL;
+    const viteUrl = (import.meta as any).env?.VITE_BACKEND_URL;
     
-    if (viteUrl && viteUrl.length > 0) {
+    if (viteUrl && viteUrl.length > 0 && !viteUrl.includes('trycloudflare.com')) {
         return viteUrl.replace(/\/$/, ''); // Quitar slash final si existe
     }
 
     // 3. Same-origin fallback
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && window.location?.origin) {
         return window.location.origin;
     }
 

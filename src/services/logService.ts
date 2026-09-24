@@ -56,9 +56,9 @@ class LogService {
         this.log('WARN', message, userId, username, metadata);
     }
 
-    public error(message: string, error: any, userId?: string, username?: string, additionalMetadata?: Record<string, any>): void {
+    public error(message: string, error?: any, userId?: string, username?: string, additionalMetadata?: Record<string, any>): void {
         const metadata = {
-            error_message: error?.message || 'Unknown Error',
+            error_message: error?.message || (typeof error === 'string' ? error : 'Unknown Error'),
             error_stack: error?.stack,
             ...additionalMetadata,
         };

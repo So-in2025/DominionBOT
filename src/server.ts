@@ -10,12 +10,23 @@ import * as adminController from './controllers/adminController.js';
 import { authenticateToken } from './middleware/auth.js';
 import { optionalAuthenticateToken } from './middleware/optionalAuth.js';
 import { socketService } from './services/socketService.js';
-import { PORT } from './env.js';
-import { campaignQueue } from './infrastructure/queues.js';
+import { PORT, IS_PRODUCTION } from './env.js';
+import { campaignQueue, closeQueues } from './infrastructure/queues.js';
 import { db, sanitizeKey } from './database.js'; // Import sanitizeKey here
-import { initCampaignWorker } from './workers/campaignWorker.js';
+import { initCampaignWorker, shutdownCampaignWorker } from './workers/campaignWorker.js';
 import { ttsService } from './services/ttsService.js';
-import { connectToWhatsApp, getSessionStatus, softResetConnection, purgeSession, disconnectWhatsApp, activeSessions, waMetrics } from './whatsapp/client.js';
+import {
+    connectToWhatsApp,
+    getSessionStatus,
+    softResetConnection,
+    purgeSession,
+    disconnectWhatsApp,
+    activeSessions,
+    waMetrics,
+    sendMessage,
+    shutdownAllWhatsAppSessions,
+    whatsAppProvider
+} from './whatsapp/index.js';
 import { hasValidSession } from './whatsapp/mongoAuth.js'; 
 import { logService } from './services/logService.js';
 import { ConnectionStatus, SocketEvents, RadarSignal } from './types.js';
@@ -23,7 +34,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { generateContentWithFallback } from './services/geminiService.js';
 import { radarService } from './services/radarService.js';
 import mongoose from 'mongoose';
-import { redis } from './redis.js';
+import { redis, closeRedis, isRedisReady } from './redis.js';
 
 // Initialize require for CommonJS fallback
 const require = createRequire(import.meta.url);
@@ -59,7 +70,7 @@ createBullBoard({
 });
 app.use('/admin/queues', serverAdapter.getRouter() as any);
 
-// --- HEALTH CHECK (HEARTBEAT) ---
+// --- HEALTH & READINESS CHECK ---
 app.get('/api/health', async (req, res) => {
     let mongoStatus = 'disconnected';
     if (mongoose.connection.readyState === 1) mongoStatus = 'connected';
@@ -71,15 +82,28 @@ app.get('/api/health', async (req, res) => {
 
     // Verify BullMQ connection
     let bullMqStatus = 'disconnected';
-    try {
-        const ping = await redis.ping();
-        if (ping === 'PONG') bullMqStatus = 'connected';
-    } catch (e) {
-        bullMqStatus = 'error';
+    if (redis.status === 'ready') {
+        try {
+            const pingPromise = redis.ping();
+            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 1000));
+            const ping = await Promise.race([pingPromise, timeoutPromise]);
+            if (ping === 'PONG') bullMqStatus = 'connected';
+        } catch (e) {
+            bullMqStatus = 'error';
+        }
     }
 
-    res.status(200).json({
-        status: 'ok',
+    // Determine readiness:
+    // In production, MongoDB and Redis must be connected to be ready.
+    // In development, process is alive ('ok') but ready reports false if storage isn't ready.
+    const isReady = mongoStatus === 'connected' && redisStatus === 'connected';
+    const httpStatus = IS_PRODUCTION && !isReady ? 503 : 200;
+
+    res.status(httpStatus).json({
+        status: isReady ? 'ok' : (IS_PRODUCTION ? 'unready' : 'degraded'),
+        liveness: true,
+        readiness: isReady,
+        environment: IS_PRODUCTION ? 'production' : 'development',
         timestamp: Date.now(),
         uptimeSeconds: process.uptime(),
         infrastructure: {
@@ -88,12 +112,15 @@ app.get('/api/health', async (req, res) => {
             bullMQ: bullMqStatus
         },
         whatsapp: {
+            provider: whatsAppProvider.id,
             activeSessions: activeSessions.size,
             metrics: {
                 lastReceived: waMetrics.lastMessageReceived,
                 lastSent: waMetrics.lastMessageSent,
+                lastEvent: waMetrics.lastEventReceived,
                 totalReceived: waMetrics.messagesProcessed,
-                totalSent: waMetrics.messagesSent
+                totalSent: waMetrics.messagesSent,
+                reconnectionsAttempted: waMetrics.reconnectionsCount
             }
         }
     });
@@ -104,15 +131,15 @@ app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
     const jwt = require('jsonwebtoken');
     const bcrypt = require('bcrypt');
-    const { JWT_SECRET } = require('./env.js');
+    const { JWT_SECRET, MASTER_ADMIN_USER, MASTER_ADMIN_PASSWORD, IS_PRODUCTION } = require('./env.js');
 
     try {
-        const isMasterUser = username === 'master' || username === '549234589';
-        const isMasterPass = password === 'dominion2024' || password === 'dominion2025';
+        const isMasterUser = username === MASTER_ADMIN_USER || username === 'admin' || (!IS_PRODUCTION && (username === 'master' || username === '549234589'));
+        const isMasterPass = MASTER_ADMIN_PASSWORD && (password === MASTER_ADMIN_PASSWORD || (!IS_PRODUCTION && (password === 'dominion2024' || password === 'dominion2025')));
 
         if(isMasterUser && isMasterPass) {
              logService.info(`[AUTH] 🛡️ Acceso Maestro Concedido a: ${username}`);
-             const token = jwt.sign({ id: 'super_admin', username: 'master', role: 'super_admin' }, JWT_SECRET);
+             const token = jwt.sign({ id: 'super_admin', username: 'master', role: 'super_admin' }, JWT_SECRET, { expiresIn: '7d' });
              return res.json({ token, role: 'super_admin' });
         }
 
@@ -129,7 +156,7 @@ app.post('/api/login', async (req, res) => {
             return res.status(401).json({ message: 'Contraseña incorrecta.' });
         }
 
-        const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET);
+        const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
         logService.info(`[AUTH] 🔑 Login Exitoso: ${user.username}`, user.id);
         res.json({ token, role: user.role });
     } catch (e: any) {
@@ -181,12 +208,36 @@ app.post('/api/register', async (req, res) => {
             retries--;
         }
         
-        const token = jwt.sign({ id: newUser.id, username: newUser.username, role: 'client' }, JWT_SECRET);
+        const token = jwt.sign({ id: newUser.id, username: newUser.username, role: 'client' }, JWT_SECRET, { expiresIn: '7d' });
         logService.info(`[AUTH] ✨ Nuevo Registro: ${username} (${businessName})`, newUser.id);
         
         res.json({ token, role: 'client', recoveryKey });
     } catch (e: any) {
         console.error("Register Error:", e);
+        res.status(500).json({ message: e.message });
+    }
+});
+
+app.post('/api/auth/reset', async (req, res) => {
+    const { username, recoveryKey, newPassword } = req.body;
+    const bcrypt = require('bcrypt');
+
+    try {
+        const user = await db.getUser(username) || await (db as any).getUserByUsername(username);
+        if (!user) {
+            return res.status(404).json({ message: 'Usuario no encontrado.' });
+        }
+
+        if (!user.recoveryKey || user.recoveryKey.trim().toUpperCase() !== (recoveryKey || '').trim().toUpperCase()) {
+            return res.status(400).json({ message: 'Clave de recuperación inválida o expirada.' });
+        }
+
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        await db.updateUser(user.id, { password: hashedPassword });
+        logService.info(`[AUTH] 🔄 Contraseña restablecida para ${user.username}`, user.id);
+
+        res.json({ success: true, message: 'Contraseña actualizada con éxito.' });
+    } catch (e: any) {
         res.status(500).json({ message: e.message });
     }
 });
@@ -267,7 +318,6 @@ app.post('/api/connect', authenticateToken, async (req: any, res) => {
 
 app.get('/api/disconnect', authenticateToken, async (req: any, res) => {
     logService.info(`[API] 🔌 Solicitud de desconexión recibida.`, req.user.id);
-    const { disconnectWhatsApp } = require('./whatsapp/client.js');
     await disconnectWhatsApp(req.user.id);
     res.json({ success: true });
 });
@@ -289,7 +339,6 @@ app.get('/api/conversations', authenticateToken, async (req: any, res) => {
     res.json(convs || []);
 });
 app.post('/api/send', authenticateToken, async (req: any, res) => {
-    const { sendMessage } = require('./whatsapp/client.js');
     try {
         await sendMessage(req.user.id, req.body.to, req.body.text);
         res.json({ success: true });
@@ -376,14 +425,22 @@ app.get('/api/network/profile', authenticateToken, async (req: any, res) => {
 
 // --- TESTIMONIALS ---
 app.get('/api/testimonials', optionalAuthenticateToken, async (req, res) => {
-    const testimonials = await db.getTestimonials(true);
-    res.json(testimonials || []);
+    try {
+        const testimonials = await db.getTestimonials(true);
+        res.json(testimonials || []);
+    } catch (e: any) {
+        res.json([]);
+    }
 });
 app.post('/api/testimonials', authenticateToken, async (req: any, res) => {
-    const { text } = req.body;
-    const user = await db.getUser(req.user.id);
-    await db.createTestimonial(req.user.id, user?.business_name || user?.username || 'Usuario', text);
-    res.json({ success: true });
+    try {
+        const { text } = req.body;
+        const user = await db.getUser(req.user.id);
+        await db.createTestimonial(req.user.id, user?.business_name || user?.username || 'Usuario', text);
+        res.json({ success: true });
+    } catch (e: any) {
+        res.status(500).json({ error: 'Error al procesar testimonio' });
+    }
 });
 
 // --- CLIENT SIMULATION (TEST BOT) ---
@@ -439,20 +496,24 @@ app.get('/api/system/settings', async (req, res) => {
 });
 
 // --- AUDIO/TTS ---
-app.get('/api/tts/:filename', optionalAuthenticateToken, (req, res) => {
-    const fs = require('fs');
-    const path = require('path');
-    const { fileURLToPath } = require('url');
-    
-    const __filename = fileURLToPath(import.meta.url);
-    const __dirname = path.dirname(__filename);
-    
-    const filePath = path.join(__dirname, '..', 'public', 'audio', `${req.params.filename}.mp3`);
-    
-    if (fs.existsSync(filePath)) {
-        res.setHeader('Content-Type', 'audio/mpeg');
-        fs.createReadStream(filePath).pipe(res);
-    } else {
+app.get('/api/tts/:filename', optionalAuthenticateToken, async (req, res) => {
+    try {
+        const filename = req.params.filename;
+        const filePath = path.join(process.cwd(), 'public', 'audio', `${filename}.mp3`);
+        
+        if (fs.existsSync(filePath)) {
+            res.setHeader('Content-Type', 'audio/l16; rate=24000; channels=1');
+            return fs.createReadStream(filePath).pipe(res);
+        }
+
+        const buffer = await ttsService.getOrGenerate(filename);
+        if (buffer) {
+            res.setHeader('Content-Type', 'audio/l16; rate=24000; channels=1');
+            return res.send(buffer);
+        }
+
+        res.status(404).send('Audio not found');
+    } catch {
         res.status(404).send('Audio not found');
     }
 });
@@ -477,70 +538,143 @@ if (process.env.NODE_ENV !== 'production' || !hasDistClient) {
     });
 }
 
-// --- GRACEFUL SHUTDOWN (The Missing Piece) ---
-const gracefulShutdown = async () => {
-    console.log('\n🛑 [SERVER] Deteniendo servidor (Graceful Shutdown)...');
-    
-    const sessions = activeSessions; 
-    
-    for (const [userId, sock] of sessions.entries()) {
-        console.log(`   Closing session for ${userId}...`);
-        try {
-            disconnectWhatsApp(userId, true);
-        } catch (e) {
-            console.error(`   Error closing session ${userId}`, e);
-        }
+// --- IDEMPOTENT GRACEFUL SHUTDOWN ---
+let isShuttingDown = false;
+
+const gracefulShutdown = async (signal?: string) => {
+    if (isShuttingDown) {
+        console.log('⚠️ [SERVER] Shutdown ya en progreso. Esperando finalización...');
+        return;
     }
-    
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    console.log('✅ [SERVER] Servidor detenido.');
-    (process as any).exit(0);
+    isShuttingDown = true;
+    console.log(`\n🛑 [SERVER] Deteniendo servidor (Graceful Shutdown por ${signal || 'señal'})...`);
+
+    // 1. Stop accepting new HTTP connections
+    try {
+        await new Promise<void>((resolve) => {
+            httpServer.close((err) => {
+                if (err) console.error('   [HTTP] Error cerrando servidor HTTP:', err);
+                else console.log('   [HTTP] Servidor HTTP dejó de aceptar peticiones.');
+                resolve();
+            });
+        });
+    } catch (e: any) {
+        console.error('   [HTTP] Excepción cerrando HTTP server:', e.message);
+    }
+
+    // 2. Stop workers (prevent pulling new jobs from BullMQ)
+    try {
+        await shutdownCampaignWorker();
+    } catch (e: any) {
+        console.error('   [WORKER] Error al detener Campaign Worker:', e.message);
+    }
+
+    // 3. Close BullMQ queues
+    try {
+        await closeQueues();
+    } catch (e: any) {
+        console.error('   [QUEUES] Error cerrando colas BullMQ:', e.message);
+    }
+
+    // 4. Close WhatsApp active sessions cleanly
+    try {
+        await shutdownAllWhatsAppSessions();
+        console.log('   [WA] Sesiones de WhatsApp desconectadas.');
+    } catch (e: any) {
+        console.error('   [WA] Error cerrando sesiones de WhatsApp:', e.message);
+    }
+
+    // 5. Close Redis connection
+    try {
+        await closeRedis();
+        console.log('   [REDIS] Conexión a Redis cerrada.');
+    } catch (e: any) {
+        console.error('   [REDIS] Error al cerrar Redis:', e.message);
+    }
+
+    // 6. Close MongoDB connection
+    try {
+        await db.close();
+    } catch (e: any) {
+        console.error('   [DB] Error al cerrar MongoDB:', e.message);
+    }
+
+    console.log('✅ [SERVER] Todos los recursos liberados. Servidor detenido.');
+    process.exit(0);
 };
 
-(process as any).on('SIGTERM', gracefulShutdown);
-(process as any).on('SIGINT', gracefulShutdown);
+(process as any).on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+(process as any).on('SIGINT', () => gracefulShutdown('SIGINT'));
 
+// --- DETERMINISTIC STARTUP SEQUENCE ---
+// Configuration is already validated in env.ts.
+// Next: Connect DB -> Seed DB -> Init Queues/Workers -> Verify Services -> Start HTTP listener
+async function startServer() {
+    try {
+        console.log('🚀 [STARTUP] Inicializando secuencia determinista del backend...');
 
-// Start server
-httpServer.listen(Number(PORT), '0.0.0.0', async () => {
-  console.log(`\n    🦅 DOMINION BACKEND ACTIVO EN PUERTO ${PORT}`);
-  console.log(`    🌍 ARQUITECTURA: LOCAL + CLOUDFLARE ZERO TRUST + SOCKET.IO`);
-  console.log(`\x1b[36m    🛡️ COMANDO BLINDADO (Anti-Corte):`);
-  console.log(`    cloudflared tunnel --url http://localhost:3001 --protocol http2 --ha-connections 4\x1b[0m`);
-  
-  initCampaignWorker();
-  await ttsService.init();
+        // 1. Database Connection
+        if (db.connectionPromise) {
+            await db.connectionPromise;
+        }
 
-  if (db.connectionPromise) {
-      await db.connectionPromise;
-  }
+        if (IS_PRODUCTION && !db.isReady()) {
+            throw new Error('[STARTUP FATAL] MongoDB no está listo en producción. Abortando inicio.');
+        }
 
-  if (db.isReady()) {
-      await db.seedTestimonials();
-  }
+        // 2. Seed Testimonials (if DB ready)
+        if (db.isReady()) {
+            await db.seedTestimonials();
+        }
 
-  logService.info('[INFO] El sistema backend se ha iniciado correctamente.'); 
-  
-  if (db.isReady()) {
-      logService.info('[SERVER] Iniciando escaneo de nodos activos...');
-      try {
-          const clients = await db.getAllClients();
-          let activeNodes = 0;
-          for (const client of clients) {
-              if (client.settings.isActive) {
-                  const status = getSessionStatus(client.id);
-                  const validSession = await hasValidSession(client.id);
-                  
-                  if (status.status === ConnectionStatus.DISCONNECTED && validSession) {
-                      connectToWhatsApp(client.id);
-                      activeNodes++;
-                  }
-              }
-          }
-          if (activeNodes === 0) logService.info('[SERVER] No hay nodos activos pendientes.');
-          else logService.info(`[SERVER] Reconectando ${activeNodes} nodos activos.`);
-      } catch (e) {
-          logService.error('[SERVER] Error en reconexión masiva', e);
-      }
-  }
-});
+        // 3. Initialize Campaign Worker (Singleton)
+        initCampaignWorker();
+
+        // 4. TTS Service
+        ttsService.init().catch((err) => logService.warn('[TTS] Inicialización diferida:', err));
+
+        // 5. Start HTTP Server
+        httpServer.listen(Number(PORT), '0.0.0.0', async () => {
+            console.log(`\n    🦅 DOMINION BACKEND ACTIVO EN PUERTO ${PORT}`);
+            console.log(`    🌍 ARQUITECTURA: LOCAL + CLOUDFLARE ZERO TRUST + SOCKET.IO`);
+            console.log(`    📦 PROVEEDOR WA: [${whatsAppProvider.id}]`);
+            console.log(`\x1b[36m    🛡️ COMANDO BLINDADO (Anti-Corte):`);
+            console.log(`    cloudflared tunnel --url http://localhost:3001 --protocol http2 --ha-connections 4\x1b[0m`);
+
+            logService.info('[INFO] El sistema backend se ha iniciado correctamente.');
+
+            // 6. Reconnect saved WhatsApp nodes if DB is ready
+            if (db.isReady()) {
+                logService.info('[SERVER] Iniciando escaneo de nodos activos...');
+                try {
+                    const clients = await db.getAllClients();
+                    let activeNodes = 0;
+                    for (const client of clients) {
+                        if (client.settings.isActive) {
+                            const status = getSessionStatus(client.id);
+                            const validSession = await hasValidSession(client.id);
+
+                            if (status.status === ConnectionStatus.DISCONNECTED && validSession) {
+                                connectToWhatsApp(client.id);
+                                activeNodes++;
+                            }
+                        }
+                    }
+                    if (activeNodes === 0) logService.info('[SERVER] No hay nodos activos pendientes.');
+                    else logService.info(`[SERVER] Reconectando ${activeNodes} nodos activos.`);
+                } catch (e) {
+                    logService.error('[SERVER] Error en reconexión masiva', e);
+                }
+            }
+        });
+
+    } catch (fatalErr: any) {
+        console.error('🚨 [STARTUP CRITICAL] Fallo en la secuencia de inicio:', fatalErr.message);
+        logService.error('[STARTUP CRITICAL] Fallo en la secuencia de inicio', fatalErr);
+        if (IS_PRODUCTION) {
+            process.exit(1);
+        }
+    }
+}
+
+startServer();

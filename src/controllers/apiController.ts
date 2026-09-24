@@ -4,7 +4,7 @@ import { db } from '../database.js';
 import { logService } from '../services/logService.js';
 import { User, LeadStatus, Campaign, WhatsAppGroup } from '../types.js';
 import { campaignService } from '../services/campaignService.js';
-import { fetchUserGroups } from '../whatsapp/client.js';
+import { fetchUserGroups } from '../whatsapp/index.js';
 import { v4 as uuidv4 } from 'uuid';
 import { generateContentWithFallback } from '../services/geminiService.js';
 import { sanitizeKey } from '../database.js'; // Ensure imported
@@ -162,6 +162,24 @@ export const handleUpdateCampaign = async (req: AuthenticatedRequest<{ id: strin
         const existing = await db.getCampaign(campaignId);
         if (!existing || existing.userId !== userId) {
             return res.status(404).json({ message: 'Campaña no encontrada o no autorizada.' });
+        }
+
+        // Validate state transitions if status is being updated
+        if (campaignData.status && campaignData.status !== existing.status) {
+            const currentStatus = existing.status;
+            const targetStatus = campaignData.status;
+
+            // Disallow re-activating a COMPLETED or ABORTED campaign without full edit/reset
+            if ((currentStatus === 'COMPLETED' || currentStatus === 'ABORTED') && targetStatus === 'ACTIVE') {
+                if (existing.schedule.type === 'ONCE') {
+                    return res.status(400).json({ message: `No se puede reactivar una campaña puntual ${currentStatus}. Edita la fecha o crea una nueva.` });
+                }
+            }
+
+            // If pausing or aborting while running, unlock immediately so it stops processing
+            if (targetStatus === 'PAUSED' || targetStatus === 'ABORTED') {
+                await campaignService.releaseLock(campaignId);
+            }
         }
 
         const updatedData = { ...existing, ...campaignData };

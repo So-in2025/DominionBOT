@@ -88,7 +88,7 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin }) => {
                 onLogin(data.token, data.role);
             } else {
                 playSound('hover'); 
-                setError(data.message || 'Credenciales no válidas. Prueba master / dominion2024');
+                setError(data.message || 'Credenciales no válidas.');
             }
         } catch (err) {
             console.error("LOGIN FAIL:", err);
